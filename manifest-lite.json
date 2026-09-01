@@ -1,14 +1,14 @@
 {
   "name": "Tool Tong Hop Lite",
   "channel": "lite",
-  "version": "2026.08.31.2",
+  "version": "2026.09.01.1",
   "rawBase": "https://raw.githubusercontent.com/allyngreenleaf96284-web/tooltonghop-update/main",
-  "createdAt": "2026-08-31T04:43:06.088Z",
+  "createdAt": "2026-09-01T03:36:07.600Z",
   "files": [
     {
       "path": "modules/dangnhap.js",
-      "sha256": "58b8348ab2a0a58742f170b23f5a98f2144675a8ba88d14ce86c2a0eb988e049",
-      "size": 100985
+      "sha256": "6a51440e232970d599a99a46d1dda452204cc6fedc1f786ac616cfd207b566b1",
+      "size": 99437
     },
     {
       "path": "modules/dienmatkhau.js",
@@ -17,18 +17,18 @@
     },
     {
       "path": "modules/lamfull.js",
-      "sha256": "efc9b8211b798d639171c36e3ac43319c59c86eea8d42d863571e972e5aa0175",
-      "size": 62706
+      "sha256": "0d2279dac94b2ebb6d4d36467fd301be52e84b9d8c7b8b4a4d79942fe7489dc4",
+      "size": 62671
     },
     {
       "path": "modules/tuongtac.js",
-      "sha256": "cf529270cac7ef806dc579b784301f375e50afa16c82fc87ad3f9ce2cbcf1879",
-      "size": 142869
+      "sha256": "83c6b605cf67e6ad0912cfc60b1045642ba18b637a79ccbc073e41b8be004f83",
+      "size": 142847
     },
     {
       "path": "modules/profile_name.js",
-      "sha256": "f60a59260daad4a007fbde4a1842e61540d06611b4c8126002e6657790105fad",
-      "size": 4624
+      "sha256": "0050612d688b1fd988e3e4ebc778c8baa10f9cb796b48007926103e0edb7c906",
+      "size": 4622
     },
     {
       "path": "modules/nineproxy.js",
@@ -37,13 +37,13 @@
     },
     {
       "path": "modules/clipproxy.js",
-      "sha256": "7745d5d664f980bdcbac7a869ebcbeff8c9670d4073a12a1ab829e6122ed7062",
-      "size": 37477
+      "sha256": "5157e5dd4ba27f2f18f1a32575f5b553b19a0e1d112c3e993ed2e84f74c0cfab",
+      "size": 37420
     },
     {
       "path": "modules/proxypanel.js",
-      "sha256": "65a366a52f142a23e89f0691631c8670dcd7a9325689763574be8dafadc23d8d",
-      "size": 51534
+      "sha256": "b2c191d6e206732a35250d3dcd9bfcd18aa490dc72aeff57af69c0148b37718b",
+      "size": 51551
     }
   ]
 }

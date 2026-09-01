@@ -545,7 +545,7 @@ export function createAvatarTool({
           row,
           log: (stepName, message, type = "info") => log(profileId, stepName, message, type)
         })
-      , { timeoutMs: 120000 });
+      );
 
       browser = await step(profileId, job, "mo profile HideMyAcc", async () => manager.connectBrowser(profileId), { timeoutMs: 120000 });
       page = await step(profileId, job, "mo tab Facebook", async () => {

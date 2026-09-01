@@ -1031,7 +1031,7 @@ export function createProxyPanelTool({ hideRequest, addRuntimeLog }) {
           }
         }
         state.lastError = `${last.error} (${carrierLabel(carrier)} thu ${attempt}/${proxyConfig.proxyPanelVerifyAttempts})`;
-        if (last.info?.ip) {
+        if (!requireNewIp && last.info?.ip) {
           state.exitIp = last.info.ip;
           state.region = last.info.region || "";
           state.city = last.info.city || "";

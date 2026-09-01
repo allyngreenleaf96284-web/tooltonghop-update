@@ -1,4 +1,4 @@
-﻿import { execFile } from "node:child_process";
+import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { buildFullSuccessToken, buildStandardName } from "./profile_name.js";
@@ -1153,7 +1153,7 @@ export function createLamFull({
           row,
           log: (stepName, message, type = "info") => log(profileId, stepName, message, type)
         })
-      , { timeoutMs: 120000 });
+      );
 
       await step(profileId, job, "mo profile full man hinh", async () => {
         browser = await manager.connectBrowser(profileId);

@@ -1,4 +1,4 @@
-﻿import path from "node:path";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFile } from "node:fs/promises";
 import { buildStandardName, buildFullSuccessToken } from "./profile_name.js";
@@ -1015,7 +1015,7 @@ export function createDangBai({
           row,
           log: (stepName, message, type = "info") => log(profileId, stepName, message, type)
         })
-      , { timeoutMs: 120000 });
+      );
 
       await step(profileId, job, "mo profile full man hinh", async () => {
         browser = await manager.connectBrowser(profileId);

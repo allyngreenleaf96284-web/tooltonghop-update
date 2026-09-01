@@ -1,4 +1,4 @@
-﻿const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const DASHBOARD_URL = "https://www.facebook.com/marketplace/you/dashboard";
 const LISTINGS_URL = "https://www.facebook.com/marketplace/you/selling";
@@ -672,7 +672,7 @@ export function createCheckOrderTool({
           row,
           log: (stepName, message, type = "info") => log(profileId, stepName, message, type)
         })
-      , { timeoutMs: 120000 });
+      );
 
       browser = await step(profileId, job, "mo profile GPM", async () => manager.connectBrowser(profileId), { timeoutMs: 120000 });
       page = await step(profileId, job, "mo tab Facebook", async () => {
