@@ -148,8 +148,8 @@ const DEFAULT_CONFIG = {
   clipProxyPort: 443,
   clipProxyCountry: "US",
   clipProxyType: 2,
-  clipProxyAsn: "AS21928",
-  clipProxyFormat: "n",
+  clipProxyAsn: "",
+  clipProxyFormat: "",
   clipProxyMaxUse: 10,
   clipProxyPoolSize: 5,
   clipProxyMaxAgeMinutes: 60,
@@ -3522,7 +3522,6 @@ server.listen(5177, "127.0.0.1", () => {
   startBackgroundHideSheetSync();
   startProxyMonitor();
 });
-
 
 
 

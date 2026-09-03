@@ -23,8 +23,8 @@ const DEFAULT_CONFIG = {
   clipProxyPort: 443,
   clipProxyCountry: "US",
   clipProxyType: 2,
-  clipProxyAsn: "AS21928",
-  clipProxyFormat: "n",
+  clipProxyAsn: "",
+  clipProxyFormat: "",
   clipProxyMaxUse: 10,
   clipProxyPoolSize: 5,
   clipProxyMaxAgeMinutes: 60,
@@ -71,8 +71,8 @@ export function normalizeClipProxyConfig(config = {}) {
     clipProxyPort: clampNumber(config.clipProxyPort, DEFAULT_CONFIG.clipProxyPort, 1, 65535),
     clipProxyCountry: String(config.clipProxyCountry || DEFAULT_CONFIG.clipProxyCountry).trim().toUpperCase() || "US",
     clipProxyType: clampNumber(config.clipProxyType, DEFAULT_CONFIG.clipProxyType, 1, 3),
-    clipProxyAsn: String(config.clipProxyAsn || DEFAULT_CONFIG.clipProxyAsn).trim() || "AS21928",
-    clipProxyFormat: String(config.clipProxyFormat || DEFAULT_CONFIG.clipProxyFormat).trim() || "n",
+    clipProxyAsn: String(config.clipProxyAsn || DEFAULT_CONFIG.clipProxyAsn).trim(),
+    clipProxyFormat: String(config.clipProxyFormat || DEFAULT_CONFIG.clipProxyFormat).trim(),
     clipProxyMaxUse: clampNumber(config.clipProxyMaxUse, DEFAULT_CONFIG.clipProxyMaxUse, 1, 100),
     clipProxyPoolSize: clampNumber(config.clipProxyPoolSize, DEFAULT_CONFIG.clipProxyPoolSize, 1, 50),
     clipProxyMaxAgeMinutes: clampNumber(config.clipProxyMaxAgeMinutes, DEFAULT_CONFIG.clipProxyMaxAgeMinutes, 1, 1440),
@@ -1054,7 +1054,6 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog }) {
     checkAll
   };
 }
-
 
 
 

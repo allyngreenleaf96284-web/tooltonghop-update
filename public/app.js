@@ -199,7 +199,7 @@ async function loadConfig() {
   if ($("clipProxyKey")) $("clipProxyKey").value = config.clipProxyKey || "";
   if ($("clipProxyPort")) $("clipProxyPort").value = config.clipProxyPort || 443;
   if ($("clipProxyCountry")) $("clipProxyCountry").value = config.clipProxyCountry || "US";
-  if ($("clipProxyAsn")) $("clipProxyAsn").value = config.clipProxyAsn || "AS21928";
+  if ($("clipProxyAsn")) $("clipProxyAsn").value = config.clipProxyAsn || "";
   if ($("clipProxyMaxUse")) $("clipProxyMaxUse").value = config.clipProxyMaxUse || 10;
   if ($("clipProxyPoolSize")) $("clipProxyPoolSize").value = config.clipProxyPoolSize || 5;
   if ($("clipProxyMaxAgeMinutes")) $("clipProxyMaxAgeMinutes").value = config.clipProxyMaxAgeMinutes || 60;
@@ -321,8 +321,8 @@ function readProxyConfigForm() {
     clipProxyPort: Number($("clipProxyPort")?.value || 443),
     clipProxyCountry: $("clipProxyCountry")?.value || "US",
     clipProxyType: 2,
-    clipProxyAsn: $("clipProxyAsn")?.value || "AS21928",
-    clipProxyFormat: "n",
+    clipProxyAsn: $("clipProxyAsn")?.value || "",
+    clipProxyFormat: "",
     clipProxyMaxUse: Math.max(1, Number($("clipProxyMaxUse")?.value || 10)),
     clipProxyPoolSize: Math.max(1, Math.min(50, Number($("clipProxyPoolSize")?.value || 5))),
     clipProxyMaxAgeMinutes: Math.max(1, Number($("clipProxyMaxAgeMinutes")?.value || 60)),
@@ -3025,7 +3025,6 @@ loadConfig()
     scheduleStateProxyRealtime();
   })
   .catch((error) => setStatus(error.message, true));
-
 
 
 
