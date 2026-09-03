@@ -111,13 +111,15 @@ function isFatalProxyError(message) {
 }
 
 function parseClipProxyLine(line) {
-  const text = String(line || "").trim();
+  let text = String(line || "").trim();
+  text = text.replace(/^["']|["']$/g, "").trim();
+  text = text.replace(/^(?:https?|socks5):\/\//i, "").trim();
   let host = "";
   let port = "";
   let username = "";
   let password = "";
-  const hostFirst = text.match(/^([^\s:@]+):(\d+):([^:\s@]+):([^\s@]+)$/);
-  const authFirst = text.match(/^([^:\s@]+):([^@\s]+)@([^\s:@]+):(\d+)$/);
+  const hostFirst = text.match(/^([a-z0-9.-]+):(\d{1,5}):(.+):([^:\s]+)$/i);
+  const authFirst = text.match(/^(.+):([^@\s]+)@([a-z0-9.-]+):(\d{1,5})$/i);
   if (hostFirst) {
     [, host, port, username, password] = hostFirst;
   } else if (authFirst) {
@@ -133,6 +135,61 @@ function parseClipProxyLine(line) {
     raw: `${host}:${port}:${username}:${password}`,
     uri: `http://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${host}:${port}`
   };
+}
+
+function proxyFromObject(value) {
+  if (!value || typeof value !== "object") return null;
+  const raw = value.raw_proxy || value.rawProxy || value.raw || value.proxy || value.proxy_url || value.proxyUrl || value.ip_port;
+  if (typeof raw === "string") {
+    const parsedRaw = parseClipProxyLine(raw);
+    if (parsedRaw) return parsedRaw;
+  }
+  const host = String(value.host || value.ip || value.server || "").trim();
+  const port = Number(value.port || value.proxy_port || 0);
+  const username = String(value.username || value.user || value.login || "").trim();
+  const password = String(value.password || value.pass || value.key || "").trim();
+  if (host && port && username && password) return parseClipProxyLine(`${host}:${port}:${username}:${password}`);
+  return null;
+}
+
+function findClipProxyInPayload(payload) {
+  if (typeof payload === "string") return parseClipProxyText(payload);
+  const direct = proxyFromObject(payload);
+  if (direct) return direct;
+  if (Array.isArray(payload)) {
+    for (const item of payload) {
+      const parsed = findClipProxyInPayload(item);
+      if (parsed) return parsed;
+    }
+    return null;
+  }
+  if (payload && typeof payload === "object") {
+    for (const key of ["data", "result", "proxy", "proxies", "list", "items"]) {
+      const parsed = findClipProxyInPayload(payload[key]);
+      if (parsed) return parsed;
+    }
+  }
+  return null;
+}
+
+function parseClipProxyText(text) {
+  const body = String(text || "").trim();
+  if (!body) return null;
+  try {
+    const parsed = findClipProxyInPayload(JSON.parse(body));
+    if (parsed) return parsed;
+  } catch {}
+
+  const candidates = body
+    .split(/[\r\n,;]+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const inlineMatches = body.match(/(?:https?:\/\/|socks5:\/\/)?[a-z0-9.-]+:\d{1,5}:[^\s,;]+:[^\s,;]+/gi) || [];
+  for (const item of [...candidates, ...inlineMatches]) {
+    const parsed = parseClipProxyLine(item);
+    if (parsed) return parsed;
+  }
+  return null;
 }
 
 async function fetchWithTimeout(url, timeoutMs) {
@@ -614,7 +671,7 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog }) {
     if (!proxyConfig.clipProxyKey) throw new Error("Chua cau hinh ClipProxy key.");
     const url = buildClipProxyUrl(proxyConfig, stateName);
     const text = await fetchWithTimeout(url, proxyConfig.clipProxyRequestTimeoutMs);
-    const proxy = parseClipProxyLine(text.split(/\r?\n/).find((line) => line.trim()) || text);
+    const proxy = parseClipProxyText(text);
     if (!proxy) throw new Error(`ClipProxy tra ve sai dinh dang: ${text.slice(0, 120)}`);
     const checked = await measureTcp(proxy, proxyConfig.clipProxyPingLimitMs);
     const info = checked.alive ? await fetchIpInfoViaProxy(proxy, proxyConfig.clipProxyInfoTimeoutMs) : null;
@@ -950,8 +1007,6 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog }) {
     checkAll
   };
 }
-
-
 
 
 
