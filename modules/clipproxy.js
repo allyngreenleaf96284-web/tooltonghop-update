@@ -24,6 +24,7 @@ const DEFAULT_CONFIG = {
   clipProxyCountry: "US",
   clipProxyType: 2,
   clipProxyAsn: "",
+  clipProxyAsns: ["AS21928", "AS22773", "AS11351", "AS7922", "AS5650"],
   clipProxyFormat: "",
   clipProxyMaxUse: 10,
   clipProxyPoolSize: 5,
@@ -64,14 +65,55 @@ function normalizeStates(input) {
   return result.length ? result : [...DEFAULT_STATES];
 }
 
+function normalizeAsn(value) {
+  const text = String(value || "").trim().toUpperCase().replace(/\s+/g, "");
+  if (!text) return "";
+  const digits = text.replace(/^AS/, "");
+  if (!/^\d+$/.test(digits)) return "";
+  return `AS${digits}`;
+}
+
+function normalizeAsns(input, legacyAsn = "") {
+  const source = Array.isArray(input) ? input : String(input || "").split(/[\n,;]+/);
+  const seen = new Set();
+  const result = [];
+  const add = (value) => {
+    const asn = normalizeAsn(value);
+    if (!asn || seen.has(asn)) return;
+    seen.add(asn);
+    result.push(asn);
+  };
+  add(legacyAsn);
+  for (const item of source) add(item);
+  return result.length ? result : [...DEFAULT_CONFIG.clipProxyAsns];
+}
+
+function shuffle(items) {
+  const result = [...items];
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+  }
+  return result;
+}
+
+function clipProxyAsnCandidates(config) {
+  const asns = normalizeAsns(config.clipProxyAsns, config.clipProxyAsn);
+  const priority = "AS21928";
+  const rest = shuffle(asns.filter((asn) => asn !== priority));
+  return asns.includes(priority) ? [priority, ...rest, ""] : [...rest, ""];
+}
+
 export function normalizeClipProxyConfig(config = {}) {
+  const clipProxyAsns = normalizeAsns(config.clipProxyAsns, config.clipProxyAsn);
   return {
     stateProxyEnabled: Boolean(config.stateProxyEnabled),
     clipProxyKey: String(config.clipProxyKey || DEFAULT_CONFIG.clipProxyKey).trim(),
     clipProxyPort: clampNumber(config.clipProxyPort, DEFAULT_CONFIG.clipProxyPort, 1, 65535),
     clipProxyCountry: String(config.clipProxyCountry || DEFAULT_CONFIG.clipProxyCountry).trim().toUpperCase() || "US",
     clipProxyType: clampNumber(config.clipProxyType, DEFAULT_CONFIG.clipProxyType, 1, 3),
-    clipProxyAsn: String(config.clipProxyAsn || DEFAULT_CONFIG.clipProxyAsn).trim(),
+    clipProxyAsn: normalizeAsn(config.clipProxyAsn),
+    clipProxyAsns,
     clipProxyFormat: String(config.clipProxyFormat || DEFAULT_CONFIG.clipProxyFormat).trim(),
     clipProxyMaxUse: clampNumber(config.clipProxyMaxUse, DEFAULT_CONFIG.clipProxyMaxUse, 1, 100),
     clipProxyPoolSize: clampNumber(config.clipProxyPoolSize, DEFAULT_CONFIG.clipProxyPoolSize, 1, 50),
@@ -246,7 +288,7 @@ async function fetchWithTimeout(url, timeoutMs) {
   }
 }
 
-function buildClipProxyUrl(config, stateName, num = 1) {
+function buildClipProxyUrl(config, stateName, num = 1, asnOverride = undefined) {
   const proxyConfig = normalizeClipProxyConfig(config);
   const params = new URLSearchParams({
     key: proxyConfig.clipProxyKey,
@@ -256,7 +298,8 @@ function buildClipProxyUrl(config, stateName, num = 1) {
     state: stateName
   });
   params.set("type", String(proxyConfig.clipProxyType));
-  if (proxyConfig.clipProxyAsn) params.set("asn", proxyConfig.clipProxyAsn);
+  const asn = asnOverride === undefined ? proxyConfig.clipProxyAsn : normalizeAsn(asnOverride);
+  if (asn) params.set("asn", asn);
   if (proxyConfig.clipProxyFormat) params.set("format", proxyConfig.clipProxyFormat);
   return `https://webipapi.cliproxy.com/api/getIpInfo?${params.toString()}`;
 }
@@ -711,44 +754,52 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog }) {
     const proxyConfig = normalizeClipProxyConfig(config);
     if (!proxyConfig.clipProxyKey) throw new Error("Chua cau hinh ClipProxy key.");
     const requestCount = Math.max(1, Math.min(10, proxyConfig.clipProxyPoolSize || 1));
-    const url = buildClipProxyUrl(proxyConfig, stateName, requestCount);
-    const text = await fetchWithTimeout(url, proxyConfig.clipProxyRequestTimeoutMs);
-    const proxies = parseClipProxyTextAll(text);
-    if (!proxies.length) throw new Error(`ClipProxy khong tra proxy hop le: ${describeClipProxyResponse(text)}`);
     let lastSlot = null;
-    for (const proxy of proxies) {
-      const checked = await measureTcp(proxy, proxyConfig.clipProxyPingLimitMs);
-      const info = checked.alive ? await fetchIpInfoViaProxy(proxy, proxyConfig.clipProxyInfoTimeoutMs) : null;
-      const health = healthFromChecks(proxyConfig, stateName, checked, info);
-      const slot = {
-        id: `${proxy.raw}|${Date.now()}|${Math.random().toString(36).slice(2, 8)}`,
-        state: stateName,
-        proxy,
-        raw: proxy.raw,
-        alive: health.alive,
-        pingMs: checked.pingMs,
-        ipinfoPingMs: info?.pingMs ?? null,
-        exitIp: info?.ip || "",
-        city: info?.city || "",
-        region: info?.region || "",
-        country: info?.country || "",
-        org: info?.org || "",
-        timezone: info?.timezone || "",
-        ipinfoSource: info?.source || "",
-        lastError: health.error,
-        createdAt: Date.now(),
-        lastCheckedAt: Date.now(),
-        lastAssignedAt: 0,
-        usageCount: 0,
-        coldUntil: 0,
-        coldReason: "",
-        inUse: false,
-        assignedProfileId: ""
-      };
-      lastSlot = slot;
-      if (slot.alive && !isTooSlow(slot, proxyConfig)) return slot;
+    let lastError = null;
+    for (const asn of clipProxyAsnCandidates(proxyConfig)) {
+      const url = buildClipProxyUrl(proxyConfig, stateName, requestCount, asn);
+      const text = await fetchWithTimeout(url, proxyConfig.clipProxyRequestTimeoutMs);
+      const proxies = parseClipProxyTextAll(text);
+      if (!proxies.length) {
+        lastError = new Error(`ClipProxy khong tra proxy hop le${asn ? ` voi ${asn}` : " khi bo qua ASN"}: ${describeClipProxyResponse(text)}`);
+        continue;
+      }
+      for (const proxy of proxies) {
+        const checked = await measureTcp(proxy, proxyConfig.clipProxyPingLimitMs);
+        const info = checked.alive ? await fetchIpInfoViaProxy(proxy, proxyConfig.clipProxyInfoTimeoutMs) : null;
+        const health = healthFromChecks({ ...proxyConfig, clipProxyAsn: asn || "" }, stateName, checked, info);
+        const slot = {
+          id: `${proxy.raw}|${Date.now()}|${Math.random().toString(36).slice(2, 8)}`,
+          state: stateName,
+          asn: asn || "",
+          proxy,
+          raw: proxy.raw,
+          alive: health.alive,
+          pingMs: checked.pingMs,
+          ipinfoPingMs: info?.pingMs ?? null,
+          exitIp: info?.ip || "",
+          city: info?.city || "",
+          region: info?.region || "",
+          country: info?.country || "",
+          org: info?.org || "",
+          timezone: info?.timezone || "",
+          ipinfoSource: info?.source || "",
+          lastError: health.error,
+          createdAt: Date.now(),
+          lastCheckedAt: Date.now(),
+          lastAssignedAt: 0,
+          usageCount: 0,
+          coldUntil: 0,
+          coldReason: "",
+          inUse: false,
+          assignedProfileId: ""
+        };
+        lastSlot = slot;
+        if (slot.alive && !isTooSlow(slot, proxyConfig)) return slot;
+      }
     }
-    return lastSlot;
+    if (lastSlot) return lastSlot;
+    throw lastError || new Error(`ClipProxy khong tra proxy hop le cho bang ${stateName}.`);
   }
 
   async function checkSlot(config, slot) {
@@ -1054,8 +1105,6 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog }) {
     checkAll
   };
 }
-
-
 
 
 

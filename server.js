@@ -149,6 +149,7 @@ const DEFAULT_CONFIG = {
   clipProxyCountry: "US",
   clipProxyType: 2,
   clipProxyAsn: "",
+  clipProxyAsns: ["AS21928", "AS22773", "AS11351", "AS7922", "AS5650"],
   clipProxyFormat: "",
   clipProxyMaxUse: 10,
   clipProxyPoolSize: 5,
@@ -3522,7 +3523,6 @@ server.listen(5177, "127.0.0.1", () => {
   startBackgroundHideSheetSync();
   startProxyMonitor();
 });
-
 
 
 

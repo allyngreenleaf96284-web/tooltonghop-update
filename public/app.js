@@ -199,7 +199,6 @@ async function loadConfig() {
   if ($("clipProxyKey")) $("clipProxyKey").value = config.clipProxyKey || "";
   if ($("clipProxyPort")) $("clipProxyPort").value = config.clipProxyPort || 443;
   if ($("clipProxyCountry")) $("clipProxyCountry").value = config.clipProxyCountry || "US";
-  if ($("clipProxyAsn")) $("clipProxyAsn").value = config.clipProxyAsn || "";
   if ($("clipProxyMaxUse")) $("clipProxyMaxUse").value = config.clipProxyMaxUse || 10;
   if ($("clipProxyPoolSize")) $("clipProxyPoolSize").value = config.clipProxyPoolSize || 5;
   if ($("clipProxyMaxAgeMinutes")) $("clipProxyMaxAgeMinutes").value = config.clipProxyMaxAgeMinutes || 60;
@@ -321,7 +320,8 @@ function readProxyConfigForm() {
     clipProxyPort: Number($("clipProxyPort")?.value || 443),
     clipProxyCountry: $("clipProxyCountry")?.value || "US",
     clipProxyType: 2,
-    clipProxyAsn: $("clipProxyAsn")?.value || "",
+    clipProxyAsn: "",
+    clipProxyAsns: normalizeClipProxyAsns(state.config?.clipProxyAsns),
     clipProxyFormat: "",
     clipProxyMaxUse: Math.max(1, Number($("clipProxyMaxUse")?.value || 10)),
     clipProxyPoolSize: Math.max(1, Math.min(50, Number($("clipProxyPoolSize")?.value || 5))),
@@ -677,6 +677,26 @@ function updateStateProxyMetrics(config = state.config || {}) {
   if ($("stateProxyInUseCount")) $("stateProxyInUseCount").textContent = inUse;
 }
 
+function normalizeClipProxyAsn(value) {
+  const text = String(value || "").trim().toUpperCase().replace(/\s+/g, "");
+  if (!text) return "";
+  const digits = text.replace(/^AS/, "");
+  return /^\d+$/.test(digits) ? `AS${digits}` : "";
+}
+
+function normalizeClipProxyAsns(input) {
+  const source = Array.isArray(input) ? input : String(input || "").split(/[\n,;]+/);
+  const seen = new Set();
+  const result = [];
+  for (const item of source) {
+    const asn = normalizeClipProxyAsn(item);
+    if (!asn || seen.has(asn)) continue;
+    seen.add(asn);
+    result.push(asn);
+  }
+  return result.length ? result : ["AS21928", "AS22773", "AS11351", "AS7922", "AS5650"];
+}
+
 function renderStateProxyConfig(config = state.config || {}) {
   const enabled = Boolean(config.stateProxyEnabled);
   const provider = config.stateProxyProvider === "proxypanel" ? "proxypanel" : "clipproxy";
@@ -689,7 +709,8 @@ function renderStateProxyConfig(config = state.config || {}) {
     "clipProxyKey",
     "clipProxyPort",
     "clipProxyCountry",
-    "clipProxyAsn",
+    "clipProxyAsnList",
+    "newClipProxyAsn",
     "clipProxyMaxUse",
     "clipProxyPoolSize",
     "clipProxyGoodPingMs",
@@ -709,6 +730,17 @@ function renderStateProxyConfig(config = state.config || {}) {
           : "Bật ProxyPanel - lấy bang theo Sheet, đúng bang/nhà mạng rồi mới mở profile"
         : "Bật ClipProxy - mỗi profile lấy proxy theo cột bang trước khi mở browser"
       : "Tắt - tool chạy theo proxy hiện có của profile";
+  }
+  const asnList = $("clipProxyAsnList");
+  if (asnList) {
+    const asns = normalizeClipProxyAsns(config.clipProxyAsns || config.clipProxyAsn);
+    asnList.innerHTML = asns.map((asn, index) => `
+      <span class="state-chip editable-chip">
+        <span>${escapeHtml(asn)}${asn === "AS21928" ? " ưu tiên" : ""}</span>
+        <button type="button" data-action="edit-clip-asn" data-index="${index}">Sửa</button>
+        <button type="button" data-action="delete-clip-asn" data-index="${index}">Xóa</button>
+      </span>
+    `).join("");
   }
   const list = $("stateProxyStateList");
   if (list) {
@@ -808,6 +840,36 @@ async function addStateProxyState() {
   state.config = config;
   state.stateProxyStatus = data;
   renderStateProxyConfig(config);
+}
+
+async function saveClipProxyAsns(asns) {
+  state.config = { ...(state.config || {}), clipProxyAsns: normalizeClipProxyAsns(asns), clipProxyAsn: "" };
+  await saveStateProxyConfig();
+}
+
+async function addClipProxyAsn() {
+  const input = $("newClipProxyAsn");
+  const asn = normalizeClipProxyAsn(input?.value);
+  if (!asn) return;
+  const asns = normalizeClipProxyAsns(state.config?.clipProxyAsns);
+  if (!asns.includes(asn)) asns.push(asn);
+  if (input) input.value = "";
+  await saveClipProxyAsns(asns);
+}
+
+async function editClipProxyAsn(index) {
+  const asns = normalizeClipProxyAsns(state.config?.clipProxyAsns);
+  const current = asns[index] || "";
+  const next = normalizeClipProxyAsn(prompt("Sửa ASN ClipProxy", current));
+  if (!next) return;
+  asns[index] = next;
+  await saveClipProxyAsns(asns);
+}
+
+async function deleteClipProxyAsn(index) {
+  const asns = normalizeClipProxyAsns(state.config?.clipProxyAsns);
+  asns.splice(index, 1);
+  await saveClipProxyAsns(asns);
 }
 
 async function checkStateProxyPool(options = {}) {
@@ -2657,6 +2719,21 @@ if ($("applyStateProxyBtn")) $("applyStateProxyBtn").addEventListener("click", (
 if ($("checkStateProxyBtn")) $("checkStateProxyBtn").addEventListener("click", () => checkStateProxyPool().catch((error) => setStatus(error.message, true)));
 if ($("toggleStateProxyPanelBtn")) $("toggleStateProxyPanelBtn").addEventListener("click", toggleStateProxyPanel);
 if ($("addStateProxyBtn")) $("addStateProxyBtn").addEventListener("click", () => addStateProxyState().catch((error) => setStatus(error.message, true)));
+if ($("addClipProxyAsnBtn")) $("addClipProxyAsnBtn").addEventListener("click", () => addClipProxyAsn().catch((error) => setStatus(error.message, true)));
+if ($("clipProxyAsnList")) $("clipProxyAsnList").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-action]");
+  if (!button) return;
+  const index = Number(button.dataset.index || -1);
+  const action = button.dataset.action;
+  const task = action === "edit-clip-asn" ? editClipProxyAsn(index) : deleteClipProxyAsn(index);
+  task.catch((error) => setStatus(error.message, true));
+});
+if ($("newClipProxyAsn")) $("newClipProxyAsn").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    addClipProxyAsn().catch((error) => setStatus(error.message, true));
+  }
+});
 if ($("newStateProxyState")) $("newStateProxyState").addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
     event.preventDefault();
@@ -3025,9 +3102,6 @@ loadConfig()
     scheduleStateProxyRealtime();
   })
   .catch((error) => setStatus(error.message, true));
-
-
-
 
 
 
