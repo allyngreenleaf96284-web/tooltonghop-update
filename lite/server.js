@@ -32,10 +32,6 @@ const DEFAULT_UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/allyngree
 const UPDATE_DOWNLOAD_TIMEOUT_MS = 60000;
 const originalToolRoot = path.resolve(__dirname, "..", "..", "tooltonghop-portable", "tooltonghop");
 const limitedUpdateFiles = [
-  "server.js",
-  "public/app.js",
-  "public/index.html",
-  "public/styles.css",
   "modules/dangnhap.js",
   "modules/dienmatkhau.js",
   "modules/lamfull.js",
@@ -44,6 +40,13 @@ const limitedUpdateFiles = [
   "modules/nineproxy.js",
   "modules/clipproxy.js",
   "modules/proxypanel.js"
+];
+const limitedOnlineUpdateFiles = [
+  "server.js",
+  "public/app.js",
+  "public/index.html",
+  "public/styles.css",
+  ...limitedUpdateFiles
 ];
 function resolveAppPath(relativePath, fallbackAbsolutePath) {
   const bundledPath = path.join(__dirname, relativePath);
@@ -3018,7 +3021,7 @@ function normalizeUpdatePath(value) {
 
 function isLimitedUpdatePathAllowed(relativePath) {
   const normalized = normalizeUpdatePath(relativePath);
-  return Boolean(normalized && !normalized.includes("..") && limitedUpdateFiles.includes(normalized));
+  return Boolean(normalized && !normalized.includes("..") && limitedOnlineUpdateFiles.includes(normalized));
 }
 
 async function readUpdateVersion() {
