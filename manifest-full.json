@@ -1,9 +1,9 @@
 {
   "name": "Tool Tong Hop Full",
   "channel": "full",
-  "version": "2026.09.03.8",
+  "version": "2026.09.03.9",
   "rawBase": "https://raw.githubusercontent.com/allyngreenleaf96284-web/tooltonghop-update/main",
-  "createdAt": "2026-09-03T10:28:54.4504387Z",
+  "createdAt": "2026-09-03T10:35:01.231Z",
   "files": [
     {
       "path": "server.js",

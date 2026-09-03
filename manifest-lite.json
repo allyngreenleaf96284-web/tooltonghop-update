@@ -1,34 +1,34 @@
 {
   "name": "Tool Tong Hop Lite",
   "channel": "lite",
-  "version": "2026.09.03.8",
+  "version": "2026.09.03.9",
   "rawBase": "https://raw.githubusercontent.com/allyngreenleaf96284-web/tooltonghop-update/main/lite",
-  "createdAt": "2026-09-03T10:28:54.5149148Z",
+  "createdAt": "2026-09-03T10:35:01.237Z",
   "files": [
     {
       "path": "server.js",
-      "sha256": "22c6e100905c2692600db097085fa337d3a674e7dfed516b7dbe7c67fec85cd2",
-      "size": 150372
+      "sha256": "63d6215a447b49d387c60a1e793150b922b3d6bc93a0dfd57e048f2fd9b767ff",
+      "size": 150291
     },
     {
       "path": "public/app.js",
-      "sha256": "8544701816f26404ec1a64a2f8135f801fb633789ba1ba01178484fbfa6ae872",
-      "size": 138824
+      "sha256": "2eea038b490cc3caeadbccad4fadb850ba9fb887c2bfa7559a224a32743e921d",
+      "size": 138746
     },
     {
       "path": "public/index.html",
-      "sha256": "24bf69e70821903a04e1c78b7f7a19dca938b1effe3c89842c3a998236929c11",
-      "size": 81491
+      "sha256": "f7f5120b5a1bc22d65c0f941b2330973d95f7a4282a645f8b0ecebefddfae4f6",
+      "size": 80986
     },
     {
       "path": "public/styles.css",
-      "sha256": "9a91ff60fd06e8c26a1e4989cac585f6365d4d6c51b8aa32f158c87800aca08f",
-      "size": 25567
+      "sha256": "877b97b91114506c4e4360c9491e3cf2240a5038b415ed87f26fcf0d18af3fb9",
+      "size": 25559
     },
     {
       "path": "modules/dangnhap.js",
-      "sha256": "58b8348ab2a0a58742f170b23f5a98f2144675a8ba88d14ce86c2a0eb988e049",
-      "size": 100985
+      "sha256": "6a51440e232970d599a99a46d1dda452204cc6fedc1f786ac616cfd207b566b1",
+      "size": 99437
     },
     {
       "path": "modules/dienmatkhau.js",
@@ -37,18 +37,18 @@
     },
     {
       "path": "modules/lamfull.js",
-      "sha256": "efc9b8211b798d639171c36e3ac43319c59c86eea8d42d863571e972e5aa0175",
-      "size": 62706
+      "sha256": "8f74c765388a8ac29aa74a790d4eb1b04754cea5282016dfe3665578b882ef46",
+      "size": 62697
     },
     {
       "path": "modules/tuongtac.js",
-      "sha256": "cf529270cac7ef806dc579b784301f375e50afa16c82fc87ad3f9ce2cbcf1879",
-      "size": 142869
+      "sha256": "83c6b605cf67e6ad0912cfc60b1045642ba18b637a79ccbc073e41b8be004f83",
+      "size": 142847
     },
     {
       "path": "modules/profile_name.js",
-      "sha256": "f60a59260daad4a007fbde4a1842e61540d06611b4c8126002e6657790105fad",
-      "size": 4624
+      "sha256": "0050612d688b1fd988e3e4ebc778c8baa10f9cb796b48007926103e0edb7c906",
+      "size": 4622
     },
     {
       "path": "modules/nineproxy.js",
@@ -57,8 +57,8 @@
     },
     {
       "path": "modules/clipproxy.js",
-      "sha256": "2ba0628af934664f3961d03182d8366ee5aef856bbae2a657225f1521df75bda",
-      "size": 42350
+      "sha256": "8728d1d909e96a3ac7d109dca91d0b444ed9711e09d7b07b9cc535e9f073b9da",
+      "size": 42293
     },
     {
       "path": "modules/proxypanel.js",
