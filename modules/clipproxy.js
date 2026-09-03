@@ -420,7 +420,7 @@ function proxyToGpmRaw(proxy) {
   const username = String(proxy.username || "");
   const password = String(proxy.password || "");
   if (!username && !password) return `${proxy.host}:${proxy.port}`;
-  return `http://${proxy.host}:${proxy.port}:${username}:${password}`;
+  return `${proxy.host}:${proxy.port}:${username}:${password}`;
 }
 
 function parseComparableProxy(rawProxy) {
@@ -1007,7 +1007,6 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog }) {
     checkAll
   };
 }
-
 
 
 

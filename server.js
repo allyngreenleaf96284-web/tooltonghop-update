@@ -464,9 +464,11 @@ function buildGpmProxyRaw(host, port, username = "", password = "", scheme = "so
   if (!cleanHost || !cleanPort) return "";
   const cleanUser = String(username || "").trim();
   const cleanPass = String(password || "").trim();
-  if (!cleanUser && !cleanPass) return `${cleanHost}:${cleanPort}`;
   const cleanScheme = String(scheme || "socks5").toLowerCase().startsWith("http") ? "http" : "socks5";
-  return `${cleanScheme}://${cleanHost}:${cleanPort}:${cleanUser}:${cleanPass}`;
+  const raw = !cleanUser && !cleanPass
+    ? `${cleanHost}:${cleanPort}`
+    : `${cleanHost}:${cleanPort}:${cleanUser}:${cleanPass}`;
+  return cleanScheme === "socks5" ? `socks5://${raw}` : raw;
 }
 
 function normalizeGpmProxy(rawProxy) {
@@ -3520,7 +3522,6 @@ server.listen(5177, "127.0.0.1", () => {
   startBackgroundHideSheetSync();
   startProxyMonitor();
 });
-
 
 
 

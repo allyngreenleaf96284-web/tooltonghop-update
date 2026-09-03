@@ -381,8 +381,10 @@ function proxyToGpmRaw(proxy) {
   const scheme = proxy.protocol === "http" ? "http" : "socks5";
   const username = String(proxy.username || "");
   const password = String(proxy.password || "");
-  if (!username && !password) return `${proxy.host}:${proxy.port}`;
-  return `${scheme}://${proxy.host}:${proxy.port}:${username}:${password}`;
+  const raw = !username && !password
+    ? `${proxy.host}:${proxy.port}`
+    : `${proxy.host}:${proxy.port}:${username}:${password}`;
+  return scheme === "socks5" ? `socks5://${raw}` : raw;
 }
 
 function parseComparableProxy(rawProxy) {
