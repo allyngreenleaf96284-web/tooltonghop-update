@@ -1,0 +1,1912 @@
+﻿<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tool Full & Tương tác GPM / HideMyAcc</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <style>
+      .module-item[data-module="notifications"],
+      .module-item[data-module="checkorder"],
+      .module-item[data-module="post"],
+      .module-item[data-module="pages"],
+      .module-item[data-module="avatar"],
+      .module-item[data-module="logs"],
+      #notificationModule,
+      #checkOrderModule,
+      #postModule,
+      #renewStandaloneModule,
+      #pageModule,
+      #avatarModule,
+      #proxyModule,
+      #logsModule {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="space-bg">
+      <div class="star-field stars-a"></div>
+      <div class="star-field stars-b"></div>
+      <div class="nebula nebula-a"></div>
+      <div class="nebula nebula-b"></div>
+    </div>
+
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-orbit">
+            <span class="brand-core"></span>
+          </div>
+          <div>
+            <h1>Tool Full & Tương tác</h1>
+            <p>Mission Control</p>
+          </div>
+        </div>
+
+        <section class="engine-switch" aria-label="Chọn engine profile">
+          <button id="engineSwitchGpm" type="button" data-engine="gpm" class="engine-option active">GPM</button>
+          <button id="engineSwitchHide" type="button" data-engine="hide" class="engine-option">HideMyAcc</button>
+        </section>
+
+        <nav class="module-menu" aria-label="Danh sách tool">
+          <button class="module-item active" data-module="profiles">
+            <span class="module-icon">◆</span>
+            <span>
+              <strong>Quản lý profile</strong>
+              <small id="profileEngineMenuLabel">GPM + Sheet</small>
+            </span>
+          </button>
+          <button class="module-item" data-module="notifications">
+            <span class="module-icon">✦</span>
+            <span>
+              <strong>Xem thông báo</strong>
+              <small>Check pause/order</small>
+            </span>
+          </button>
+          <button class="module-item" data-module="checkorder">
+            <span class="module-icon">▤</span>
+            <span>
+              <strong>Check order</strong>
+              <small>Dashboard + View order</small>
+            </span>
+          </button>
+          <button class="module-item" data-module="full">
+            <span class="module-icon">✹</span>
+            <span>
+              <strong>Làm full</strong>
+              <small>Tối đa 4 luồng</small>
+                    </span>
+          </button>
+          <button class="module-item" data-module="post">
+            <span class="module-icon">⬢</span>
+            <span>
+              <strong>Đăng bài</strong>
+              <small>2v đăng bài, 3v làm full, 4v dừng kiểm tra</small>
+            </span>
+          </button>
+          <button class="module-item" data-module="interaction">
+            <span class="module-icon">◇</span>
+            <span>
+              <strong>Tương tác</strong>
+              <small>Tối đa 6 luồng</small>
+            </span>
+          </button>
+          <button class="module-item" data-module="pages">
+            <span class="module-icon">▣</span>
+            <span>
+              <strong>Tạo page</strong>
+              <small>Tạo Facebook Page</small>
+            </span>
+          </button>
+          <button class="module-item" data-module="avatar">
+            <span class="module-icon">◉</span>
+            <span>
+              <strong>Đổi avatar</strong>
+              <small>Ảnh đại diện Facebook</small>
+            </span>
+          </button>
+          <button class="module-item" data-module="passwords">
+            <span class="module-icon">◆</span>
+            <span>
+              <strong>Điền mật khẩu</strong>
+              <small>UID -> mật khẩu / 2FA / cookie</small>
+            </span>
+          </button>
+          <button class="module-item" data-module="logs">
+            <span class="module-icon">☷</span>
+            <span>
+              <strong>Nhật ký</strong>
+              <small>Lịch sử toàn bộ tool</small>
+            </span>
+          </button>
+        </nav>
+
+        <section class="panel solar-panel" aria-label="Hệ mặt trời">
+          <div class="solar-system">
+            <span class="sun"></span>
+            <span class="orbit orbit-1"><i></i></span>
+            <span class="orbit orbit-2"><i></i></span>
+            <span class="orbit orbit-3"><i></i></span>
+          </div>
+          <div>
+            <h2>Live Sync</h2>
+            <p><span id="engineLiveText">GPM</span> cập nhật mỗi 2 giây, Sheet đồng bộ theo nhịp an toàn.</p>
+          </div>
+        </section>
+
+        <section class="panel config-panel collapsible open" data-collapsible="config">
+          <button class="panel-title collapse-toggle" type="button">
+            <span>Thiết lập</span>
+            <span id="engineBadge" class="chip">GPM</span>
+          </button>
+          <div class="collapse-body">
+            <label>
+              Engine profile
+              <select id="browserApiProvider">
+                <option value="gpm">GPM Login</option>
+                <option value="hide">HideMyAcc</option>
+              </select>
+            </label>
+            <label>
+              GPM API
+              <input id="gpmBaseUrl" placeholder="http://127.0.0.1:9495/api/v1" />
+            </label>
+            <label>
+              HideMyAcc API
+              <input id="hideBaseUrl" placeholder="http://127.0.0.1:2268" />
+            </label>
+
+            <div class="sheet-manager">
+              <div class="sheet-current">
+                <span>Sheet đang gắn</span>
+                <strong id="currentSheetInfo">Chưa xác định</strong>
+              </div>
+              <label>
+                Thêm Spreadsheet ID
+                <div class="inline-add">
+                  <input id="newSpreadsheetId" placeholder="1abc..." />
+                  <button id="addSpreadsheetIdBtn" type="button" class="small-btn">Thêm</button>
+                </div>
+              </label>
+              <div id="spreadsheetList" class="sheet-id-list"></div>
+            </div>
+            <label>
+              Service Account JSON
+              <input id="credentialsPath" placeholder="D:\path\key.json" />
+            </label>
+            <label>
+              Trang rác
+              <input id="trashSheetName" placeholder="rác" />
+            </label>
+            <button id="saveConfig" class="primary action-wide">
+              <span>Lưu cấu hình</span>
+            </button>
+            <button id="manualRestartBtn" class="ghost-btn action-wide" type="button">
+              <span>Reset backend thủ công</span>
+            </button>
+            <button id="updateLimitedBtn" class="ghost-btn action-wide" type="button">
+              <span>Cập nhật từ bản gốc</span>
+            </button>
+            <small id="limitedUpdateStatus" class="config-note"></small>
+            <button id="onlineUpdateBtn" class="ghost-btn action-wide" type="button">
+              <span>Cập nhật online</span>
+            </button>
+            <small id="onlineUpdateStatus" class="config-note"></small>
+          </div>
+        </section>
+
+        <section class="panel folder-panel collapsible open" data-collapsible="folders">
+          <button class="panel-title collapse-toggle" type="button">
+            <span>Folder</span>
+            <span id="folderCount" class="chip">0</span>
+          </button>
+          <div class="collapse-body">
+            <div id="folderList" class="folder-list"></div>
+          </div>
+        </section>
+      </aside>
+
+      <main class="workspace">
+        <section id="stateProxyPanel" class="state-proxy-panel collapsed" aria-label="Proxy theo bang">
+          <div class="state-proxy-bar">
+            <div class="state-proxy-left">
+              <label class="switch state-proxy-main-switch">
+                <input id="stateProxyEnabled" type="checkbox" />
+                <span></span>
+              </label>
+              <div>
+                <strong>Proxy theo bang</strong>
+                <small id="stateProxySummary">Tắt - tool chạy theo proxy hiện có của profile</small>
+              </div>
+            </div>
+            <div id="stateProxyStateList" class="state-chip-list compact"></div>
+            <div class="state-proxy-metrics">
+              <span><b id="stateProxyStateCount">0</b> bang</span>
+              <span><b id="stateProxyPoolCount">0</b> proxy</span>
+              <span><b id="stateProxyInUseCount">0</b> đang dùng</span>
+            </div>
+            <div class="state-proxy-actions">
+              <button id="saveStateProxyBtn" type="button" class="ghost-btn">Lưu</button>
+              <button id="applyStateProxyBtn" type="button" class="ghost-btn">Áp dụng ngay</button>
+              <button id="checkStateProxyBtn" type="button" class="ghost-btn">Check ping</button>
+              <button id="toggleStateProxyPanelBtn" type="button" class="ghost-btn">Mở rộng</button>
+            </div>
+          </div>
+          <div class="state-proxy-expanded">
+            <div class="tool-config-grid state-proxy-grid">
+              <label>
+                Nguồn proxy
+                <select id="stateProxyProvider">
+                  <option value="clipproxy">ClipProxy</option>
+                  <option value="proxypanel">ProxyPanel</option>
+                </select>
+              </label>
+              <label class="proxypanel-field">
+                ProxyPanel API key riêng
+                <input id="proxyPanelApiKey" placeholder="pt_live_..." />
+              </label>
+              <label class="proxypanel-field">
+                Proxy ID
+                <input id="proxyPanelProxyId" placeholder="để trống = proxy đầu tiên" />
+              </label>
+              <label class="proxypanel-field">
+                Nhà mạng
+                <select id="proxyPanelCarrier">
+                  <option value="tmobile">T-Mobile</option>
+                  <option value="verizon">Verizon</option>
+                </select>
+              </label>
+              <label class="proxypanel-field">
+                Loại proxy
+                <select id="proxyPanelProtocol">
+                  <option value="socks5">SOCKS5</option>
+                  <option value="http">HTTP</option>
+                </select>
+              </label>
+              <label class="proxypanel-field">
+                Bang ProxyPanel
+                <input id="proxyPanelStateOverride" placeholder="để trống = lấy cột bang" />
+              </label>
+              <label class="proxypanel-field">
+                ProxyPanel username
+                <input id="proxyPanelUsername" placeholder="ví dụ lidar89.custom2" />
+              </label>
+              <label class="proxypanel-field">
+                ProxyPanel password
+                <input id="proxyPanelPassword" placeholder="mật khẩu proxy" />
+              </label>
+              <label class="proxypanel-field">
+                ProxyPanel API
+                <input id="proxyPanelBaseUrl" placeholder="https://proxypanel.io/api/v1" />
+              </label>
+              <label class="proxypanel-field">
+                Chờ fresh IP giây
+                <input id="proxyPanelRotateCooldownSeconds" type="number" min="0" max="600" step="1" />
+              </label>
+              <label>
+                ClipProxy API key riêng
+                <input id="clipProxyKey" placeholder="Nhập ClipProxy key" />
+              </label>
+              <label>
+                Port
+                <input id="clipProxyPort" type="number" min="1" max="65535" step="1" />
+              </label>
+              <label>
+                Country
+                <input id="clipProxyCountry" placeholder="US" />
+              </label>
+              <label>
+                ASN ClipProxy
+                <div id="clipProxyAsnList" class="state-chip-list compact editable"></div>
+                <div class="inline-add">
+                  <input id="newClipProxyAsn" placeholder="AS21928 hoặc 21928" />
+                  <button id="addClipProxyAsnBtn" type="button" class="small-btn">Thêm</button>
+                </div>
+              </label>
+              <label>
+                Tối đa lượt/proxy
+                <input id="clipProxyMaxUse" type="number" min="1" max="100" step="1" />
+              </label>
+              <label>
+                Số proxy vòng lặp
+                <input id="clipProxyPoolSize" type="number" min="1" max="50" step="1" />
+              </label>
+              <label>
+                Ping tốt ms
+                <input id="clipProxyGoodPingMs" type="number" min="100" step="100" />
+              </label>
+              <label>
+                Ping tối đa ms
+                <input id="clipProxyPingLimitMs" type="number" min="100" step="100" />
+              </label>
+              <label>
+                Nghỉ proxy chậm phút
+                <input id="clipProxySlowCooldownMinutes" type="number" min="1" max="240" step="1" />
+              </label>
+              <label>
+                Dự phòng/bang
+                <input id="clipProxyReserveSize" type="number" min="0" max="20" step="1" />
+              </label>
+              <label>
+                Thêm bang
+                <div class="inline-add">
+                  <input id="newStateProxyState" placeholder="New York" />
+                  <button id="addStateProxyBtn" type="button" class="small-btn">Thêm</button>
+                </div>
+              </label>
+            </div>
+            <div id="stateProxyPool" class="proxy-pool-mini"></div>
+          </div>
+        </section>
+        <section id="profileModule" class="module-view active">
+        <header class="hero">
+          <div>
+            <div class="eyebrow"><span id="engineHeroText">GPM</span> Command Center</div>
+            <h2>Quản lý profile</h2>
+            <p id="statusText">Chưa tải dữ liệu</p>
+          </div>
+          <div class="actions">
+            <button id="refreshBtn" class="ghost-btn">
+              <span class="btn-icon">↻</span>
+              <span id="refreshEngineText">Tải từ GPM</span>
+            </button>
+            <button id="syncBtn" class="primary">
+              <span class="btn-icon">⇅</span>
+              <span id="syncEngineText">Cập nhật GPM → Sheet</span>
+            </button>
+            <button id="reloadSheetCacheBtn" class="ghost-btn">
+              <span class="btn-icon">↺</span>
+              <span>Nạp lại cache Sheet</span>
+            </button>
+          </div>
+        </header>
+
+        <section class="stats">
+          <div class="stat-card">
+            <span>Folder</span>
+            <strong id="statFolders">0</strong>
+          </div>
+          <div class="stat-card">
+            <span>Profile</span>
+            <strong id="statProfiles">0</strong>
+          </div>
+          <div class="stat-card">
+            <span>Đang xem</span>
+            <strong id="statVisible">0</strong>
+          </div>
+          <div class="stat-card">
+            <span>Đã chọn</span>
+            <strong id="statSelected">0</strong>
+          </div>
+          <div class="stat-card warning">
+            <span>UID trùng</span>
+            <strong id="statDuplicate">0</strong>
+          </div>
+        </section>
+
+        <section class="control-deck">
+          <label class="search-panel">
+            <span>Tìm kiếm / lọc hàng loạt</span>
+            <textarea id="searchInput" rows="3" placeholder="Dán nhiều UID / id hide / trạng thái, mỗi dòng một giá trị..."></textarea>
+            <small>Tìm theo tên, UID, id hide, folder hoặc trạng thái. Nhiều dòng sẽ lọc theo danh sách.</small>
+          </label>
+          <label>
+            <span>Sắp xếp</span>
+            <select id="sortKey">
+              <option value="name">Tên profile</option>
+              <option value="uid">UID</option>
+              <option value="folderName">Folder</option>
+              <option value="tool">Tool</option>
+              <option value="sheetStatus">Trạng thái</option>
+            </select>
+          </label>
+          <label>
+            <span>Chiều</span>
+            <select id="sortDir">
+              <option value="asc">A-Z</option>
+              <option value="desc">Z-A</option>
+            </select>
+          </label>
+          <button id="clearSelectionBtn" class="ghost-btn">Bỏ chọn</button>
+        </section>
+        <div class="filter-meta-row">
+          <span id="profileSelectionSummary" class="bulk-filter-summary">Đang chọn 0 con.</span>
+        </div>
+
+        <section id="duplicateStats" class="duplicate-stats collapsible hidden">
+          <button class="duplicate-title collapse-toggle" type="button">
+            <span>Thống kê UID trùng</span>
+            <span id="duplicateTotal" class="chip">0</span>
+          </button>
+          <div class="collapse-body">
+            <div id="duplicateList" class="duplicate-list"></div>
+          </div>
+        </section>
+
+        <section class="work-grid">
+          <section class="table-panel">
+            <div class="table-title">
+              <span>Danh sách profile</span>
+              <span id="tableHint">Run/Stop dùng engine đang chọn.</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th><input id="selectAllRows" type="checkbox" /></th>
+                    <th>Thao tác</th>
+                    <th>Tên profile hiện tại</th>
+                    <th>ID profile</th>
+                    <th>UID</th>
+                    <th>Tool</th>
+                    <th>Trạng thái</th>
+                    <th>Số vạch</th>
+                    <th>Chi tiết</th>
+                    <th>Folder</th>
+                  </tr>
+                </thead>
+                <tbody id="profileRows">
+                  <tr>
+                    <td colspan="10" class="empty">Bấm nút tải profile để xem dữ liệu.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="activity-panel">
+            <div class="activity-title">
+              <span>Nhật ký</span>
+              <button id="openLogsModuleBtn" class="ghost-btn small-btn">Chi tiết</button>
+            </div>
+            <div id="profileActivityLog" class="activity-log"></div>
+          </section>
+        </section>
+        </section>
+
+        <section id="notificationModule" class="module-view hidden">
+          <header class="hero">
+            <div>
+              <div class="eyebrow">Notification Tool</div>
+              <h2>Xem thông báo</h2>
+              <p id="notificationStatusText">Chọn profile cần check pause/order.</p>
+            </div>
+            <div class="actions">
+              <button id="stopNotificationBtn" class="ghost-btn danger-btn" type="button">
+                <span>Dừng hẳn</span>
+              </button>
+              <button id="runNotificationSelectedBtn" class="primary alt-primary">
+                <span class="btn-icon">✦</span>
+                <span>Chạy đã chọn</span>
+              </button>
+              <button id="runNotificationTodoBtn" class="primary">
+                <span class="btn-icon">⇥</span>
+                <span>Chạy chưa làm</span>
+              </button>
+            </div>
+          </header>
+
+          <section class="stats">
+            <div class="stat-card">
+              <span>Tổng profile</span>
+              <strong id="ntfTotal">0</strong>
+            </div>
+            <div class="stat-card">
+              <span>Chưa làm</span>
+              <strong id="ntfTodo">0</strong>
+            </div>
+            <div class="stat-card">
+              <span>Đã check</span>
+              <strong id="ntfDone">0</strong>
+            </div>
+            <div class="stat-card warning">
+              <span>Lỗi</span>
+              <strong id="ntfError">0</strong>
+            </div>
+            <div class="stat-card">
+              <span>Đang xem</span>
+              <strong id="ntfVisible">0</strong>
+            </div>
+          </section>
+
+          <section class="control-deck notification-controls">
+            <label class="search-panel">
+              <span>Tìm kiếm / lọc hàng loạt</span>
+              <textarea id="notificationSearchInput" rows="3" placeholder="Dán nhiều UID / id hide / trạng thái, mỗi dòng một giá trị..."></textarea>
+              <small>Tìm theo tên, UID, id hide, folder hoặc trạng thái. Nhiều dòng sẽ lọc theo danh sách.</small>
+            </label>
+            <label>
+              <span>Lọc tiến độ</span>
+              <select id="notificationProgressFilter">
+                <option value="all">Tất cả</option>
+                <option value="todo">Chưa làm</option>
+                <option value="done">Đã check</option>
+              </select>
+            </label>
+            <label>
+              <span>Lọc kết quả</span>
+              <select id="notificationResultFilter">
+                <option value="all">Tất cả</option>
+                <option value="ok">Thành công</option>
+                <option value="pause">Pause</option>
+                <option value="order">Order</option>
+                <option value="loi">Lỗi</option>
+              </select>
+            </label>
+            <label>
+              <span>Số luồng</span>
+              <input id="checkConcurrency" type="number" min="1" max="4" step="1" />
+            </label>
+            <button id="clearNotificationSelectionBtn" class="ghost-btn">Bỏ chọn</button>
+          </section>
+          <div class="filter-meta-row">
+            <span id="notificationSelectionSummary" class="bulk-filter-summary">Đang chọn 0 con.</span>
+          </div>
+
+          <section id="toolProgressPanel" class="tool-progress hidden">
+            <div class="tool-progress-title">
+              <span>Tiến độ tool</span>
+              <span id="toolProgressState" class="chip">idle</span>
+            </div>
+            <div class="tool-progress-summary">
+              <div class="tool-progress-meta">
+                <strong id="toolProgressCount">0 / 0</strong>
+                <span id="toolProgressText">Chưa có batch đang chạy.</span>
+              </div>
+              <div class="tool-progress-bar-track">
+                <div id="toolProgressBar" class="tool-progress-bar-fill"></div>
+              </div>
+            </div>
+            <div id="toolProgressList" class="tool-progress-list"></div>
+          </section>
+
+          <section class="work-grid">
+            <section class="table-panel">
+              <div class="table-title">
+                <span>Danh sách check thông báo</span>
+                <span>Sheet chỉ ghi khi chạy xong.</span>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th><input id="selectAllNotificationRows" type="checkbox" /></th>
+                      <th>Tên profile hiện tại</th>
+                      <th>ID profile</th>
+                      <th>UID</th>
+                      <th>Tool</th>
+                      <th>Trạng thái</th>
+                      <th>Chi tiết</th>
+                      <th>Folder</th>
+                    </tr>
+                  </thead>
+                  <tbody id="notificationRows">
+                    <tr>
+                      <td colspan="8" class="empty">Chưa có dữ liệu.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="activity-panel">
+              <div class="activity-title">
+                <span>Nhật ký</span>
+                <button id="openLogsFromNotificationBtn" class="ghost-btn small-btn">Chi tiết</button>
+              </div>
+              <div id="notificationActivityLog" class="activity-log"></div>
+            </section>
+          </section>
+        </section>
+
+        <section id="checkOrderModule" class="module-view hidden">
+          <header class="hero">
+            <div>
+              <div class="eyebrow">Order Tool</div>
+              <h2>Check order</h2>
+              <p id="checkOrderStatusText">Đọc Seller dashboard, ghi Sheet riêng và xử lý View order.</p>
+            </div>
+            <div class="actions">
+              <button id="stopCheckOrderBtn" class="ghost-btn danger-btn" type="button"><span>Dừng hẳn</span></button>
+              <button id="runCheckOrderSelectedBtn" class="primary alt-primary"><span>Chạy đã chọn</span></button>
+              <button id="runCheckOrderFolderBtn" class="primary"><span>Chạy folder</span></button>
+            </div>
+          </header>
+
+          <section class="tool-config-card">
+            <div class="table-title">
+              <span>Cấu hình check order</span>
+              <span>Sheet riêng có header: uid, ngày làm, trạng thái, chi tiết...</span>
+            </div>
+            <div class="tool-config-grid check-order-config-grid">
+              <label class="wide-field">
+                Check order Spreadsheet ID
+                <input id="checkOrderSpreadsheetId" placeholder="Sheet riêng để ghi check order" />
+              </label>
+              <label>
+                Tên trang tính
+                <input id="checkOrderSheetName" placeholder="check order" />
+              </label>
+              <label>
+                Số luồng
+                <input id="checkOrderConcurrency" type="number" min="1" max="4" step="1" />
+              </label>
+              <button id="saveCheckOrderConfig" class="primary action-wide" type="button"><span>Lưu cấu hình check order</span></button>
+            </div>
+          </section>
+
+          <section class="stats">
+            <div class="stat-card"><span>Tổng profile</span><strong id="checkOrderTotal">0</strong></div>
+            <div class="stat-card"><span>Đã chọn</span><strong id="checkOrderSelected">0</strong></div>
+            <div class="stat-card"><span>Đang xem</span><strong id="checkOrderVisible">0</strong></div>
+          </section>
+
+          <section id="checkOrderToolProgressPanel" class="tool-progress hidden">
+            <div class="tool-progress-title"><span>Tiến độ check order</span><span id="checkOrderToolProgressState" class="chip">idle</span></div>
+            <div class="tool-progress-summary">
+              <div class="tool-progress-meta"><strong id="checkOrderToolProgressCount">0 / 0</strong><span id="checkOrderToolProgressText">Chưa có batch đang chạy.</span></div>
+              <div class="tool-progress-bar-track"><div id="checkOrderToolProgressBar" class="tool-progress-bar-fill"></div></div>
+            </div>
+            <div id="checkOrderToolProgressList" class="tool-progress-list"></div>
+          </section>
+
+          <section class="control-deck">
+            <label class="search-panel">
+              <span>Tìm kiếm / lọc hàng loạt</span>
+              <textarea id="checkOrderSearchInput" rows="3" placeholder="Dán nhiều UID / id profile / tên profile..."></textarea>
+              <small>Tìm theo tên, UID, id profile, folder hoặc trạng thái.</small>
+            </label>
+            <button id="clearCheckOrderSelectionBtn" class="ghost-btn">Bỏ chọn</button>
+          </section>
+          <div class="filter-meta-row"><span id="checkOrderSelectionSummary" class="bulk-filter-summary">Đang chọn 0 con.</span></div>
+
+          <section class="work-grid">
+            <section class="table-panel">
+              <div class="table-title"><span>Danh sách check order</span><span>Ghi kết quả sang Sheet riêng.</span></div>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th><input id="selectAllCheckOrderRows" type="checkbox" /></th><th>Tên profile hiện tại</th><th>ID profile</th><th>UID</th><th>Folder</th><th>Trạng thái Sheet tổng</th></tr></thead>
+                  <tbody id="checkOrderRows"><tr><td colspan="6" class="empty">Chưa có dữ liệu.</td></tr></tbody>
+                </table>
+              </div>
+            </section>
+            <section class="activity-panel">
+              <div class="activity-title"><span>Nhật ký</span><button id="openLogsFromCheckOrderBtn" class="ghost-btn small-btn">Chi tiết</button></div>
+              <div id="checkOrderActivityLog" class="activity-log"></div>
+            </section>
+          </section>
+        </section>
+        <section id="fullModule" class="module-view hidden">
+          <header class="hero">
+            <div>
+              <div class="eyebrow">Full Tool</div>
+              <h2>Làm full</h2>
+              <p id="fullStatusText">Chạy đa luồng theo cấu hình riêng của tool làm full.</p>
+            </div>
+            <div class="actions">
+              <button id="stopFullBtn" class="ghost-btn danger-btn" type="button">
+                <span>Dừng hẳn</span>
+              </button>
+              <button id="pauseFullBtn" class="ghost-btn">
+                <span>Dừng tạm</span>
+              </button>
+              <button id="resumeFullBtn" class="ghost-btn">
+                <span>Tiếp tục</span>
+              </button>
+              <button id="runFullSelectedBtn" class="primary alt-primary">
+                <span>Chạy đã chọn</span>
+              </button>
+              <button id="runFullTodoBtn" class="primary">
+                <span>Chạy chưa làm</span>
+              </button>
+            </div>
+          </header>
+
+          <section class="tool-config-card">
+            <div class="table-title">
+              <span>Cấu hình làm full</span>
+              <span>Chỉ áp dụng cho tool này.</span>
+            </div>
+            <div class="tool-config-grid">
+              <label>
+                Seller Info Spreadsheet ID
+                <input id="sellerSpreadsheetId" placeholder="Sheet riêng chứa seller info" />
+              </label>
+              <label>
+                Thư mục đăng bài
+                <input id="fullDataRoot" placeholder="E:\dangbai" />
+              </label>
+              <label>
+                Giá min
+                <input id="fullPriceMin" type="number" min="1" placeholder="10" />
+              </label>
+              <label>
+                Giá max
+                <input id="fullPriceMax" type="number" min="1" placeholder="25" />
+              </label>
+              <label>
+                Số luồng
+                <input id="fullConcurrency" type="number" min="1" max="4" step="1" />
+              </label>
+              <button id="saveFullConfig" class="primary action-wide" type="button">
+                <span>Lưu cấu hình full</span>
+              </button>
+            </div>
+          </section>
+
+          <section class="stats">
+            <div class="stat-card">
+              <span>Tổng profile</span>
+              <strong id="fullTotal">0</strong>
+            </div>
+            <div class="stat-card">
+              <span>Chưa làm</span>
+              <strong id="fullTodo">0</strong>
+            </div>
+            <div class="stat-card">
+              <span>Đã làm</span>
+              <strong id="fullDone">0</strong>
+            </div>
+            <div class="stat-card warning">
+              <span>Lỗi</span>
+              <strong id="fullError">0</strong>
+            </div>
+            <div class="stat-card">
+              <span>Đang xem</span>
+              <strong id="fullVisible">0</strong>
+            </div>
+          </section>
+
+          <section id="fullToolProgressPanel" class="tool-progress hidden">
+            <div class="tool-progress-title">
+              <span>Tiến độ làm full</span>
+              <span id="fullToolProgressState" class="chip">idle</span>
+            </div>
+            <div class="tool-progress-summary">
+              <div class="tool-progress-meta">
+                <strong id="fullToolProgressCount">0 / 0</strong>
+                <span id="fullToolProgressText">Chưa có batch đang chạy.</span>
+              </div>
+              <div class="tool-progress-bar-track">
+                <div id="fullToolProgressBar" class="tool-progress-bar-fill"></div>
+              </div>
+            </div>
+            <div id="fullToolProgressList" class="tool-progress-list"></div>
+          </section>
+
+          <section class="control-deck notification-controls">
+            <label class="search-panel">
+              <span>Tìm kiếm / lọc hàng loạt</span>
+              <textarea id="fullSearchInput" rows="3" placeholder="Dán nhiều UID / id hide / trạng thái, mỗi dòng một giá trị..."></textarea>
+              <small>Tìm theo tên, UID, id hide, folder hoặc trạng thái. Nhiều dòng sẽ lọc theo danh sách.</small>
+            </label>
+            <label>
+              <span>Lọc tiến độ</span>
+              <select id="fullProgressFilter">
+                <option value="all">Tất cả</option>
+                <option value="todo">Chưa làm</option>
+                <option value="done">Đã làm</option>
+              </select>
+            </label>
+            <label>
+              <span>Lọc kết quả</span>
+              <select id="fullResultFilter">
+                <option value="all">Tất cả</option>
+                <option value="2v">2v</option>
+                <option value="3v">3v</option>
+                <option value="4v">4v</option>
+                <option value="loi">Lỗi</option>
+              </select>
+            </label>
+            <button id="clearFullSelectionBtn" class="ghost-btn">Bỏ chọn</button>
+          </section>
+          <div class="filter-meta-row">
+            <span id="fullSelectionSummary" class="bulk-filter-summary">Đang chọn 0 con.</span>
+          </div>
+
+          <section class="work-grid">
+            <section class="table-panel">
+              <div class="table-title">
+                <span>Danh sách làm full</span>
+                <span>Tool full chạy theo số luồng đã chọn.</span>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th><input id="selectAllFullRows" type="checkbox" /></th>
+                      <th>Tên profile hiện tại</th>
+                      <th>ID profile</th>
+                      <th>UID</th>
+                      <th>Tool</th>
+                      <th>Trạng thái</th>
+                      <th>Số vạch</th>
+                      <th>Chi tiết</th>
+                      <th>Folder</th>
+                    </tr>
+                  </thead>
+                  <tbody id="fullRows">
+                    <tr>
+                      <td colspan="9" class="empty">Chưa có dữ liệu.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="activity-panel">
+              <div class="activity-title">
+                <span>Nhật ký</span>
+                <button id="openLogsFromFullBtn" class="ghost-btn small-btn">Chi tiết</button>
+              </div>
+              <div id="fullActivityLog" class="activity-log"></div>
+            </section>
+          </section>
+        </section>
+
+        <section id="postModule" class="module-view hidden">
+          <header class="hero">
+            <div>
+              <div class="eyebrow">Post Tool</div>
+              <h2>Đăng bài</h2>
+              <p id="postStatusText">Dùng chung đăng nhập. 3 vạch làm full, 2 vạch đăng bài.</p>
+            </div>
+            <div class="actions">
+              <button id="stopPostBtn" class="ghost-btn danger-btn" type="button">
+                <span>Dừng hẳn</span>
+              </button>
+              <button id="runPostSelectedBtn" class="primary alt-primary">
+                <span>Chạy đã chọn</span>
+              </button>
+              <button id="runPostTodoBtn" class="primary">
+                <span>Chạy chưa làm</span>
+              </button>
+            </div>
+          </header>
+
+          <section class="tool-config-card">
+            <div class="table-title">
+              <span>Cấu hình đăng bài</span>
+              <span>Dùng chung thư mục dữ liệu, giá min/max và sheet seller với tool full.</span>
+            </div>
+            <div class="tool-config-grid">
+              <label>
+                Seller Info Spreadsheet ID
+                <input id="postSellerSpreadsheetId" placeholder="Sheet riêng chứa seller info" />
+              </label>
+              <label>
+                Thư mục đăng bài
+                <input id="postDataRoot" placeholder="E:\dangbai" />
+              </label>
+              <label>
+                Giá min
+                <input id="postPriceMin" type="number" min="1" placeholder="10" />
+              </label>
+              <label>
+                Giá max
+                <input id="postPriceMax" type="number" min="1" placeholder="25" />
+              </label>
+              <label>
+                Số luồng
+                <input id="postConcurrency" type="number" min="1" max="4" step="1" />
+              </label>
+              <button id="savePostConfig" class="primary action-wide" type="button">
+                <span>Lưu cấu hình đăng bài</span>
+              </button>
+            </div>
+          </section>
+
+          <section class="stats">
+            <div class="stat-card">
+              <span>Tổng profile</span>
+              <strong id="postTotal">0</strong>
+            </div>
+            <div class="stat-card">
+              <span>Chưa làm</span>
+              <strong id="postTodo">0</strong>
+            </div>
+            <div class="stat-card">
+              <span>Đã làm</span>
+              <strong id="postDone">0</strong>
+            </div>
+            <div class="stat-card warning">
+              <span>Lỗi</span>
+              <strong id="postError">0</strong>
+            </div>
+            <div class="stat-card">
+              <span>Đang xem</span>
+              <strong id="postVisible">0</strong>
+            </div>
+          </section>
+
+          <section id="postToolProgressPanel" class="tool-progress hidden">
+            <div class="tool-progress-title">
+              <span>Tiến độ đăng bài</span>
+              <span id="postToolProgressState" class="chip">idle</span>
+            </div>
+            <div class="tool-progress-summary">
+              <div class="tool-progress-meta">
+                <strong id="postToolProgressCount">0 / 0</strong>
+                <span id="postToolProgressText">Chưa có batch đang chạy.</span>
+              </div>
+              <div class="tool-progress-bar-track">
+                <div id="postToolProgressBar" class="tool-progress-bar-fill"></div>
+              </div>
+            </div>
+            <div id="postToolProgressList" class="tool-progress-list"></div>
+          </section>
+
+          <section class="control-deck notification-controls">
+            <label class="search-panel">
+              <span>Tìm kiếm / lọc hàng loạt</span>
+              <textarea id="postSearchInput" rows="3" placeholder="Dán nhiều UID / id hide / trạng thái, mỗi dòng một giá trị..."></textarea>
+              <small>Tìm theo tên, UID, id hide, folder hoặc trạng thái. Nhiều dòng sẽ lọc theo danh sách.</small>
+            </label>
+            <label>
+              <span>Lọc tiến độ</span>
+              <select id="postProgressFilter">
+                <option value="all">Tất cả</option>
+                <option value="todo">Chưa làm</option>
+                <option value="done">Đã làm</option>
+              </select>
+            </label>
+            <label>
+              <span>Lọc kết quả</span>
+              <select id="postResultFilter">
+                <option value="all">Tất cả</option>
+                <option value="2v">2v</option>
+                <option value="3v">3v</option>
+                <option value="4v">4v</option>
+                <option value="loi">Lỗi</option>
+              </select>
+            </label>
+            <button id="clearPostSelectionBtn" class="ghost-btn">Bỏ chọn</button>
+          </section>
+          <div class="filter-meta-row">
+            <span id="postSelectionSummary" class="bulk-filter-summary">Đang chọn 0 con.</span>
+          </div>
+
+          <section class="work-grid">
+            <section class="table-panel">
+              <div class="table-title">
+                <span>Danh sách đăng bài</span>
+                <span>2v đăng bài, 3v chạy chung luồng full.</span>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th><input id="selectAllPostRows" type="checkbox" /></th>
+                      <th>Tên profile hiện tại</th>
+                      <th>ID profile</th>
+                      <th>UID</th>
+                      <th>Tool</th>
+                      <th>Trạng thái</th>
+                      <th>Số vạch</th>
+                      <th>Chi tiết</th>
+                      <th>Folder</th>
+                    </tr>
+                  </thead>
+                  <tbody id="postRows">
+                    <tr>
+                      <td colspan="9" class="empty">Chưa có dữ liệu.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="activity-panel">
+              <div class="activity-title">
+                <span>Nhật ký</span>
+                <button id="openLogsFromPostBtn" class="ghost-btn small-btn">Chi tiết</button>
+              </div>
+              <div id="postActivityLog" class="activity-log"></div>
+            </section>
+          </section>
+        </section>
+
+        <section id="interactionModule" class="module-view hidden">
+          <header class="hero">
+            <div>
+              <div class="eyebrow">Interaction Tool</div>
+              <h2>Tương tác</h2>
+              <p id="interactionStatusText">Dùng chung đăng nhập, Renew và Needs attention chạy đầu tiên rồi đến Home/Reels/Marketplace tối đa 6 luồng.</p>
+            </div>
+            <div class="actions">
+              <button id="stopInteractionBtn" class="ghost-btn danger-btn" type="button">
+                <span>Dừng hẳn</span>
+              </button>
+              <button id="runRenewStandaloneBtn" class="ghost-btn" type="button">
+                <span>Renew độc lập</span>
+              </button>
+              <button id="runInteractionSelectedBtn" class="primary alt-primary">
+                <span>Chạy đã chọn</span>
+              </button>
+              <button id="runInteractionTodoBtn" class="primary">
+                <span>Chạy chưa làm</span>
+              </button>
+            </div>
+          </header>
+
+          <section class="tool-config-card">
+            <div class="table-title">
+              <span>Cấu hình tương tác</span>
+              <span>Chỉ áp dụng cho tool này.</span>
+            </div>
+            <div class="tool-config-grid">
+              <label>
+                Số luồng
+                <input id="interactionConcurrency" type="number" min="1" max="4" step="1" />
+              </label>
+              <label>
+                Home min giây
+                <input id="interactionHomeTimeMin" type="number" min="1" />
+              </label>
+              <label>
+                Home max giây
+                <input id="interactionHomeTimeMax" type="number" min="1" />
+              </label>
+              <label>
+                Reels min giây
+                <input id="interactionReelsTotalMin" type="number" min="1" />
+              </label>
+              <label>
+                Reels max giây
+                <input id="interactionReelsTotalMax" type="number" min="1" />
+              </label>
+              <label>
+                Clip min giây
+                <input id="interactionClipViewMin" type="number" min="1" />
+              </label>
+              <label>
+                Clip max giây
+                <input id="interactionClipViewMax" type="number" min="1" />
+              </label>
+              <label>
+                Marketplace bài min
+                <input id="interactionMarketPostsMin" type="number" min="1" />
+              </label>
+              <label>
+                Marketplace bài max
+                <input id="interactionMarketPostsMax" type="number" min="1" />
+              </label>
+              <label class="checkbox-label">
+                <input id="interactionEnableRandomOrder" type="checkbox" />
+                <span>Random thứ tự</span>
+              </label>
+              <label class="checkbox-label">
+                <input id="interactionHumanDelayMode" type="checkbox" />
+                <span>Human delay</span>
+              </label>
+              <label class="checkbox-label">
+                <input id="interactionSlowScrollMode" type="checkbox" />
+                <span>Slow scroll</span>
+              </label>
+              <label class="checkbox-label">
+                <input id="interactionEnableRenewListings" type="checkbox" />
+                <span>Bấm renew / Needs attention</span>
+              </label>
+              <label class="checkbox-label">
+                <input id="interactionEnableMarkAsSold" type="checkbox" />
+                <span>Bật Mark as sold</span>
+              </label>
+              <button id="saveInteractionConfig" class="primary action-wide" type="button">
+                <span>Lưu cấu hình tương tác</span>
+              </button>
+            </div>
+          </section>
+
+          <section class="stats">
+            <div class="stat-card">
+              <span>Tổng profile</span>
+              <strong id="interactionTotal">0</strong>
+            </div>
+            <div class="stat-card">
+              <span>Chưa làm</span>
+              <strong id="interactionTodo">0</strong>
+            </div>
+            <div class="stat-card">
+              <span>Đã tương tác</span>
+              <strong id="interactionDone">0</strong>
+            </div>
+            <div class="stat-card warning">
+              <span>Lỗi</span>
+              <strong id="interactionError">0</strong>
+            </div>
+            <div class="stat-card">
+              <span>Đang xem</span>
+              <strong id="interactionVisible">0</strong>
+            </div>
+          </section>
+
+          <section id="interactionToolProgressPanel" class="tool-progress hidden">
+            <div class="tool-progress-title">
+              <span>Tiến độ tương tác</span>
+              <span id="interactionToolProgressState" class="chip">idle</span>
+            </div>
+            <div class="tool-progress-summary">
+              <div class="tool-progress-meta">
+                <strong id="interactionToolProgressCount">0 / 0</strong>
+                <span id="interactionToolProgressText">Chưa có batch đang chạy.</span>
+              </div>
+              <div class="tool-progress-bar-track">
+                <div id="interactionToolProgressBar" class="tool-progress-bar-fill"></div>
+              </div>
+            </div>
+            <div id="interactionToolProgressList" class="tool-progress-list"></div>
+          </section>
+
+          <section class="control-deck notification-controls">
+            <label class="search-panel">
+              <span>Tìm kiếm / lọc hàng loạt</span>
+              <textarea id="interactionSearchInput" rows="3" placeholder="Dán nhiều UID / id hide / trạng thái, mỗi dòng một giá trị..."></textarea>
+              <small>Tìm theo tên, UID, id hide, folder hoặc trạng thái. Nhiều dòng sẽ lọc theo danh sách.</small>
+            </label>
+            <label>
+              <span>Lọc tiến độ</span>
+              <select id="interactionProgressFilter">
+                <option value="all">Tất cả</option>
+                <option value="todo">Chưa làm</option>
+                <option value="done">Đã tương tác</option>
+              </select>
+            </label>
+            <label>
+              <span>Lọc kết quả</span>
+              <select id="interactionResultFilter">
+                <option value="all">Tất cả</option>
+                <option value="ok">Thành công</option>
+                <option value="loi">Lỗi</option>
+              </select>
+            </label>
+            <button id="clearInteractionSelectionBtn" class="ghost-btn">Bỏ chọn</button>
+          </section>
+          <div class="filter-meta-row">
+            <span id="interactionSelectionSummary" class="bulk-filter-summary">Đang chọn 0 con.</span>
+          </div>
+
+          <section class="work-grid">
+            <section class="table-panel">
+              <div class="table-title">
+                <span>Danh sách tương tác</span>
+                <span>Stop khi đang dở sẽ không ghi Sheet.</span>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th><input id="selectAllInteractionRows" type="checkbox" /></th>
+                      <th>Tên profile hiện tại</th>
+                      <th>ID profile</th>
+                      <th>UID</th>
+                      <th>Tool</th>
+                      <th>Trạng thái</th>
+                      <th>Chi tiết</th>
+                      <th>Folder</th>
+                    </tr>
+                  </thead>
+                  <tbody id="interactionRows">
+                    <tr>
+                      <td colspan="8" class="empty">Chưa có dữ liệu.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="activity-panel">
+              <div class="activity-title">
+                <span>Nhật ký</span>
+                <button id="openLogsFromInteractionBtn" class="ghost-btn small-btn">Chi tiết</button>
+              </div>
+              <div id="interactionActivityLog" class="activity-log"></div>
+            </section>
+          </section>
+        </section>
+
+        <section id="renewStandaloneModule" class="module-view hidden">
+          <header class="hero">
+            <div>
+              <div class="eyebrow">Standalone Renew Tool</div>
+              <h2>Renew độc lập</h2>
+              <p id="renewStandaloneStatusText">Tool riêng dùng modules/renewdoclap.js, chạy dashboard renew tách khỏi luồng Tương tác cũ.</p>
+            </div>
+            <div class="actions">
+              <button id="stopRenewStandaloneBtn" class="ghost-btn danger-btn" type="button">
+                <span>Dừng hẳn</span>
+              </button>
+              <button id="runRenewStandaloneSelectedBtn" class="primary alt-primary" type="button">
+                <span>Chạy đã chọn</span>
+              </button>
+              <button id="runRenewStandaloneFolderBtn" class="primary" type="button">
+                <span>Chạy folder</span>
+              </button>
+            </div>
+          </header>
+
+          <section class="stats">
+            <div class="stat-card">
+              <span>Tổng profile</span>
+              <strong id="renewStandaloneTotal">0</strong>
+            </div>
+            <div class="stat-card">
+              <span>Đang xem</span>
+              <strong id="renewStandaloneVisible">0</strong>
+            </div>
+            <div class="stat-card">
+              <span>Đang chọn</span>
+              <strong id="renewStandaloneSelected">0</strong>
+            </div>
+          </section>
+
+          <section class="control-deck notification-controls">
+            <label class="search-panel">
+              <span>Tìm kiếm / lọc hàng loạt</span>
+              <textarea id="renewStandaloneSearchInput" rows="3" placeholder="Dán nhiều UID / id hide / tên profile, mỗi dòng một giá trị..."></textarea>
+              <small>Tìm theo tên, UID, id hide hoặc folder. Nhiều dòng sẽ lọc theo danh sách.</small>
+            </label>
+            <button id="clearRenewStandaloneSelectionBtn" class="ghost-btn" type="button">Bỏ chọn</button>
+          </section>
+          <div class="filter-meta-row">
+            <span id="renewStandaloneSelectionSummary" class="bulk-filter-summary">Đang chọn 0 con.</span>
+          </div>
+
+          <section class="work-grid">
+            <section class="table-panel">
+              <div class="table-title">
+                <span>Danh sách Renew độc lập</span>
+                <span>Chạy endpoint /api/tools/renew-doc-lap.</span>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th><input id="selectAllRenewStandaloneRows" type="checkbox" /></th>
+                      <th>Tên profile hiện tại</th>
+                      <th>ID profile</th>
+                      <th>UID</th>
+                      <th>Tool</th>
+                      <th>Trạng thái</th>
+                      <th>Chi tiết</th>
+                      <th>Folder</th>
+                    </tr>
+                  </thead>
+                  <tbody id="renewStandaloneRows">
+                    <tr>
+                      <td colspan="8" class="empty">Chưa có dữ liệu.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="activity-panel">
+              <div class="activity-title">
+                <span>Nhật ký</span>
+                <button id="openLogsFromRenewStandaloneBtn" class="ghost-btn small-btn" type="button">Chi tiết</button>
+              </div>
+              <div id="renewStandaloneActivityLog" class="activity-log"></div>
+            </section>
+          </section>
+        </section>
+        <section id="pageModule" class="module-view hidden">
+          <header class="hero">
+            <div>
+              <div class="eyebrow">Page Creation Tool</div>
+              <h2>Tạo page</h2>
+              <p id="pageStatusText">Dùng chung đăng nhập, lấy tên page từ file txt và chỉ tăng số lượng page khi thành công.</p>
+            </div>
+            <div class="actions">
+              <button id="stopPageBtn" class="ghost-btn danger-btn" type="button">
+                <span>Dừng hẳn</span>
+              </button>
+              <button id="runPageSelectedBtn" class="primary alt-primary">
+                <span>Chạy đã chọn</span>
+              </button>
+              <button id="runPageTodoBtn" class="primary">
+                <span>Chạy chưa làm</span>
+              </button>
+            </div>
+          </header>
+
+          <section class="tool-config-card">
+            <div class="table-title">
+              <span>Cấu hình tạo page</span>
+              <span>File tên page: D:\tổng hợp tool\tooltonghop\data\page_names.txt</span>
+            </div>
+            <div class="tool-config-grid">
+              <label>
+                Số luồng
+                <input id="pageConcurrency" type="number" min="1" max="4" step="1" />
+              </label>
+              <button id="savePageConfig" class="primary action-wide" type="button">
+                <span>Lưu cấu hình tạo page</span>
+              </button>
+            </div>
+          </section>
+
+          <section class="stats">
+            <div class="stat-card">
+              <span>Tổng profile</span>
+              <strong id="pageTotal">0</strong>
+            </div>
+            <div class="stat-card">
+              <span>Chưa làm</span>
+              <strong id="pageTodo">0</strong>
+            </div>
+            <div class="stat-card">
+              <span>Đã tạo page</span>
+              <strong id="pageDone">0</strong>
+            </div>
+            <div class="stat-card warning">
+              <span>Lỗi</span>
+              <strong id="pageError">0</strong>
+            </div>
+            <div class="stat-card">
+              <span>Đang xem</span>
+              <strong id="pageVisible">0</strong>
+            </div>
+          </section>
+
+          <section id="pageToolProgressPanel" class="tool-progress hidden">
+            <div class="tool-progress-title">
+              <span>Tiến độ tạo page</span>
+              <span id="pageToolProgressState" class="chip">idle</span>
+            </div>
+            <div class="tool-progress-summary">
+              <div class="tool-progress-meta">
+                <strong id="pageToolProgressCount">0 / 0</strong>
+                <span id="pageToolProgressText">Chưa có batch đang chạy.</span>
+              </div>
+              <div class="tool-progress-bar-track">
+                <div id="pageToolProgressBar" class="tool-progress-bar-fill"></div>
+              </div>
+            </div>
+            <div id="pageToolProgressList" class="tool-progress-list"></div>
+          </section>
+
+          <section class="control-deck notification-controls">
+            <label class="search-panel">
+              <span>Tìm kiếm / lọc hàng loạt</span>
+              <textarea id="pageSearchInput" rows="3" placeholder="Dán nhiều UID / id hide / trạng thái, mỗi dòng một giá trị..."></textarea>
+              <small>Tìm theo tên, UID, id hide, folder hoặc trạng thái. Nhiều dòng sẽ lọc theo danh sách.</small>
+            </label>
+            <label>
+              <span>Lọc tiến độ</span>
+              <select id="pageProgressFilter">
+                <option value="all">Tất cả</option>
+                <option value="todo">Chưa làm</option>
+                <option value="done">Đã tạo page</option>
+              </select>
+            </label>
+            <label>
+              <span>Lọc kết quả</span>
+              <select id="pageResultFilter">
+                <option value="all">Tất cả</option>
+                <option value="ok">Thành công</option>
+                <option value="loi">Lỗi</option>
+              </select>
+            </label>
+            <button id="clearPageSelectionBtn" class="ghost-btn">Bỏ chọn</button>
+          </section>
+          <div class="filter-meta-row">
+            <span id="pageSelectionSummary" class="bulk-filter-summary">Đang chọn 0 con.</span>
+          </div>
+
+          <section class="work-grid">
+            <section class="table-panel">
+              <div class="table-title">
+                <span>Danh sách tạo page</span>
+                <span>Thành công mới tăng cột số lượng page.</span>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th><input id="selectAllPageRows" type="checkbox" /></th>
+                      <th>Tên profile hiện tại</th>
+                      <th>ID profile</th>
+                      <th>UID</th>
+                      <th>Tool</th>
+                      <th>Trạng thái</th>
+                      <th>Số lượng page</th>
+                      <th>Chi tiết</th>
+                      <th>Folder</th>
+                    </tr>
+                  </thead>
+                  <tbody id="pageRows">
+                    <tr>
+                      <td colspan="9" class="empty">Chưa có dữ liệu.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="activity-panel">
+              <div class="activity-title">
+                <span>Nhật ký</span>
+                <button id="openLogsFromPageBtn" class="ghost-btn small-btn">Chi tiết</button>
+              </div>
+              <div id="pageActivityLog" class="activity-log"></div>
+            </section>
+          </section>
+        </section>
+
+        <section id="avatarModule" class="module-view hidden">
+          <header class="hero">
+            <div>
+              <div class="eyebrow">Profile Picture Tool</div>
+              <h2>Đổi avatar</h2>
+              <p id="avatarStatusText">Dùng chung đăng nhập, tự bỏ qua nick đã có ảnh đại diện và thử tối đa 3 ảnh khác nhau khi upload lỗi.</p>
+            </div>
+            <div class="actions">
+              <button id="stopAvatarBtn" class="ghost-btn danger-btn" type="button">
+                <span>Dừng hẳn</span>
+              </button>
+              <button id="runAvatarSelectedBtn" class="primary alt-primary">
+                <span>Chạy đã chọn</span>
+              </button>
+              <button id="runAvatarTodoBtn" class="primary">
+                <span>Chạy chưa làm</span>
+              </button>
+            </div>
+          </header>
+
+          <section class="tool-config-card">
+            <div class="table-title">
+              <span>Cấu hình đổi avatar</span>
+              <span>Dán đường dẫn thư mục ảnh hoặc file txt chứa danh sách đường dẫn ảnh.</span>
+            </div>
+            <div class="tool-config-grid">
+              <label>
+                Số luồng
+                <input id="avatarConcurrency" type="number" min="1" max="2" step="1" />
+              </label>
+              <label class="wide-field">
+                Thư mục/file ảnh đại diện
+                <input id="avatarImagePath" placeholder="D:\avatar hoặc D:\avatar\list.txt" />
+              </label>
+              <label class="check-row wide-field">
+                <input id="avatarReplaceExisting" type="checkbox" />
+                <span>Đổi cả nick đã có ảnh đại diện</span>
+              </label>
+              <button id="saveAvatarConfig" class="primary action-wide" type="button">
+                <span>Lưu cấu hình đổi avatar</span>
+              </button>
+            </div>
+          </section>
+
+          <section class="stats">
+            <div class="stat-card">
+              <span>Tổng profile</span>
+              <strong id="avatarTotal">0</strong>
+            </div>
+            <div class="stat-card">
+              <span>Chưa làm</span>
+              <strong id="avatarTodo">0</strong>
+            </div>
+            <div class="stat-card">
+              <span>Đã xử lý</span>
+              <strong id="avatarDone">0</strong>
+            </div>
+            <div class="stat-card warning">
+              <span>Lỗi</span>
+              <strong id="avatarError">0</strong>
+            </div>
+            <div class="stat-card">
+              <span>Đang xem</span>
+              <strong id="avatarVisible">0</strong>
+            </div>
+          </section>
+
+          <section id="avatarToolProgressPanel" class="tool-progress hidden">
+            <div class="tool-progress-title">
+              <span>Tiến độ đổi avatar</span>
+              <span id="avatarToolProgressState" class="chip">idle</span>
+            </div>
+            <div class="tool-progress-summary">
+              <div class="tool-progress-meta">
+                <strong id="avatarToolProgressCount">0 / 0</strong>
+                <span id="avatarToolProgressText">Chưa có batch đang chạy.</span>
+              </div>
+              <div class="tool-progress-bar-track">
+                <div id="avatarToolProgressBar" class="tool-progress-bar-fill"></div>
+              </div>
+            </div>
+            <div id="avatarToolProgressList" class="tool-progress-list"></div>
+          </section>
+
+          <section class="control-deck notification-controls">
+            <label class="search-panel">
+              <span>Tìm kiếm / lọc hàng loạt</span>
+              <textarea id="avatarSearchInput" rows="3" placeholder="Dán nhiều UID / id hide / trạng thái, mỗi dòng một giá trị..."></textarea>
+              <small>Tìm theo tên, UID, id hide, folder hoặc trạng thái. Nhiều dòng sẽ lọc theo danh sách.</small>
+            </label>
+            <label>
+              <span>Lọc tiến độ</span>
+              <select id="avatarProgressFilter">
+                <option value="all">Tất cả</option>
+                <option value="todo">Chưa làm</option>
+                <option value="done">Đã xử lý</option>
+              </select>
+            </label>
+            <label>
+              <span>Lọc kết quả</span>
+              <select id="avatarResultFilter">
+                <option value="all">Tất cả</option>
+                <option value="ok">Thành công</option>
+                <option value="loi">Lỗi</option>
+              </select>
+            </label>
+            <button id="clearAvatarSelectionBtn" class="ghost-btn">Bỏ chọn</button>
+          </section>
+          <div class="filter-meta-row">
+            <span id="avatarSelectionSummary" class="bulk-filter-summary">Đang chọn 0 con.</span>
+          </div>
+
+          <section class="work-grid">
+            <section class="table-panel">
+              <div class="table-title">
+                <span>Danh sách đổi avatar</span>
+                <span>Nick đã có ảnh sẽ được đánh dấu thành công nhưng không đổi ảnh.</span>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th><input id="selectAllAvatarRows" type="checkbox" /></th>
+                      <th>Tên profile hiện tại</th>
+                      <th>ID profile</th>
+                      <th>UID</th>
+                      <th>Tool</th>
+                      <th>Trạng thái</th>
+                      <th>Chi tiết</th>
+                      <th>Folder</th>
+                    </tr>
+                  </thead>
+                  <tbody id="avatarRows">
+                    <tr>
+                      <td colspan="8" class="empty">Chưa có dữ liệu.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="activity-panel">
+              <div class="activity-title">
+                <span>Nhật ký</span>
+                <button id="openLogsFromAvatarBtn" class="ghost-btn small-btn">Chi tiết</button>
+              </div>
+              <div id="avatarActivityLog" class="activity-log"></div>
+            </section>
+          </section>
+        </section>
+
+        <section id="passwordModule" class="module-view hidden">
+          <header class="hero">
+            <div>
+              <div class="eyebrow">Credential Fill Tool</div>
+              <h2>Điền mật khẩu</h2>
+              <p id="passwordStatusText">Đối chiếu UID từ sheet tổng, chỉ điền dòng đang trống mật khẩu.</p>
+            </div>
+            <div class="actions">
+              <button id="stopPasswordBtn" class="ghost-btn danger-btn" type="button"><span>Dừng hẳn</span></button>
+              <button id="runPasswordSelectedBtn" class="primary alt-primary"><span>Chạy đã chọn</span></button>
+              <button id="runPasswordFolderBtn" class="ghost-btn"><span>Chạy folder đang xem</span></button>
+              <button id="runPasswordTodoBtn" class="primary"><span>Chạy thiếu mật khẩu</span></button>
+            </div>
+          </header>
+
+          <section class="tool-config-card">
+            <div class="table-title">
+              <span>Cấu hình điền UID</span>
+              <span>Sheet nguồn chứa uid, mật khẩu, 2fa, cookie.</span>
+            </div>
+            <div class="tool-config-grid">
+              <label>
+                Spreadsheet ID nguồn
+                <input id="credentialSourceSpreadsheetId" placeholder="1W9a9PE-0R96dGEjzjfy2BMvI4176emngzsPBOqiu_Qw" />
+              </label>
+            </div>
+          </section>
+
+          <section class="stats">
+            <div class="stat-card"><span>Tổng profile</span><strong id="passwordTotal">0</strong></div>
+            <div class="stat-card warning"><span>Thiếu mật khẩu</span><strong id="passwordBlank">0</strong></div>
+            <div class="stat-card"><span>Đã có mật khẩu</span><strong id="passwordFilled">0</strong></div>
+            <div class="stat-card"><span>Đang xem</span><strong id="passwordVisible">0</strong></div>
+          </section>
+
+          <section id="passwordToolProgressPanel" class="tool-progress hidden">
+            <div class="tool-progress-title">
+              <span>Tiến độ điền dữ liệu</span>
+              <span id="passwordToolProgressState" class="chip">idle</span>
+            </div>
+            <div class="tool-progress-summary">
+              <div class="tool-progress-meta">
+                <strong id="passwordToolProgressCount">0 / 0</strong>
+                <span id="passwordToolProgressText">Chưa có batch đang chạy.</span>
+              </div>
+              <div class="tool-progress-bar-track">
+                <div id="passwordToolProgressBar" class="tool-progress-bar-fill"></div>
+              </div>
+            </div>
+            <div id="passwordToolProgressList" class="tool-progress-list"></div>
+          </section>
+
+          <section class="control-deck notification-controls">
+            <label class="search-panel">
+              <span>Tìm kiếm / lọc hàng loạt</span>
+              <textarea id="passwordSearchInput" rows="3" placeholder="Dán nhiều UID / id hide / trạng thái, mỗi dòng một giá trị..."></textarea>
+              <small>Tìm theo tên, UID, id hide, folder hoặc trạng thái. Nhiều dòng sẽ lọc theo danh sách.</small>
+            </label>
+            <button id="clearPasswordSelectionBtn" class="ghost-btn">Bỏ chọn</button>
+          </section>
+          <div class="filter-meta-row">
+            <span id="passwordSelectionSummary" class="bulk-filter-summary">Đang chọn 0 con.</span>
+          </div>
+
+          <section class="work-grid">
+            <section class="table-panel">
+              <div class="table-title">
+                <span>Danh sách điền mật khẩu</span>
+                <span>Chỉ điền khi cột mật khẩu đang trống.</span>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th><input id="selectAllPasswordRows" type="checkbox" /></th>
+                      <th>Tên profile hiện tại</th>
+                      <th>ID profile</th>
+                      <th>UID</th>
+                      <th>Mật khẩu</th>
+                      <th>2FA</th>
+                      <th>Cookie</th>
+                      <th>Folder</th>
+                    </tr>
+                  </thead>
+                  <tbody id="passwordRows">
+                    <tr><td colspan="8" class="empty">Chưa có dữ liệu.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="activity-panel">
+              <div class="activity-title">
+                <span>Nhật ký</span>
+                <button id="openLogsFromPasswordBtn" class="ghost-btn small-btn">Chi tiết</button>
+              </div>
+              <div id="passwordActivityLog" class="activity-log"></div>
+            </section>
+          </section>
+        </section>
+        <section id="proxyModule" class="module-view hidden">
+          <header class="hero">
+            <div>
+              <div class="eyebrow">9Proxy Router</div>
+              <h2>Gán proxy mới</h2>
+              <p id="proxyStatusText">Chọn bang, chuẩn bị tối đa 10 port, rồi gán proxy vòng tròn cho profile.</p>
+            </div>
+            <div class="actions">
+              <button id="checkProxyBtn" class="ghost-btn" type="button">
+                <span class="btn-icon">↻</span>
+                <span>Check port</span>
+              </button>
+              <button id="prepareProxyBtn" class="primary alt-primary" type="button">
+                <span>Lấy IP mới</span>
+              </button>
+              <button id="assignProxyBtn" class="primary" type="button">
+                <span>Gán cho đã chọn</span>
+              </button>
+            </div>
+          </header>
+
+          <section class="tool-config-card">
+            <div class="table-title">
+              <span>Cấu hình 9Proxy</span>
+              <span>ISP mặc định: T-Mobile</span>
+            </div>
+            <div class="tool-config-grid proxy-config-grid">
+              <label>
+                9Proxy API
+                <input id="nineProxyBaseUrl" placeholder="http://127.0.0.1:22999" />
+              </label>
+              <label>
+                Token
+                <input id="nineProxyToken" placeholder="Bearer token nếu API yêu cầu" />
+              </label>
+              <label>
+                Bang
+                <select id="nineProxyState">
+                  <option value="CA">California</option>
+                  <option value="NY">New York</option>
+                  <option value="FL">Florida</option>
+                  <option value="TX">Texas</option>
+                  <option value="GA">Georgia</option>
+                  <option value="IL">Illinois</option>
+                  <option value="AL">Alabama</option>
+                  <option value="MD">Maryland</option>
+                  <option value="MI">Michigan</option>
+                  <option value="NC">North Carolina</option>
+                  <option value="OH">Ohio</option>
+                  <option value="PA">Pennsylvania</option>
+                  <option value="TN">Tennessee</option>
+                </select>
+              </label>
+              <label>
+                ISP
+                <input id="nineProxyIsp" value="T-Mobile" />
+              </label>
+              <label>
+                Host local
+                <input id="nineProxyHost" placeholder="127.0.0.1" />
+              </label>
+              <label>
+                Port đầu
+                <input id="nineProxyPortStart" type="number" min="1" max="65535" step="1" />
+              </label>
+              <label>
+                Số port
+                <input id="nineProxyPortCount" type="number" min="1" max="10" step="1" />
+              </label>
+              <label>
+                Ping tối đa
+                <input id="nineProxyPingLimitMs" type="number" min="1" step="1" />
+              </label>
+              <label>
+                Cảnh báo dưới
+                <input id="nineProxyMinGoodPorts" type="number" min="1" max="10" step="1" />
+              </label>
+              <label>
+                Đổi sau phút
+                <input id="nineProxyMaxIpAgeMinutes" type="number" min="1" step="1" />
+              </label>
+              <label class="wide-field">
+                URL đo ping
+                <input id="nineProxyPingUrl" placeholder="http://api.ipify.org?format=json" />
+              </label>
+              <button id="saveProxyConfig" class="ghost-btn" type="button">
+                <span>Lưu cấu hình proxy</span>
+              </button>
+            </div>
+          </section>
+
+          <section class="stats-grid">
+            <div class="stat-card"><span>Tổng profile</span><strong id="proxyTotal">0</strong></div>
+            <div class="stat-card"><span>Đang chọn</span><strong id="proxySelected">0</strong></div>
+            <div class="stat-card"><span>Port đạt</span><strong id="proxyGoodCount">0</strong></div>
+            <div class="stat-card warning"><span>Tổng port</span><strong id="proxyPortTotal">0</strong></div>
+          </section>
+
+          <section class="table-panel">
+            <div class="table-title">
+              <span>Pool 9Proxy</span>
+              <span id="proxyWarningText">Chưa check proxy pool.</span>
+            </div>
+            <div class="table-wrap compact-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Port</th>
+                    <th>IP</th>
+                    <th>Online</th>
+                    <th>Ping</th>
+                    <th>Tuổi IP</th>
+                    <th>Profile gần nhất</th>
+                    <th>Lỗi</th>
+                  </tr>
+                </thead>
+                <tbody id="proxyPortRows">
+                  <tr><td colspan="7" class="empty">Chưa có dữ liệu.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <div class="filter-meta-row">
+            <span id="proxySelectionSummary" class="bulk-filter-summary">Đang chọn 0 con.</span>
+            <button id="clearProxySelectionBtn" class="ghost-btn small-btn" type="button">Bỏ chọn</button>
+          </div>
+
+          <section class="table-panel">
+            <div class="table-title">
+              <span>Danh sách profile gán proxy</span>
+              <span>Chạy theo folder đang chọn, không trùng IP vừa dùng.</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th><input id="selectAllProxyRows" type="checkbox" /></th>
+                    <th>Tên profile hiện tại</th>
+                    <th>ID profile</th>
+                    <th>UID</th>
+                    <th>Proxy trong Sheet</th>
+                    <th>Folder</th>
+                  </tr>
+                </thead>
+                <tbody id="proxyRows">
+                  <tr><td colspan="6" class="empty">Chưa có dữ liệu.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="logsModule" class="module-view hidden">
+          <header class="hero">
+            <div>
+              <div class="eyebrow">System Timeline</div>
+              <h2>Nhật ký tool</h2>
+              <p>Theo dõi realtime và xem lại tool đã làm gì, lỗi ở bước nào.</p>
+            </div>
+            <div class="actions">
+              <button id="refreshLogsBtn" class="ghost-btn">
+                <span class="btn-icon">↻</span>
+                <span>Tải nhật ký</span>
+              </button>
+            </div>
+          </header>
+
+          <section class="control-deck log-controls">
+            <label class="search-box">
+              <span>Tìm kiếm</span>
+              <input id="logSearchInput" placeholder="ID, tool, lỗi, bước đang chạy..." />
+            </label>
+            <label>
+              <span>Loại</span>
+              <select id="logTypeFilter">
+                <option value="all">Tất cả</option>
+                <option value="info">Info</option>
+                <option value="warn">Warn</option>
+                <option value="error">Error</option>
+                <option value="success">Success</option>
+              </select>
+            </label>
+            <label>
+              <span>Tool</span>
+              <select id="logToolFilter">
+                <option value="all">Tất cả</option>
+                <option value="xem thông báo">Xem thông báo</option>
+                <option value="lam full">Làm full</option>
+              </select>
+            </label>
+            <button id="clearLogFilterBtn" class="ghost-btn">Xóa lọc</button>
+          </section>
+
+          <section class="table-panel log-panel">
+            <div class="table-title">
+              <span>Bảng nhật ký</span>
+              <span id="logCount">0 dòng</span>
+            </div>
+            <div id="logRows" class="log-stream">
+              <div class="empty">Chưa có nhật ký.</div>
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+    <script src="/app.js?v=limited-update-20260831-1"></script>
+  </body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
