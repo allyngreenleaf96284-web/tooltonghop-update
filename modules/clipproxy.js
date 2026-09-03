@@ -172,12 +172,42 @@ function findClipProxyInPayload(payload) {
   return null;
 }
 
+function collectClipProxiesFromPayload(payload, found = []) {
+  if (typeof payload === "string") {
+    found.push(...parseClipProxyTextAll(payload));
+    return found;
+  }
+  const direct = proxyFromObject(payload);
+  if (direct) found.push(direct);
+  if (Array.isArray(payload)) {
+    for (const item of payload) collectClipProxiesFromPayload(item, found);
+    return found;
+  }
+  if (payload && typeof payload === "object") {
+    for (const key of ["data", "result", "proxy", "proxies", "list", "items"]) {
+      collectClipProxiesFromPayload(payload[key], found);
+    }
+  }
+  return found;
+}
+
 function parseClipProxyText(text) {
+  return parseClipProxyTextAll(text)[0] || null;
+}
+
+function parseClipProxyTextAll(text) {
   const body = String(text || "").trim();
-  if (!body) return null;
+  if (!body) return [];
+  const result = [];
+  const seen = new Set();
+  const push = (proxy) => {
+    if (!proxy?.raw || seen.has(proxy.raw)) return;
+    seen.add(proxy.raw);
+    result.push(proxy);
+  };
   try {
-    const parsed = findClipProxyInPayload(JSON.parse(body));
-    if (parsed) return parsed;
+    const parsed = collectClipProxiesFromPayload(JSON.parse(body));
+    for (const proxy of parsed) push(proxy);
   } catch {}
 
   const candidates = body
@@ -187,9 +217,20 @@ function parseClipProxyText(text) {
   const inlineMatches = body.match(/(?:https?:\/\/|socks5:\/\/)?[a-z0-9.-]+:\d{1,5}:[^\s,;]+:[^\s,;]+/gi) || [];
   for (const item of [...candidates, ...inlineMatches]) {
     const parsed = parseClipProxyLine(item);
-    if (parsed) return parsed;
+    if (parsed) push(parsed);
   }
-  return null;
+  return result;
+}
+
+function describeClipProxyResponse(text) {
+  const body = String(text || "").trim();
+  if (!body) return "body rong";
+  try {
+    const payload = JSON.parse(body);
+    const message = payload?.message || payload?.msg || payload?.error || payload?.detail;
+    if (message) return `${message}`.slice(0, 180);
+  } catch {}
+  return body.slice(0, 180);
 }
 
 async function fetchWithTimeout(url, timeoutMs) {
@@ -205,12 +246,12 @@ async function fetchWithTimeout(url, timeoutMs) {
   }
 }
 
-function buildClipProxyUrl(config, stateName) {
+function buildClipProxyUrl(config, stateName, num = 1) {
   const proxyConfig = normalizeClipProxyConfig(config);
   const params = new URLSearchParams({
     key: proxyConfig.clipProxyKey,
     port: String(proxyConfig.clipProxyPort),
-    num: "1",
+    num: String(Math.max(1, Math.min(10, Math.floor(Number(num) || 1)))),
     country: proxyConfig.clipProxyCountry,
     state: stateName
   });
@@ -669,39 +710,45 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog }) {
   async function getNewProxy(config, stateName) {
     const proxyConfig = normalizeClipProxyConfig(config);
     if (!proxyConfig.clipProxyKey) throw new Error("Chua cau hinh ClipProxy key.");
-    const url = buildClipProxyUrl(proxyConfig, stateName);
+    const requestCount = Math.max(1, Math.min(10, proxyConfig.clipProxyPoolSize || 1));
+    const url = buildClipProxyUrl(proxyConfig, stateName, requestCount);
     const text = await fetchWithTimeout(url, proxyConfig.clipProxyRequestTimeoutMs);
-    const proxy = parseClipProxyText(text);
-    if (!proxy) throw new Error(`ClipProxy tra ve sai dinh dang: ${text.slice(0, 120)}`);
-    const checked = await measureTcp(proxy, proxyConfig.clipProxyPingLimitMs);
-    const info = checked.alive ? await fetchIpInfoViaProxy(proxy, proxyConfig.clipProxyInfoTimeoutMs) : null;
-    const health = healthFromChecks(proxyConfig, stateName, checked, info);
-    const slot = {
-      id: `${proxy.raw}|${Date.now()}|${Math.random().toString(36).slice(2, 8)}`,
-      state: stateName,
-      proxy,
-      raw: proxy.raw,
-      alive: health.alive,
-      pingMs: checked.pingMs,
-      ipinfoPingMs: info?.pingMs ?? null,
-      exitIp: info?.ip || "",
-      city: info?.city || "",
-      region: info?.region || "",
-      country: info?.country || "",
-      org: info?.org || "",
-      timezone: info?.timezone || "",
-      ipinfoSource: info?.source || "",
-      lastError: health.error,
-      createdAt: Date.now(),
-      lastCheckedAt: Date.now(),
-      lastAssignedAt: 0,
-      usageCount: 0,
-      coldUntil: 0,
-      coldReason: "",
-      inUse: false,
-      assignedProfileId: ""
-    };
-    return slot;
+    const proxies = parseClipProxyTextAll(text);
+    if (!proxies.length) throw new Error(`ClipProxy khong tra proxy hop le: ${describeClipProxyResponse(text)}`);
+    let lastSlot = null;
+    for (const proxy of proxies) {
+      const checked = await measureTcp(proxy, proxyConfig.clipProxyPingLimitMs);
+      const info = checked.alive ? await fetchIpInfoViaProxy(proxy, proxyConfig.clipProxyInfoTimeoutMs) : null;
+      const health = healthFromChecks(proxyConfig, stateName, checked, info);
+      const slot = {
+        id: `${proxy.raw}|${Date.now()}|${Math.random().toString(36).slice(2, 8)}`,
+        state: stateName,
+        proxy,
+        raw: proxy.raw,
+        alive: health.alive,
+        pingMs: checked.pingMs,
+        ipinfoPingMs: info?.pingMs ?? null,
+        exitIp: info?.ip || "",
+        city: info?.city || "",
+        region: info?.region || "",
+        country: info?.country || "",
+        org: info?.org || "",
+        timezone: info?.timezone || "",
+        ipinfoSource: info?.source || "",
+        lastError: health.error,
+        createdAt: Date.now(),
+        lastCheckedAt: Date.now(),
+        lastAssignedAt: 0,
+        usageCount: 0,
+        coldUntil: 0,
+        coldReason: "",
+        inUse: false,
+        assignedProfileId: ""
+      };
+      lastSlot = slot;
+      if (slot.alive && !isTooSlow(slot, proxyConfig)) return slot;
+    }
+    return lastSlot;
   }
 
   async function checkSlot(config, slot) {
@@ -1007,8 +1054,6 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog }) {
     checkAll
   };
 }
-
-
 
 
 
