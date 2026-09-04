@@ -2,6 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFile } from "node:fs/promises";
 import { buildStandardName, buildFullSuccessToken } from "./profile_name.js";
+import { withFacebookLocale } from "./facebook_locale.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const US_LOCATION_FILE = path.resolve(__dirname, "../data/us_locations.txt");
@@ -336,7 +337,7 @@ export function createDangBai({
       throw makeBiOutError("Marketplace yeu cau login lai giua chung.");
     };
     manager.waitForMarketplaceReady = async (page) => {
-      await manager.gotoWithRetry(page, CREATE_ITEM_URL, row, 3);
+      await manager.gotoWithRetry(page, withFacebookLocale(CREATE_ITEM_URL), row, 3);
       await page.waitForSelector("body", { timeout: 15000 });
     };
     manager.loginWithCookie = async () => { throw makeBiOutError("Tool da khoa login lai bang cookie giua chung."); };
@@ -351,7 +352,7 @@ export function createDangBai({
 
   async function ensureCreateItemReady(manager, page, row, profileId, job) {
     for (let attempt = 1; attempt <= 3; attempt += 1) {
-      await manager.gotoWithRetry(page, CREATE_ITEM_URL, row, 3);
+      await manager.gotoWithRetry(page, withFacebookLocale(CREATE_ITEM_URL), row, 3);
       await page.waitForSelector("body", { timeout: 15000 });
       const state = await page.evaluate(() => {
         const bodyText = String(document.body?.innerText || "").replace(/\s+/g, " ").trim();
@@ -1248,4 +1249,3 @@ export function createDangBai({
 
   return { runQueue };
 }
-

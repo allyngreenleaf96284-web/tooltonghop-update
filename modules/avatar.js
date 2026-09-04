@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { withFacebookLocale } from "./facebook_locale.js";
+
 const PROFILE_URL = "https://www.facebook.com/profile";
 const STABLE_AVATAR_CONCURRENCY = 2;
 const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
@@ -156,11 +158,12 @@ function patchStableWindowTiling(manager, workerSlot = 0, workerTotal = 1) {
 }
 
 async function gotoWithRetry(manager, page, url, row, attempts = 3) {
-  if (typeof manager.gotoWithRetry === "function") return manager.gotoWithRetry(page, url, row, attempts);
+  const targetUrl = withFacebookLocale(url);
+  if (typeof manager.gotoWithRetry === "function") return manager.gotoWithRetry(page, targetUrl, row, attempts);
   let lastError = null;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
+      await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
       await page.waitForSelector("body", { timeout: 30000 }).catch(() => {});
       return true;
     } catch (error) {
@@ -168,7 +171,7 @@ async function gotoWithRetry(manager, page, url, row, attempts = 3) {
       await sleep(1500 * attempt);
     }
   }
-  throw lastError || new Error(`Khong vao duoc ${url}`);
+  throw lastError || new Error(`Khong vao duoc ${targetUrl}`);
 }
 
 async function mouseClickPoint(page, point) {

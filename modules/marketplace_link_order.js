@@ -1,3 +1,5 @@
+import { withFacebookLocale } from "./facebook_locale.js";
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function normalizeHeader(value) {
@@ -213,7 +215,7 @@ async function classifyCurrentPage(page, timeoutMs) {
 }
 
 async function classifyPage(page, url, timeoutMs) {
-  await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+  await page.goto(withFacebookLocale(url), { waitUntil: "domcontentloaded", timeout: timeoutMs });
   return classifyCurrentPage(page, timeoutMs);
 }
 

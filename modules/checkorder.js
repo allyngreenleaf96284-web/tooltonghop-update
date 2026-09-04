@@ -1,3 +1,5 @@
+import { withFacebookLocale } from "./facebook_locale.js";
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const DASHBOARD_URL = "https://www.facebook.com/marketplace/you/dashboard";
@@ -210,14 +212,15 @@ export function createCheckOrderTool({
     };
   }
   async function gotoWithRetry(manager, page, url, row, attempts = 3) {
+    const targetUrl = withFacebookLocale(url);
     if (typeof manager.gotoWithRetry === "function") {
-      await manager.gotoWithRetry(page, url, row, attempts);
+      await manager.gotoWithRetry(page, targetUrl, row, attempts);
       return;
     }
     let lastError = null;
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       try {
-        await page.goto(url, { waitUntil: "domcontentloaded", timeout: 90000 });
+        await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 90000 });
         await page.waitForSelector("body", { timeout: 30000 }).catch(() => {});
         return;
       } catch (error) {
@@ -830,7 +833,6 @@ export function createCheckOrderTool({
 
   return { runQueue };
 }
-
 
 
 

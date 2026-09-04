@@ -36,6 +36,7 @@ const limitedUpdateFiles = [
   "modules/dienmatkhau.js",
   "modules/lamfull.js",
   "modules/tuongtac.js",
+  "modules/facebook_locale.js",
   "modules/profile_name.js",
   "modules/nineproxy.js",
   "modules/clipproxy.js",

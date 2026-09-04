@@ -1,9 +1,9 @@
 {
   "name": "Tool Tong Hop Full",
   "channel": "full",
-  "version": "2026.09.03.9",
+  "version": "2026.09.04.1",
   "rawBase": "https://raw.githubusercontent.com/allyngreenleaf96284-web/tooltonghop-update/main",
-  "createdAt": "2026-09-03T10:35:01.231Z",
+  "createdAt": "2026-09-04T05:04:14.603Z",
   "files": [
     {
       "path": "server.js",
@@ -47,18 +47,18 @@
     },
     {
       "path": "modules/avatar.js",
-      "sha256": "fba15c681d0f4083c9512c782db90a6177e3e6399d616a88c2dabad09be13693",
-      "size": 31322
+      "sha256": "d80254aeda5af4c23f7a73d7957479f486af0cbfabcb3ff925595d2cd591d57e",
+      "size": 31445
     },
     {
       "path": "modules/checkorder.js",
-      "sha256": "9d96ca7d42e6218f1eaa2b5247ceff749ef63b16fb3182b5daede8912379a35c",
-      "size": 36264
+      "sha256": "5563c2109402d5a24d76e0f66671c4419aab4e0aca49a41cc7ea494e84e1dbe0",
+      "size": 36382
     },
     {
       "path": "modules/checktb.js",
-      "sha256": "1c1be5fc427b8e068f8f9cbc901b41f5dd1be77b5b26eb1e2ce5348efda1dfa6",
-      "size": 20594
+      "sha256": "30bf56cab61fb95137e9643e4883db0cfef44ffb4f9b8fffe34f349ba15ebbf7",
+      "size": 20673
     },
     {
       "path": "modules/clipproxy.js",
@@ -67,13 +67,13 @@
     },
     {
       "path": "modules/dangbai.js",
-      "sha256": "e4bd6f87de0ee13e00dbe652068147c58e84bffd9a1d229d750047498ae81150",
-      "size": 59168
+      "sha256": "e60fc18c49f3727c82d4fce5a8c2565d7bd7a192804d791dc269cb73d59d3b7a",
+      "size": 59266
     },
     {
       "path": "modules/dangnhap.js",
-      "sha256": "6a51440e232970d599a99a46d1dda452204cc6fedc1f786ac616cfd207b566b1",
-      "size": 99437
+      "sha256": "61014522ea515123a55e163b0987ba362d25d3b86fa90f1704f37607c92e8671",
+      "size": 99578
     },
     {
       "path": "modules/dienmatkhau.js",
@@ -82,13 +82,13 @@
     },
     {
       "path": "modules/lamfull.js",
-      "sha256": "0d2279dac94b2ebb6d4d36467fd301be52e84b9d8c7b8b4a4d79942fe7489dc4",
-      "size": 62671
+      "sha256": "cf1ee4b985511c16750a2eb177411e03319195f73f6acd3f091c920dd94ac0ac",
+      "size": 62810
     },
     {
       "path": "modules/marketplace_link_order.js",
-      "sha256": "6625f8345c3a773c149378d0ff95be1a0e525d94f5df3ed4429333586129342e",
-      "size": 21645
+      "sha256": "002da4df3eb7e502def9835849a1447bd2c904cccdaf5ffa3dab7e98bde873d9",
+      "size": 21725
     },
     {
       "path": "modules/nineproxy.js",
@@ -107,18 +107,23 @@
     },
     {
       "path": "modules/renewdoclap.js",
-      "sha256": "273c00c085b44bece4fb60b23755f0af5e7f3207f6e4d29f7200b73b3a56a4aa",
-      "size": 29991
+      "sha256": "dea43a6241c2169ec2026794e1358bc444d948b2766c84d41b647ef592c14209",
+      "size": 30091
     },
     {
       "path": "modules/taopage.js",
-      "sha256": "10b96a48fb768dc2703a4d563ebdec5d552926e2d032cb724f6d0456085e0e88",
-      "size": 43964
+      "sha256": "e4c1c3e3417e345e66b9747302741bdf8b1242731fc31562c7029943c96c126c",
+      "size": 44086
     },
     {
       "path": "modules/tuongtac.js",
       "sha256": "83c6b605cf67e6ad0912cfc60b1045642ba18b637a79ccbc073e41b8be004f83",
       "size": 142847
+    },
+    {
+      "path": "modules/facebook_locale.js",
+      "sha256": "5c22f1f2c57a51dc0a48ffb961091ed5836c3c18968d270c1c94170ec236cc1f",
+      "size": 708
     }
   ]
 }

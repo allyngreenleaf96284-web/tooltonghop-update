@@ -1,4 +1,5 @@
-﻿import crypto from "node:crypto";
+import crypto from "node:crypto";
+import { withFacebookLocale } from "./facebook_locale.js";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -119,14 +120,15 @@ export function createDangNhap({ addRuntimeLog }) {
   }
 
   async function gotoWithFallback(_manager, page, url, _row, attempts = 2) {
+    const targetUrl = withFacebookLocale(url);
     if (typeof _manager?.gotoWithRetry === "function") {
-      await _manager.gotoWithRetry(page, url, _row, attempts);
+      await _manager.gotoWithRetry(page, targetUrl, _row, attempts);
       return;
     }
     let lastError = null;
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       try {
-        await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
+        await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
         await page.waitForSelector("body", { timeout: 12000 }).catch(() => {});
         return;
       } catch (error) {
@@ -134,7 +136,7 @@ export function createDangNhap({ addRuntimeLog }) {
         await sleep(1200 * attempt);
       }
     }
-    throw lastError || new Error(`Khong mo duoc ${url}`);
+    throw lastError || new Error(`Khong mo duoc ${targetUrl}`);
   }
 
   function mainProfileUid(row, profileId) {
@@ -1283,7 +1285,7 @@ export function createDangNhap({ addRuntimeLog }) {
       await freshPage.setViewport(currentViewport).catch(() => {});
     }
     await freshPage.bringToFront().catch(() => {});
-    await freshPage.goto("https://www.facebook.com/", { waitUntil: "domcontentloaded", timeout: 45000 }).catch(() => {});
+    await freshPage.goto(withFacebookLocale("https://www.facebook.com/"), { waitUntil: "domcontentloaded", timeout: 45000 }).catch(() => {});
     await freshPage.waitForSelector("body", { timeout: 10000 }).catch(() => {});
     await sleep(1000);
     try {

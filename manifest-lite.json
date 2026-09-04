@@ -1,14 +1,14 @@
 {
   "name": "Tool Tong Hop Lite",
   "channel": "lite",
-  "version": "2026.09.03.9",
+  "version": "2026.09.04.1",
   "rawBase": "https://raw.githubusercontent.com/allyngreenleaf96284-web/tooltonghop-update/main/lite",
-  "createdAt": "2026-09-03T10:35:01.237Z",
+  "createdAt": "2026-09-04T05:04:14.631Z",
   "files": [
     {
       "path": "server.js",
-      "sha256": "63d6215a447b49d387c60a1e793150b922b3d6bc93a0dfd57e048f2fd9b767ff",
-      "size": 150291
+      "sha256": "4bc063d95a38ba7da066f6bf11ca675ae8ca4512641122297b0cf7a7a05549f4",
+      "size": 150323
     },
     {
       "path": "public/app.js",
@@ -27,8 +27,8 @@
     },
     {
       "path": "modules/dangnhap.js",
-      "sha256": "6a51440e232970d599a99a46d1dda452204cc6fedc1f786ac616cfd207b566b1",
-      "size": 99437
+      "sha256": "61014522ea515123a55e163b0987ba362d25d3b86fa90f1704f37607c92e8671",
+      "size": 99578
     },
     {
       "path": "modules/dienmatkhau.js",
@@ -37,8 +37,8 @@
     },
     {
       "path": "modules/lamfull.js",
-      "sha256": "8f74c765388a8ac29aa74a790d4eb1b04754cea5282016dfe3665578b882ef46",
-      "size": 62697
+      "sha256": "cf1ee4b985511c16750a2eb177411e03319195f73f6acd3f091c920dd94ac0ac",
+      "size": 62810
     },
     {
       "path": "modules/tuongtac.js",
@@ -64,6 +64,11 @@
       "path": "modules/proxypanel.js",
       "sha256": "6eb7d1ed2801afde5d799b97d69c9ed609cdd1288253700125d8c956171ffea8",
       "size": 51580
+    },
+    {
+      "path": "modules/facebook_locale.js",
+      "sha256": "5c22f1f2c57a51dc0a48ffb961091ed5836c3c18968d270c1c94170ec236cc1f",
+      "size": 708
     }
   ]
 }

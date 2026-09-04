@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { buildFullSuccessToken, buildStandardName } from "./profile_name.js";
+import { withFacebookLocale } from "./facebook_locale.js";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const US_STATES = new Set([
@@ -459,7 +460,7 @@ function isMarketplaceCreateStuck(snapshot) {
 async function ensureMarketplaceCreatePageReady(manager, page, row) {
   let lastSnapshot = null;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
-    await manager.gotoWithRetry(page, "https://www.facebook.com/marketplace/create/item", row, 3);
+    await manager.gotoWithRetry(page, withFacebookLocale("https://www.facebook.com/marketplace/create/item"), row, 3);
     if (await manager.isLoggedOutMarketplace?.(page).catch(() => false)) {
       throw buildLoggedOutError(`[${row.uid}] Nick bi out giua chung khi vao Marketplace.`);
     }
@@ -659,7 +660,7 @@ async function ensureUsMarketplaceLocation(manager, page, row) {
   let lastError = null;
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
-      await manager.gotoWithRetry(page, "https://www.facebook.com/marketplace/", row, 2);
+      await manager.gotoWithRetry(page, withFacebookLocale("https://www.facebook.com/marketplace/"), row, 2);
       await sleep(2000);
       await manager.dismissCheckpointIfNeeded?.(page, row).catch(() => {});
 
@@ -1072,7 +1073,7 @@ export function createLamFull({
           await onSellerInfoInvalid(error, attempt);
           try {
             await page.bringToFront().catch(() => {});
-            await page.goto("https://www.facebook.com/marketplace/create/item", { waitUntil: "domcontentloaded", timeout: 45000 }).catch(() => {});
+            await page.goto(withFacebookLocale("https://www.facebook.com/marketplace/create/item"), { waitUntil: "domcontentloaded", timeout: 45000 }).catch(() => {});
             await page.waitForSelector("body", { timeout: 10000 }).catch(() => {});
             await sleep(1800);
           } catch {}
@@ -1083,7 +1084,7 @@ export function createLamFull({
         if (genericFailures >= 3) break;
         try {
           await page.bringToFront().catch(() => {});
-          await page.goto("https://www.facebook.com/", { waitUntil: "domcontentloaded", timeout: 45000 }).catch(() => {});
+          await page.goto(withFacebookLocale("https://www.facebook.com/"), { waitUntil: "domcontentloaded", timeout: 45000 }).catch(() => {});
           await page.waitForSelector("body", { timeout: 10000 }).catch(() => {});
           await sleep(1500);
         } catch {}

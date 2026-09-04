@@ -1,3 +1,5 @@
+import { withFacebookLocale } from "./facebook_locale.js";
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const DASHBOARD_URL = "https://www.facebook.com/marketplace/you/dashboard";
@@ -92,7 +94,7 @@ export function createRenewDocLapTool({
   async function gotoClean(page, url) {
     await page.goto("about:blank", { waitUntil: "domcontentloaded", timeout: 15000 }).catch(() => {});
     await sleep(350);
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 }).catch(() => {});
+    await page.goto(withFacebookLocale(url), { waitUntil: "domcontentloaded", timeout: 60000 }).catch(() => {});
     await page.waitForSelector("body", { timeout: 15000 }).catch(() => {});
   }
 
@@ -383,7 +385,7 @@ export function createRenewDocLapTool({
     let state = await renewState(page);
     if (!state.ready) {
       log(profileId, "renew", `[${row.uid}] bam bucket chua mo Renew list, mo thang URL renew. url=${state.url} text=${state.textLength}`, "warn");
-      await page.goto(RENEW_URL, { waitUntil: "domcontentloaded", timeout: 60000 }).catch(() => {});
+      await page.goto(withFacebookLocale(RENEW_URL), { waitUntil: "domcontentloaded", timeout: 60000 }).catch(() => {});
       await page.waitForSelector("body", { timeout: 15000 }).catch(() => {});
       await sleep(5000);
       await closeTopPanels(page);

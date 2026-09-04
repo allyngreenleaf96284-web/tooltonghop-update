@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { withFacebookLocale } from "./facebook_locale.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CREATE_PAGE_URL = "https://www.facebook.com/pages/creation/?ref_type=launch_point";
@@ -195,11 +196,12 @@ async function waitForBody(page, timeout = 30000) {
 }
 
 async function gotoWithRetry(manager, page, url, row, attempts = 3) {
-  if (typeof manager.gotoWithRetry === "function") return manager.gotoWithRetry(page, url, row, attempts);
+  const targetUrl = withFacebookLocale(url);
+  if (typeof manager.gotoWithRetry === "function") return manager.gotoWithRetry(page, targetUrl, row, attempts);
   let lastError = null;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
+      await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
       await waitForBody(page);
       return true;
     } catch (error) {
@@ -207,7 +209,7 @@ async function gotoWithRetry(manager, page, url, row, attempts = 3) {
       await sleep(1500 * attempt);
     }
   }
-  throw lastError || new Error(`Khong vao duoc ${url}`);
+  throw lastError || new Error(`Khong vao duoc ${targetUrl}`);
 }
 
 async function fillByLabel(page, labels, value) {

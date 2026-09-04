@@ -1,4 +1,5 @@
 import { buildStandardName } from "./profile_name.js";
+import { withFacebookLocale } from "./facebook_locale.js";
 
 export function createCheckTb({
   getManager,
@@ -232,7 +233,7 @@ export function createCheckTb({
     };
 
     manager.waitForMarketplaceReady = async (page, currentRow = null) => {
-      await manager.gotoWithRetry(page, "https://www.facebook.com/marketplace/create/item", currentRow || row, 3);
+      await manager.gotoWithRetry(page, withFacebookLocale("https://www.facebook.com/marketplace/create/item"), currentRow || row, 3);
       if (await manager.isLoggedOutMarketplace?.(page).catch(() => false)) {
         throw buildLoggedOutError(`[${row.uid}] Nick bi out giua chung khi vao Marketplace.`);
       }
