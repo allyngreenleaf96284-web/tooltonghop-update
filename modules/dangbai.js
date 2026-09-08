@@ -104,6 +104,15 @@ async function readLatestHideProfileName(manager, profileId, fallbackName = "") 
   return String(latestProfile?.name || fallbackName || profileId).trim();
 }
 
+async function readListingDescription(payload = {}) {
+  const folderPath = String(payload?.folderPath || "").trim();
+  if (!folderPath) throw new Error("Khong xac dinh duoc folder du lieu dang bai.");
+  const descriptionPath = path.join(folderPath, "description.txt");
+  const description = String(await readFile(descriptionPath, "utf8").catch(() => "")).trim();
+  if (!description) throw new Error(`Khong tim thay description.txt hoac file dang trong trong ${folderPath}`);
+  return { ...payload, description, descriptionFile: descriptionPath };
+}
+
 export function createDangBai({
   getManager,
   dangNhap,
@@ -301,6 +310,17 @@ export function createDangBai({
         const cookies = await page.cookies("https://www.facebook.com").catch(() => []);
         return cookies.map((item) => `${item.name}=${item.value}`).join("; ");
       };
+    }
+    if (typeof manager.fillStepOne === "function" && !manager.__toolDescriptionPatchApplied) {
+      const originalFillStepOne = manager.fillStepOne;
+      manager.fillStepOne = async function patchedFillStepOne(page, payload) {
+        await originalFillStepOne.call(this, page, payload);
+        const description = String(payload?.description || "").trim();
+        if (!description) throw new Error("Khong co description.txt cho bai dang.");
+        await this.setFieldValueByExactLabel(page, "Description", description);
+        await sleep(1800);
+      };
+      manager.__toolDescriptionPatchApplied = true;
     }
   }
 
@@ -923,7 +943,7 @@ export function createDangBai({
     throw new Error("Khong the di toi buoc Publish.");
   }
 
-  async function runPostTwoV(manager, page, payload, row, profileId, markNoRollback = () => {}) {
+  async function runPostListing(manager, page, payload, row, profileId, barStatus = "2v", markNoRollback = () => {}) {
     const guardLimitReached = async () => {
       const limitReached = await page.evaluate(() => {
         const text = String(document.body?.innerText || "").replace(/\s+/g, " ").trim();
@@ -950,12 +970,17 @@ export function createDangBai({
     await restoreNaturalMarketplaceView(manager, page);
     await sleep(1200);
     await clickMoreDetailsIfNeeded(page);
-    const locations = await loadUsLocationLines();
-    const target = randomItem(locations);
-    if (!target) throw new Error("File us_locations.txt dang trong.");
-    log(profileId, "location dang bai", `doi location dang bai sang "${target}"`, "info");
-    const picked = await ensurePostLocation(page, target, profileId);
-    log(profileId, "location dang bai", `da chon location: ${picked}`, "success");
+    let picked = "";
+    if (barStatus === "2v") {
+      const locations = await loadUsLocationLines();
+      const target = randomItem(locations);
+      if (!target) throw new Error("File us_locations.txt dang trong.");
+      log(profileId, "location dang bai", `doi location dang bai sang "${target}"`, "info");
+      picked = await ensurePostLocation(page, target, profileId);
+      log(profileId, "location dang bai", `da chon location: ${picked}`, "success");
+    } else {
+      log(profileId, "location dang bai", "3v: bo qua buoc dien location theo quy trinh dang bai.", "info");
+    }
     if (runtime.stopRequested) {
       const stopped = new Error("Da nhan lenh dung han truoc khi bam Publish.");
       stopped.status = "stopped";
@@ -1054,32 +1079,19 @@ export function createDangBai({
         throw new Error("Khong doc duoc progress tao bai dang.");
       }
 
-      const payload = await step(profileId, job, "lay payload dang bai", async () => manager.getRandomListingPayload(), { timeoutMs: 30000 });
-
-      if (initialState.kind === "progress" && Number(initialState.totalSteps) === 3) {
-        allocatedSeller = await step(profileId, job, "lay seller info", async () => allocateSellerInfoRow(config, uid), { timeoutMs: 30000 });
-        row.raw = { ...row.raw, ...allocatedSeller.raw };
-        const outcome = await step(profileId, job, "luong full goc Shipping Full Studio", async () => manager.runFullFlowAttempt(page, browser, row, profileId), { timeoutMs: 480000, allowFinishAfterStop: true });
-        if (!outcome?.ok) throw new Error(outcome?.detail || "Luồng full gốc không thành công.");
-        noRollback = true;
-        await updateSellerInfoUid(config, allocatedSeller, uid);
-        const fullToken = buildFullSuccessToken(
-          allocatedSeller?.raw?.SSN || allocatedSeller?.raw?.ssn || allocatedSeller?.raw?.Ssn || ""
-        );
-        const tenChuan = buildStandardName({
-          currentName,
-          sheetRow,
-          uid,
-          soVach: "3v",
-          fullToken
-        });
-        await rename(manager, profileId, tenChuan);
+      const detectedBar = initialState.kind === "publish_only"
+        ? "2v"
+        : Number(initialState.totalSteps) === 3
+          ? "3v"
+          : Number(initialState.totalSteps) === 2
+            ? "2v"
+            : String(initialState.totalSteps || "").trim();
+      if (detectedBar === "4") {
         const update = {
-          Tool: "đã làm full",
-          trangThai: "thành công",
-          soVach: "3v",
-          chiTiet: "đã bấm submit info thành công",
-          tenChuan
+          Tool: "đã dừng",
+          trangThai: "bỏ qua",
+          soVach: "4v",
+          chiTiet: "4v - không đăng bài"
         };
         await writeSheet(sheetWriter, profileId, update);
         await sheetWriter.commit();
@@ -1087,24 +1099,29 @@ export function createDangBai({
         job.result = update;
         return update;
       }
+      if (!["2v", "3v"].includes(detectedBar)) {
+        throw new Error(`Workflow dang bai chua ho tro ${detectedBar || "khong ro"} vach.`);
+      }
+      const payload = await step(profileId, job, "lay payload dang bai", async () =>
+        readListingDescription(await manager.getRandomListingPayload()), { timeoutMs: 30000 });
 
-      const postResult = await step(profileId, job, "dang bai 2 vach", async () =>
-        runPostTwoV(manager, page, payload, row, profileId, () => { noRollback = true; })
+      const postResult = await step(profileId, job, `dang bai ${detectedBar}`, async () =>
+        runPostListing(manager, page, payload, row, profileId, detectedBar, () => { noRollback = true; })
       , { timeoutMs: 480000 });
       const dbToken = nextDbToken(currentName, sheetRow);
       const tenChuan = buildStandardName({
         currentName,
         sheetRow,
         uid,
-        soVach: "2v",
+        soVach: detectedBar,
         dbToken
       });
       await rename(manager, profileId, tenChuan);
       const update = {
         Tool: "đã đăng bài",
         trangThai: "thành công",
-        soVach: "2v",
-        chiTiet: "đã đăng bài thành công",
+        soVach: detectedBar,
+        chiTiet: `${detectedBar} - đã đăng bài thành công`,
         tenChuan
       };
       await writeSheet(sheetWriter, profileId, update);
