@@ -401,6 +401,15 @@ function normalizeGpmBaseUrl(config = {}) {
   return withoutSlash.endsWith("/api/v1") ? withoutSlash : `${withoutSlash}/api/v1`;
 }
 
+function isLocalGpmBaseUrl(baseUrl) {
+  try {
+    const host = new URL(String(baseUrl || "")).hostname.toLowerCase();
+    return ["localhost", "127.0.0.1", "::1"].includes(host);
+  } catch {
+    return false;
+  }
+}
+
 async function probeGpmBaseUrl(baseUrl, timeoutMs = 450) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -411,7 +420,8 @@ async function probeGpmBaseUrl(baseUrl, timeoutMs = 450) {
     });
     const text = await response.text();
     const data = text ? JSON.parse(text) : {};
-    return response.ok && data && (data.success === true || data.data !== undefined);
+    return response.ok && data && data.success !== false
+      && (data.success === true || data.data !== undefined);
   } catch {
     return false;
   } finally {
@@ -447,6 +457,15 @@ async function discoverGpmBaseUrl(config = {}) {
       });
       return found;
     }
+  }
+  if (!isLocalGpmBaseUrl(configured)) {
+    addRuntimeLog(`[GPM API] Bo qua URL khong phai Local API: ${configured}. GPM Local API chi dung localhost/127.0.0.1.`, "warn", "", {
+      tool: "he thong",
+      step: "GPM API discover"
+    });
+    gpmBaseCache.baseUrl = DEFAULT_CONFIG.gpmBaseUrl;
+    gpmBaseCache.checkedAt = now;
+    return DEFAULT_CONFIG.gpmBaseUrl;
   }
   gpmBaseCache.baseUrl = configured;
   gpmBaseCache.checkedAt = now;
@@ -592,8 +611,9 @@ async function gpmRequestWithRetry(config, endpoint, options = {}) {
       const message = String(error?.message || error || "");
       const retryableStatus = [408, 425, 429, 500, 502, 503, 504].includes(Number(error?.status));
       const retryableNetwork = /fetch failed|network|timeout|timed out|ECONNRESET|ECONNREFUSED|EPIPE|ENOTFOUND|EAI_AGAIN|socket|aborted/i.test(message);
-      if (attempt >= maxAttempts || (!retryableStatus && !retryableNetwork)) break;
-      if (retryableNetwork) {
+      const retryableAuthentication = /unauthenticated|unauthorized/i.test(message);
+      if (attempt >= maxAttempts || (!retryableStatus && !retryableNetwork && !retryableAuthentication)) break;
+      if (retryableNetwork || retryableAuthentication) {
         gpmBaseCache.baseUrl = "";
         gpmBaseCache.checkedAt = 0;
       }
@@ -3608,7 +3628,6 @@ server.listen(5177, "127.0.0.1", () => {
   startBackgroundHideSheetSync();
   startProxyMonitor();
 });
-
 
 
 
