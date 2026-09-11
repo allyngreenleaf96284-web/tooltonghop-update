@@ -21,6 +21,7 @@ import { buildStandardName } from "./modules/profile_name.js";
 import { createNineProxyTool, mergeProxyDefaults, sanitizeProxyConfigInput } from "./modules/nineproxy.js";
 import { createClipProxyTool, mergeClipProxyDefaults, sanitizeClipProxyConfigInput } from "./modules/clipproxy.js";
 import { createProxyPanelTool, isProxyPanelStateProxy, mergeProxyPanelDefaults, sanitizeProxyPanelConfigInput } from "./modules/proxypanel.js";
+import { startAutoRetryBatch } from "./modules/batch_retry.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -228,6 +229,7 @@ const toolRuntime = {
   running: false,
   stopRequested: false,
   currentTool: "",
+  batch: null,
   queue: [],
   manager: null,
   logs: [],
@@ -2822,6 +2824,7 @@ function getToolStatusPayload() {
     running: toolRuntime.running,
     stopRequested: toolRuntime.stopRequested,
     currentTool: toolRuntime.currentTool || "",
+    batch: toolRuntime.batch || null,
     jobs: [...toolRuntime.jobs.values()],
     logs: toolRuntime.logs.slice(-1000),
     autoSync: {
@@ -3236,8 +3239,14 @@ async function handleApi(req, res) {
       const config = forceSingleThreadForProxyPanel(await resolveAccountSheetConfig(await readConfig()));
       if (body.concurrency !== undefined) config.checkConcurrency = clampConcurrency(body.concurrency, config.checkConcurrency || DEFAULT_CONFIG.checkConcurrency, 4);
       if (stateProxyUsesProxyPanel(config)) config.checkConcurrency = 1;
-      const data = await checkTbModule.runNotificationQueue(body.profileIds || [], config, {
-        concurrency: clampConcurrency(config.checkConcurrency, DEFAULT_CONFIG.checkConcurrency)
+      const data = await startAutoRetryBatch({
+        runtime: toolRuntime,
+        module: { runQueue: checkTbModule.runNotificationQueue },
+        tool: "xem thong bao",
+        profileIds: body.profileIds || [],
+        config,
+        options: { concurrency: clampConcurrency(config.checkConcurrency, DEFAULT_CONFIG.checkConcurrency) },
+        addRuntimeLog
       });
       return jsonResponse(res, 200, { ok: true, data });
     }
@@ -3250,9 +3259,17 @@ async function handleApi(req, res) {
       if (body.checkOrderSpreadsheetId !== undefined) config.checkOrderSpreadsheetId = String(body.checkOrderSpreadsheetId || "").trim();
       if (body.checkOrderSheetName !== undefined) config.checkOrderSheetName = String(body.checkOrderSheetName || DEFAULT_CONFIG.checkOrderSheetName).trim() || DEFAULT_CONFIG.checkOrderSheetName;
       const rowsById = config.spreadsheetId && profileIds.length ? await getRowsByProfileIds(config, profileIds).catch(() => new Map()) : new Map();
-      const data = await checkOrderModule.runQueue(profileIds, config, {
-        concurrency: clampConcurrency(config.checkOrderConcurrency, DEFAULT_CONFIG.checkOrderConcurrency, 4),
-        rowsById
+      const data = await startAutoRetryBatch({
+        runtime: toolRuntime,
+        module: checkOrderModule,
+        tool: "check order",
+        profileIds,
+        config,
+        options: {
+          concurrency: clampConcurrency(config.checkOrderConcurrency, DEFAULT_CONFIG.checkOrderConcurrency, 4),
+          rowsById
+        },
+        addRuntimeLog
       });
       return jsonResponse(res, 200, { ok: true, data });
     }
@@ -3260,7 +3277,24 @@ async function handleApi(req, res) {
       const body = await parseBody(req);
       const savedConfig = await saveConfigV2({ ...(await readConfig()), ...body });
       const config = await resolveAccountSheetConfig(savedConfig);
-      const data = await marketplaceLinkOrderModule.run(config);
+      const nick1 = String(config.marketplaceCheckNick1Id || "").trim();
+      const nick2 = String(config.marketplaceCheckNick2Id || "").trim();
+      const linkProfileIds = [nick1, nick2].filter(Boolean);
+      const data = await startAutoRetryBatch({
+        runtime: toolRuntime,
+        tool: "check link order",
+        profileIds: linkProfileIds,
+        config,
+        addRuntimeLog,
+        invoke: (runIds) => {
+          const wanted = new Set(runIds);
+          return marketplaceLinkOrderModule.run({
+            ...config,
+            marketplaceCheckNick1Id: wanted.has(nick1) ? nick1 : "",
+            marketplaceCheckNick2Id: wanted.has(nick2) ? nick2 : ""
+          });
+        }
+      });
       return jsonResponse(res, 200, { ok: true, config, data });
     }
     if (req.method === "POST" && url.pathname === "/api/tools/lam-full") {
@@ -3268,16 +3302,29 @@ async function handleApi(req, res) {
       const config = forceSingleThreadForProxyPanel(await resolveAccountSheetConfig(await readConfig()));
       if (body.concurrency !== undefined) config.fullConcurrency = clampConcurrency(body.concurrency, config.fullConcurrency || DEFAULT_CONFIG.fullConcurrency, 4);
       if (stateProxyUsesProxyPanel(config)) config.fullConcurrency = 1;
-      const data = await lamFullModule.runQueue(body.profileIds || [], config);
+      const data = await startAutoRetryBatch({
+        runtime: toolRuntime,
+        module: lamFullModule,
+        tool: "lam full",
+        profileIds: body.profileIds || [],
+        config,
+        options: {},
+        addRuntimeLog
+      });
       return jsonResponse(res, 200, { ok: true, data });
     }
     if (req.method === "POST" && url.pathname === "/api/tools/dien-mat-khau") {
       const body = await parseBody(req);
-      const data = await dienMatKhauModule.runQueue(
-        body.profileIds || [],
-        await resolveAccountSheetConfig(await readConfig()),
-        { sourceSpreadsheetId: body.sourceSpreadsheetId }
-      );
+      const passwordConfig = await resolveAccountSheetConfig(await readConfig());
+      const data = await startAutoRetryBatch({
+        runtime: toolRuntime,
+        module: dienMatKhauModule,
+        tool: "dien mat khau",
+        profileIds: body.profileIds || [],
+        config: passwordConfig,
+        options: { sourceSpreadsheetId: body.sourceSpreadsheetId },
+        addRuntimeLog
+      });
       return jsonResponse(res, 200, { ok: true, data });
     }
     if (req.method === "POST" && url.pathname === "/api/tools/dang-bai") {
@@ -3285,10 +3332,15 @@ async function handleApi(req, res) {
       const config = forceSingleThreadForProxyPanel(await resolveAccountSheetConfig(await readConfig()));
       if (body.concurrency !== undefined) config.postConcurrency = clampConcurrency(body.concurrency, config.postConcurrency || DEFAULT_CONFIG.postConcurrency, 4);
       if (stateProxyUsesProxyPanel(config)) config.postConcurrency = 1;
-      const data = await dangBaiModule.runQueue(
-        body.profileIds || [],
-        config
-      );
+      const data = await startAutoRetryBatch({
+        runtime: toolRuntime,
+        module: dangBaiModule,
+        tool: "dang bai",
+        profileIds: body.profileIds || [],
+        config,
+        options: {},
+        addRuntimeLog
+      });
       return jsonResponse(res, 200, { ok: true, data });
     }
     if (req.method === "POST" && url.pathname === "/api/tools/tuong-tac") {
@@ -3296,14 +3348,30 @@ async function handleApi(req, res) {
       const config = forceSingleThreadForProxyPanel(await resolveAccountSheetConfig(await readConfig()));
       if (body.concurrency !== undefined) config.interactionConcurrency = clampConcurrency(body.concurrency, config.interactionConcurrency || DEFAULT_CONFIG.interactionConcurrency, 4);
       if (stateProxyUsesProxyPanel(config)) config.interactionConcurrency = 1;
-      const data = await tuongTacModule.runQueue(body.profileIds || [], config);
+      const data = await startAutoRetryBatch({
+        runtime: toolRuntime,
+        module: tuongTacModule,
+        tool: "tuong tac",
+        profileIds: body.profileIds || [],
+        config,
+        options: {},
+        addRuntimeLog
+      });
       return jsonResponse(res, 200, { ok: true, data });
     }
     if (req.method === "POST" && url.pathname === "/api/tools/renew-doc-lap") {
       const body = await parseBody(req);
       const config = forceSingleThreadForProxyPanel(await resolveAccountSheetConfig(await readConfig()));
       const concurrency = clampConcurrency(body.concurrency, config.interactionConcurrency || DEFAULT_CONFIG.interactionConcurrency, 4);
-      const data = await renewDocLapModule.runQueue(body.profileIds || [], config, { concurrency: stateProxyUsesProxyPanel(config) ? 1 : concurrency });
+      const data = await startAutoRetryBatch({
+        runtime: toolRuntime,
+        module: renewDocLapModule,
+        tool: "renew doc lap",
+        profileIds: body.profileIds || [],
+        config,
+        options: { concurrency: stateProxyUsesProxyPanel(config) ? 1 : concurrency },
+        addRuntimeLog
+      });
       return jsonResponse(res, 200, { ok: true, data });
     }
     if (req.method === "POST" && url.pathname === "/api/tools/tao-page") {
@@ -3311,7 +3379,15 @@ async function handleApi(req, res) {
       const config = forceSingleThreadForProxyPanel(await resolveAccountSheetConfig(await readConfig()));
       if (body.concurrency !== undefined) config.pageConcurrency = clampConcurrency(body.concurrency, config.pageConcurrency || DEFAULT_CONFIG.pageConcurrency, 4);
       if (stateProxyUsesProxyPanel(config)) config.pageConcurrency = 1;
-      const data = await taoPageModule.runQueue(body.profileIds || [], config);
+      const data = await startAutoRetryBatch({
+        runtime: toolRuntime,
+        module: taoPageModule,
+        tool: "tao page",
+        profileIds: body.profileIds || [],
+        config,
+        options: {},
+        addRuntimeLog
+      });
       return jsonResponse(res, 200, { ok: true, data });
     }
     if (req.method === "POST" && url.pathname === "/api/tools/avatar") {
@@ -3321,11 +3397,20 @@ async function handleApi(req, res) {
       if (stateProxyUsesProxyPanel(config)) config.avatarConcurrency = 1;
       if (body.avatarImagePath !== undefined) config.avatarImagePath = String(body.avatarImagePath || "").trim();
       if (body.avatarReplaceExisting !== undefined) config.avatarReplaceExisting = Boolean(body.avatarReplaceExisting);
-      const data = await avatarModule.runQueue(body.profileIds || [], config);
+      const data = await startAutoRetryBatch({
+        runtime: toolRuntime,
+        module: avatarModule,
+        tool: "doi avatar",
+        profileIds: body.profileIds || [],
+        config,
+        options: {},
+        addRuntimeLog
+      });
       return jsonResponse(res, 200, { ok: true, data });
     }
     if (req.method === "POST" && url.pathname === "/api/tools/stop") {
       toolRuntime.stopRequested = true;
+      if (toolRuntime.batch?.active) toolRuntime.batch.stopRequested = true;
       addRuntimeLog("[stop] Da nhan lenh dung han batch hien tai", "warn", "", {
         tool: toolRuntime.currentTool || "he thong",
         step: "dung han"
@@ -3523,10 +3608,6 @@ server.listen(5177, "127.0.0.1", () => {
   startBackgroundHideSheetSync();
   startProxyMonitor();
 });
-
-
-
-
 
 
 

@@ -2293,7 +2293,7 @@ async function refreshToolStatus() {
   try {
     const { data } = await api("/api/tools/status");
     renderToolProgress(data);
-    if (!data.running) {
+    if (!data.running && !data.batch?.active) {
       stopToolStatusPolling();
       await refreshHide({ silent: true });
       if ($("fullStatusText")) $("fullStatusText").textContent = "Tool làm full đã chạy xong.";
@@ -2315,21 +2315,46 @@ function renderToolProgress(data) {
   renderLogs();
   const allJobs = data.jobs || [];
   const doneStatuses = new Set(["done", "success", "completed", "error", "stopped", "cancelled", "skipped"]);
-  const buildProgress = (batchIds) => {
+  const sortProgressJobs = (jobs) => [...jobs].sort((a, b) => {
+    const statusRank = (job) => {
+      const status = String(job.status || "").toLowerCase();
+      if (["success", "done", "completed", "error", "stopped", "cancelled", "skipped"].includes(status)
+        && job.phaseState !== "retry_waiting") return 0;
+      if (status === "running") return 1;
+      if (status === "queued") return 2;
+      if (status === "retry_waiting" || job.phaseState === "retry_waiting") return 3;
+      return 2;
+    };
+    return statusRank(a) - statusRank(b)
+      || Number(a.batchOrder ?? 0) - Number(b.batchOrder ?? 0)
+      || String(a.profileId || "").localeCompare(String(b.profileId || ""), "en", { numeric: true });
+  });
+  const buildProgress = (batchIds, toolName) => {
     const wanted = new Set((batchIds || []).filter(Boolean));
-    const jobs = wanted.size ? allJobs.filter((job) => wanted.has(job.profileId)) : [];
+    const jobs = wanted.size ? sortProgressJobs(allJobs.filter((job) => wanted.has(job.profileId))) : [];
     const total = jobs.length || wanted.size;
-    const completed = jobs.filter((job) => doneStatuses.has(String(job.status || "").toLowerCase())).length;
-    const active = jobs.filter((job) => !doneStatuses.has(String(job.status || "").toLowerCase())).length;
+    const batch = data.batch?.tool === toolName ? data.batch : null;
+    const retryWaiting = jobs.filter((job) => job.phaseState === "retry_waiting" || String(job.status || "").toLowerCase() === "retry_waiting").length;
+    const retryRunning = jobs.filter((job) => job.phase === "retry" && String(job.status || "").toLowerCase() === "running").length;
+    const completed = jobs.filter((job) => doneStatuses.has(String(job.status || "").toLowerCase()) && job.phaseState !== "retry_waiting").length;
+    const active = jobs.filter((job) => !doneStatuses.has(String(job.status || "").toLowerCase()) || job.phaseState === "retry_waiting").length;
     const percent = total ? Math.max(0, Math.min(100, Math.round((completed / total) * 100))) : 0;
-    const summaryText = total
-      ? `Đã xong ${completed}/${total} profile, đang chạy ${active} profile.`
-      : "Chưa có batch đang chạy.";
-    return { jobs, total, completed, active, percent, summaryText };
+    const runningNames = jobs.filter((job) => String(job.status || "").toLowerCase() === "running")
+      .map((job) => job.profileId)
+      .slice(0, 4);
+    let summaryText = total ? `Đã xong ${completed}/${total} profile, còn ${active} profile.` : "Chưa có batch đang chạy.";
+    if (batch?.active && batch.phase === "retry_waiting") {
+      summaryText = `Lượt đầu đã hoàn tất. Đang chờ chạy lại ${retryWaiting} profile lỗi không xác định.`;
+    } else if (batch?.active && batch.phase === "retry") {
+      summaryText = `Lượt chạy lại ${batch.attempt}/${batch.maxRetries}: đang chạy ${retryRunning}, còn chờ ${Math.max(0, active - retryRunning)} profile.`;
+    } else if (runningNames.length) {
+      summaryText += ` Đang xử lý: ${runningNames.join(", ")}${runningNames.length >= 4 ? "..." : ""}.`;
+    }
+    return { jobs, total, completed, active, percent, summaryText, batch, retryWaiting, retryRunning };
   };
-  const notificationProgress = buildProgress(state.notificationBatchIds);
-  const checkOrderProgress = buildProgress(state.checkOrderBatchIds);
-  const linkOrderProgress = buildProgress(state.linkOrderBatchIds);
+  const notificationProgress = buildProgress(state.notificationBatchIds, "xem thong bao");
+  const checkOrderProgress = buildProgress(state.checkOrderBatchIds, "check order");
+  const linkOrderProgress = buildProgress(state.linkOrderBatchIds, "check link order");
   renderToolProgressPanel({
     panelId: "checkOrderToolProgressPanel",
     stateId: "checkOrderToolProgressState",
@@ -2337,7 +2362,7 @@ function renderToolProgress(data) {
     textId: "checkOrderToolProgressText",
     barId: "checkOrderToolProgressBar",
     listId: "checkOrderToolProgressList",
-    stateLabel: checkOrderProgress.total ? (data.running ? "đang chạy" : "xong") : "idle",
+    stateLabel: checkOrderProgress.total ? (checkOrderProgress.batch?.active ? (checkOrderProgress.batch.phase === "retry" ? "đang retry" : "đang chạy") : "xong") : "idle",
     countLabel: `${checkOrderProgress.completed} / ${checkOrderProgress.total}`,
     textLabel: checkOrderProgress.summaryText,
     percent: checkOrderProgress.percent,
@@ -2350,18 +2375,18 @@ function renderToolProgress(data) {
     textId: "linkOrderToolProgressText",
     barId: "linkOrderToolProgressBar",
     listId: "linkOrderToolProgressList",
-    stateLabel: linkOrderProgress.total ? (data.running ? "đang chạy" : "xong") : "idle",
+    stateLabel: linkOrderProgress.total ? (linkOrderProgress.batch?.active ? (linkOrderProgress.batch.phase === "retry" ? "đang retry" : "đang chạy") : "xong") : "idle",
     countLabel: `${linkOrderProgress.completed} / ${linkOrderProgress.total}`,
     textLabel: linkOrderProgress.summaryText,
     percent: linkOrderProgress.percent,
     jobs: linkOrderProgress.jobs
   });
-  const fullProgress = buildProgress(state.fullBatchIds);
-  const postProgress = buildProgress(state.postBatchIds);
-  const interactionProgress = buildProgress(state.interactionBatchIds);
-  const pageProgress = buildProgress(state.pageBatchIds);
-  const avatarProgress = buildProgress(state.avatarBatchIds);
-  const passwordProgress = buildProgress(state.passwordBatchIds);
+  const fullProgress = buildProgress(state.fullBatchIds, "lam full");
+  const postProgress = buildProgress(state.postBatchIds, "dang bai");
+  const interactionProgress = buildProgress(state.interactionBatchIds, "tuong tac");
+  const pageProgress = buildProgress(state.pageBatchIds, "tao page");
+  const avatarProgress = buildProgress(state.avatarBatchIds, "doi avatar");
+  const passwordProgress = buildProgress(state.passwordBatchIds, "dien mat khau");
   renderToolProgressPanel({
     panelId: "toolProgressPanel",
     stateId: "toolProgressState",
@@ -2369,7 +2394,7 @@ function renderToolProgress(data) {
     textId: "toolProgressText",
     barId: "toolProgressBar",
     listId: "toolProgressList",
-    stateLabel: notificationProgress.total ? (data.running ? "đang chạy" : "xong") : "idle",
+    stateLabel: notificationProgress.total ? (notificationProgress.batch?.active ? (notificationProgress.batch.phase === "retry" ? "đang retry" : "đang chạy") : "xong") : "idle",
     countLabel: `${notificationProgress.completed} / ${notificationProgress.total}`,
     textLabel: notificationProgress.summaryText,
     percent: notificationProgress.percent,
@@ -2382,7 +2407,7 @@ function renderToolProgress(data) {
     textId: "fullToolProgressText",
     barId: "fullToolProgressBar",
     listId: "fullToolProgressList",
-    stateLabel: fullProgress.total ? (data.running ? "đang chạy" : "xong") : "idle",
+    stateLabel: fullProgress.total ? (fullProgress.batch?.active ? (fullProgress.batch.phase === "retry" ? "đang retry" : "đang chạy") : "xong") : "idle",
     countLabel: `${fullProgress.completed} / ${fullProgress.total}`,
     textLabel: fullProgress.summaryText,
     percent: fullProgress.percent,
@@ -2395,7 +2420,7 @@ function renderToolProgress(data) {
     textId: "postToolProgressText",
     barId: "postToolProgressBar",
     listId: "postToolProgressList",
-    stateLabel: postProgress.total ? (data.running ? "đang chạy" : "xong") : "idle",
+    stateLabel: postProgress.total ? (postProgress.batch?.active ? (postProgress.batch.phase === "retry" ? "đang retry" : "đang chạy") : "xong") : "idle",
     countLabel: `${postProgress.completed} / ${postProgress.total}`,
     textLabel: postProgress.summaryText,
     percent: postProgress.percent,
@@ -2408,7 +2433,7 @@ function renderToolProgress(data) {
     textId: "interactionToolProgressText",
     barId: "interactionToolProgressBar",
     listId: "interactionToolProgressList",
-    stateLabel: interactionProgress.total ? (data.running ? "đang chạy" : "xong") : "idle",
+    stateLabel: interactionProgress.total ? (interactionProgress.batch?.active ? (interactionProgress.batch.phase === "retry" ? "đang retry" : "đang chạy") : "xong") : "idle",
     countLabel: `${interactionProgress.completed} / ${interactionProgress.total}`,
     textLabel: interactionProgress.summaryText,
     percent: interactionProgress.percent,
@@ -2421,7 +2446,7 @@ function renderToolProgress(data) {
     textId: "pageToolProgressText",
     barId: "pageToolProgressBar",
     listId: "pageToolProgressList",
-    stateLabel: pageProgress.total ? (data.running ? "đang chạy" : "xong") : "idle",
+    stateLabel: pageProgress.total ? (pageProgress.batch?.active ? (pageProgress.batch.phase === "retry" ? "đang retry" : "đang chạy") : "xong") : "idle",
     countLabel: `${pageProgress.completed} / ${pageProgress.total}`,
     textLabel: pageProgress.summaryText,
     percent: pageProgress.percent,
@@ -2434,7 +2459,7 @@ function renderToolProgress(data) {
     textId: "avatarToolProgressText",
     barId: "avatarToolProgressBar",
     listId: "avatarToolProgressList",
-    stateLabel: avatarProgress.total ? (data.running ? "đang chạy" : "xong") : "idle",
+    stateLabel: avatarProgress.total ? (avatarProgress.batch?.active ? (avatarProgress.batch.phase === "retry" ? "đang retry" : "đang chạy") : "xong") : "idle",
     countLabel: `${avatarProgress.completed} / ${avatarProgress.total}`,
     textLabel: avatarProgress.summaryText,
     percent: avatarProgress.percent,
@@ -2447,7 +2472,7 @@ function renderToolProgress(data) {
     textId: "passwordToolProgressText",
     barId: "passwordToolProgressBar",
     listId: "passwordToolProgressList",
-    stateLabel: passwordProgress.total ? (data.running ? "đang chạy" : "xong") : "idle",
+    stateLabel: passwordProgress.total ? (passwordProgress.batch?.active ? (passwordProgress.batch.phase === "retry" ? "đang retry" : "đang chạy") : "xong") : "idle",
     countLabel: `${passwordProgress.completed} / ${passwordProgress.total}`,
     textLabel: passwordProgress.summaryText,
     percent: passwordProgress.percent,
@@ -2489,13 +2514,39 @@ function renderToolProgressPanel({
   countNode.textContent = countLabel;
   textNode.textContent = textLabel;
   barNode.style.width = `${percent}%`;
-  list.innerHTML = jobs.slice(-80).map((job) => `
+  const orderedJobs = [...jobs].sort((a, b) => {
+    const rank = (job) => {
+      const status = String(job.status || "").toLowerCase();
+      if (["success", "done", "completed", "error", "stopped", "cancelled", "skipped"].includes(status)
+        && job.phaseState !== "retry_waiting") return 0;
+      if (status === "running") return 1;
+      if (status === "queued") return 2;
+      if (status === "retry_waiting" || job.phaseState === "retry_waiting") return 3;
+      return 2;
+    };
+    return rank(a) - rank(b) || Number(a.batchOrder ?? 0) - Number(b.batchOrder ?? 0);
+  });
+  list.innerHTML = orderedJobs.slice(0, 80).map((job) => {
+    const rawStatus = String(job.status || "queued").toLowerCase();
+    const displayStatus = job.phaseState === "retry_waiting" || rawStatus === "retry_waiting"
+      ? "chờ chạy lại"
+      : job.phaseState === "retry_failed"
+        ? "retry vẫn lỗi"
+      : job.phase === "retry" && rawStatus === "queued"
+        ? "xếp lượt chạy lại"
+        : rawStatus === "running" && job.phase === "retry"
+          ? "đang chạy lại"
+          : rawStatus === "running"
+            ? "đang chạy"
+            : rawStatus;
+    const phaseText = job.phase === "retry" ? "lượt chạy lại" : "lượt đầu";
+    return `
     <div class="tool-progress-item">
       <span>${escapeHtml(job.profileId || "")}</span>
-      <span class="job-status ${escapeAttr(job.status || "queued")}">${escapeHtml(job.status || "queued")}</span>
-      <span>${escapeHtml(job.liveStatus || "")}</span>
+      <span class="job-status ${escapeAttr(rawStatus)}">${escapeHtml(displayStatus)}</span>
+      <span>${escapeHtml(`${phaseText}: ${job.liveStatus || ""}`)}</span>
     </div>
-  `).join("");
+  `; }).join("");
 }
 
 function visibleLogs() {
@@ -3102,9 +3153,6 @@ loadConfig()
     scheduleStateProxyRealtime();
   })
   .catch((error) => setStatus(error.message, true));
-
-
-
 
 
 
