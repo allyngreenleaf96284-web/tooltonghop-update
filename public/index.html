@@ -681,9 +681,9 @@
               <span>Chỉ xử lý dòng còn trống ở cột tình trạng của từng nick.</span>
             </div>
             <div class="tool-config-grid check-order-config-grid">
-              <label>
-                Link / ID Sheet
-                <input id="marketplaceCheckSpreadsheetId" placeholder="https://docs.google.com/spreadsheets/d/..." />
+              <label class="wide-field">
+                Link / ID các Sheet (mỗi dòng một Sheet)
+                <textarea id="marketplaceCheckSpreadsheetIds" rows="3" placeholder="https://docs.google.com/spreadsheets/d/.../edit?gid=0#gid=0"></textarea>
               </label>
               <label>
                 Tên tab
@@ -707,17 +707,7 @@
               </label>
             <button id="saveLinkOrderConfig" class="primary action-wide" type="button"><span>Lưu cấu hình check link</span></button>
             </div>
-            <div class="link-order-bulk-tools">
-              <label>
-                Thêm hoặc xóa nhiều link
-                <textarea id="marketplaceCheckBulkLinks" rows="4" placeholder="Mỗi dòng một link Marketplace"></textarea>
-              </label>
-              <div class="link-order-bulk-actions">
-                <button id="addMarketplaceLinksBtn" class="ghost-btn" type="button"><span>Thêm nhiều link</span></button>
-                <button id="deleteMarketplaceLinksBtn" class="ghost-btn danger-btn" type="button"><span>Xóa các link này</span></button>
-              </div>
-              <small id="marketplaceCheckBulkStatus" class="config-note">Link trùng sẽ được bỏ qua khi thêm. Xóa sẽ xóa toàn bộ dòng có URL trùng khớp.</small>
-            </div>
+            <div class="link-order-sheet-note">Tool sẽ chạy hết Sheet 1 rồi tự chuyển sang Sheet 2, Sheet 3... Nick 1 đi từ trên xuống, nick 2 đi từ dưới lên trong từng Sheet.</div>
           </section>
 
           <section id="linkOrderToolProgressPanel" class="tool-progress hidden">
@@ -1951,7 +1941,6 @@
     <script src="/app.js?v=online-update-20260831-1"></script>
   </body>
 </html>
-
 
 
 

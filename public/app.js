@@ -161,7 +161,11 @@ async function loadConfig() {
   if ($("checkOrderSpreadsheetId")) $("checkOrderSpreadsheetId").value = config.checkOrderSpreadsheetId || "";
   if ($("checkOrderSheetName")) $("checkOrderSheetName").value = config.checkOrderSheetName || "check order";
   if ($("checkOrderConcurrency")) $("checkOrderConcurrency").value = config.checkOrderConcurrency || 1;
-  if ($("marketplaceCheckSpreadsheetId")) $("marketplaceCheckSpreadsheetId").value = config.marketplaceCheckSpreadsheetId || "";
+  if ($("marketplaceCheckSpreadsheetIds")) {
+    $("marketplaceCheckSpreadsheetIds").value = (config.marketplaceCheckSpreadsheetIds?.length
+      ? config.marketplaceCheckSpreadsheetIds
+      : [config.marketplaceCheckSpreadsheetId || ""]).filter(Boolean).join("\n");
+  }
   if ($("marketplaceCheckSheetName")) $("marketplaceCheckSheetName").value = config.marketplaceCheckSheetName || "";
   if ($("marketplaceCheckNick1Id")) $("marketplaceCheckNick1Id").value = config.marketplaceCheckNick1Id || "";
   if ($("marketplaceCheckNick2Id")) $("marketplaceCheckNick2Id").value = config.marketplaceCheckNick2Id || "";
@@ -243,7 +247,8 @@ async function saveConfig() {
       checkOrderSpreadsheetId: $("checkOrderSpreadsheetId")?.value || "",
       checkOrderSheetName: $("checkOrderSheetName")?.value || "check order",
       checkOrderConcurrency: Math.max(1, Math.min(4, Number($("checkOrderConcurrency")?.value || 1))),
-      marketplaceCheckSpreadsheetId: $("marketplaceCheckSpreadsheetId")?.value || "",
+      marketplaceCheckSpreadsheetId: $("marketplaceCheckSpreadsheetIds")?.value.split(/\r?\n/).map((value) => value.trim()).find(Boolean) || "",
+      marketplaceCheckSpreadsheetIds: $("marketplaceCheckSpreadsheetIds")?.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean) || [],
       marketplaceCheckSheetName: $("marketplaceCheckSheetName")?.value || "",
       marketplaceCheckNick1Id: $("marketplaceCheckNick1Id")?.value || "",
       marketplaceCheckNick2Id: $("marketplaceCheckNick2Id")?.value || "",
@@ -1633,7 +1638,8 @@ async function startLinkOrder() {
     $("runLinkOrderBtn").disabled = true;
     await saveConfig();
     const body = {
-      marketplaceCheckSpreadsheetId: $("marketplaceCheckSpreadsheetId")?.value || "",
+      marketplaceCheckSpreadsheetId: $("marketplaceCheckSpreadsheetIds")?.value.split(/\r?\n/).map((value) => value.trim()).find(Boolean) || "",
+      marketplaceCheckSpreadsheetIds: $("marketplaceCheckSpreadsheetIds")?.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean) || [],
       marketplaceCheckSheetName: $("marketplaceCheckSheetName")?.value || "",
       marketplaceCheckNick1Id: nick1,
       marketplaceCheckNick2Id: nick2,
@@ -1647,43 +1653,13 @@ async function startLinkOrder() {
     state.config = config || state.config;
     state.linkOrderBatchIds = data.profileIds || [nick1, nick2].filter(Boolean);
     primeToolProgress(state.linkOrderBatchIds, "bắt đầu: check link order", "linkorder");
-    $("linkOrderStatusText").textContent = `Đã bắt đầu ${data.started} nick, mỗi nick ${data.tabsPerNick || body.marketplaceCheckTabsPerNick} tab.`;
+    $("linkOrderStatusText").textContent = `Đã bắt đầu ${data.started} nick qua ${data.sheets || 1} Sheet, mỗi nick ${data.tabsPerNick || body.marketplaceCheckTabsPerNick} tab. Sheet sẽ chạy tuần tự.`;
     await refreshToolStatus();
     startToolStatusPolling();
   } catch (error) {
     $("linkOrderStatusText").textContent = error.message;
   } finally {
     $("runLinkOrderBtn").disabled = false;
-  }
-}
-
-async function manageMarketplaceLinks(action) {
-  const links = $("marketplaceCheckBulkLinks")?.value || "";
-  const statusNode = $("marketplaceCheckBulkStatus");
-  if (!links.trim()) {
-    if (statusNode) statusNode.textContent = "Hãy nhập ít nhất một link http/https, mỗi dòng một link.";
-    return;
-  }
-  const buttonId = action === "delete" ? "deleteMarketplaceLinksBtn" : "addMarketplaceLinksBtn";
-  const button = $(buttonId);
-  try {
-    if (button) button.disabled = true;
-    if (statusNode) statusNode.textContent = action === "delete" ? "Đang xóa link trong Sheet..." : "Đang thêm link vào Sheet...";
-    const { data } = await api("/api/tools/check-link-order/links", {
-      method: "POST",
-      body: JSON.stringify({
-        action,
-        links,
-        marketplaceCheckSpreadsheetId: $("marketplaceCheckSpreadsheetId")?.value || "",
-        marketplaceCheckSheetName: $("marketplaceCheckSheetName")?.value || ""
-      })
-    });
-    if (statusNode) statusNode.textContent = `${action === "delete" ? "Đã xóa" : "Đã thêm"} ${data.changed || 0}/${data.requested || 0} link ở tab ${data.title || ""}.`;
-    if (action === "add") $("marketplaceCheckBulkLinks").value = "";
-  } catch (error) {
-    if (statusNode) statusNode.textContent = error.message || "Không cập nhật được danh sách link.";
-  } finally {
-    if (button) button.disabled = false;
   }
 }
 
@@ -2781,8 +2757,6 @@ $("saveConfig").addEventListener("click", saveConfig);
 if ($("saveFullConfig")) $("saveFullConfig").addEventListener("click", saveConfig);
 if ($("saveCheckOrderConfig")) $("saveCheckOrderConfig").addEventListener("click", saveConfig);
 if ($("saveLinkOrderConfig")) $("saveLinkOrderConfig").addEventListener("click", saveConfig);
-if ($("addMarketplaceLinksBtn")) $("addMarketplaceLinksBtn").addEventListener("click", () => manageMarketplaceLinks("add"));
-if ($("deleteMarketplaceLinksBtn")) $("deleteMarketplaceLinksBtn").addEventListener("click", () => manageMarketplaceLinks("delete"));
 if ($("savePostConfig")) $("savePostConfig").addEventListener("click", savePostConfig);
 if ($("saveInteractionConfig")) $("saveInteractionConfig").addEventListener("click", saveConfig);
 if ($("savePageConfig")) $("savePageConfig").addEventListener("click", saveConfig);
@@ -3186,8 +3160,6 @@ loadConfig()
     scheduleStateProxyRealtime();
   })
   .catch((error) => setStatus(error.message, true));
-
-
 
 
 

@@ -243,8 +243,8 @@ export function createMarketplaceLinkOrderTool({
     return error;
   }
 
-  async function readPlan(config) {
-    const sheetInput = parseSpreadsheetInput(config.marketplaceCheckSpreadsheetId || config.checkOrderSpreadsheetId || "");
+  async function readPlan(config, spreadsheetValue = "") {
+    const sheetInput = parseSpreadsheetInput(spreadsheetValue || config.marketplaceCheckSpreadsheetId || config.checkOrderSpreadsheetId || "");
     const spreadsheetId = sheetInput.spreadsheetId;
     if (!spreadsheetId) throw new Error("Chua nhap link/ID Sheet check link order.");
     if (!String(config.credentialsPath || "").trim()) throw new Error("Chua cau hinh Service Account JSON.");
@@ -262,7 +262,7 @@ export function createMarketplaceLinkOrderTool({
     if (!values.length) throw new Error("Sheet dang trong.");
     const indexes = await ensureHeaders(client, title, values);
     const sheetId = sheets.find((sheet) => sheet.properties?.title === title)?.properties?.sheetId;
-    return { client, title, gid: sheetInput.gid, sheetId, values, ...indexes };
+    return { client, title, gid: sheetInput.gid, spreadsheetId, sheetId, values, ...indexes };
   }
 
   function buildTasks(values, linkIndex, statusIndex, direction = "asc") {
@@ -275,46 +275,6 @@ export function createMarketplaceLinkOrderTool({
       tasks.push({ rowNumber: index + 1, link });
     }
     return direction === "desc" ? tasks.reverse() : tasks;
-  }
-
-  function normalizeLinkList(value) {
-    const raw = Array.isArray(value) ? value : String(value || "").split(/[\r\n,]+/);
-    return [...new Set(raw.map((item) => String(item || "").trim()).filter((item) => /^https?:\/\//i.test(item)))];
-  }
-
-  async function manageLinks(config, action, inputLinks) {
-    if (runtime.running) throw new Error("Khong the sua danh sach link khi tool dang chay.");
-    const plan = await readPlan(config);
-    const links = normalizeLinkList(inputLinks);
-    if (!links.length) throw new Error("Chua co link http/https hop le.");
-    const wanted = new Set(links);
-    if (action === "delete") {
-      const rowsToDelete = [];
-      for (let index = 1; index < plan.values.length; index += 1) {
-        const link = String(plan.values[index]?.[plan.linkIndex] || "").trim();
-        if (wanted.has(link)) rowsToDelete.push(index + 1);
-      }
-      if (!rowsToDelete.length) return { action, requested: links.length, changed: 0, title: plan.title };
-      if (plan.sheetId === undefined || plan.sheetId === null) throw new Error("Khong lay duoc sheetId de xoa dong.");
-      await plan.client.batchUpdate(rowsToDelete.sort((a, b) => b - a).map((rowNumber) => ({
-        deleteDimension: {
-          range: { sheetId: Number(plan.sheetId), dimension: "ROWS", startIndex: rowNumber - 1, endIndex: rowNumber }
-        }
-      })));
-      return { action, requested: links.length, changed: rowsToDelete.length, title: plan.title };
-    }
-
-    const existing = new Set(plan.values.slice(1).map((row) => String(row?.[plan.linkIndex] || "").trim()).filter(Boolean));
-    const rowsToAdd = links.filter((link) => !existing.has(link));
-    if (!rowsToAdd.length) return { action: "add", requested: links.length, changed: 0, title: plan.title };
-    const nextValues = plan.values.map((row) => [...(row || [])]);
-    for (const link of rowsToAdd) {
-      const row = Array(plan.headers.length).fill("");
-      row[plan.linkIndex] = link;
-      nextValues.push(row);
-    }
-    await plan.client.updateValues(plan.title, nextValues);
-    return { action: "add", requested: links.length, changed: rowsToAdd.length, title: plan.title };
   }
 
   async function writeStatus(client, title, statusIndex, task, status) {
@@ -421,12 +381,11 @@ export function createMarketplaceLinkOrderTool({
       ? buildToolRow(profileId, sheetRow || {})
       : { uid: String(sheetRow?.uid || profileId).trim(), profile_id: profileId, raw: { ...(sheetRow || {}) } };
     row.profile_id = profileId;
-    const tasks = buildTasks(plan.values, plan.linkIndex, statusIndex, direction);
     const job = runtime.jobs.get(profileId);
     let browser = null;
     let loginPage = null;
     let checked = 0;
-    let cursor = 0;
+    let totalTasks = 0;
     try {
       if (!(runtime.activeManagers instanceof Map)) runtime.activeManagers = new Map();
       runtime.activeManagers.set(profileId, { manager, uid: row.uid || profileId, shouldFinish: () => false });
@@ -437,35 +396,45 @@ export function createMarketplaceLinkOrderTool({
         job.liveStatus = `${nickLabel}: con ${tasks.length} link`;
       }
       const timeoutMs = clampNumber(config.marketplaceCheckTimeoutMs, 90000, 30000, 240000);
-      const workers = Array.from({ length: Math.min(tabCount, Math.max(1, tasks.length)) }, async (_, workerIndex) => {
-        let page = await browser.newPage();
-        await applyWindowTiling(browser, page, workerSlot, workerTotal);
-        try {
-          while (cursor < tasks.length) {
-            if (runtime.stopRequested) throw stoppedError();
-            const task = tasks[cursor++];
-            const label = `${nickLabel} row ${task.rowNumber}`;
-            if (job) job.liveStatus = `${label} (${checked}/${tasks.length})`;
-            log(profileId, "check link", `bat dau ${label}: ${task.link}`);
-            let status = "";
-            const checkedTask = await checkTaskWithRetry(browser, page, task, timeoutMs, profileId, nickLabel, label, workerSlot, workerTotal);
-            status = checkedTask.status;
-            page = checkedTask.page;
-            await writeStatus(plan.client, plan.title, statusIndex, task, status);
-            checked += 1;
-            log(profileId, "ghi Sheet", `${label} => ${status}`, status === "lỗi check" ? "warn" : "success");
+      for (let sheetIndex = 0; sheetIndex < plans.length; sheetIndex += 1) {
+        const plan = plans[sheetIndex];
+        const currentStatusIndex = nickLabel === "nick 1" ? plan.nick1Index : plan.nick2Index;
+        const tasks = buildTasks(plan.values, plan.linkIndex, currentStatusIndex, direction);
+        totalTasks += tasks.length;
+        let cursor = 0;
+        const sheetLabel = `Sheet ${sheetIndex + 1}/${plans.length} ${plan.title}`;
+        if (job) job.liveStatus = `${nickLabel}: ${sheetLabel}, ${tasks.length} link`;
+        log(profileId, "xep hang", `${nickLabel} bat dau ${sheetLabel}, chay ${direction === "desc" ? "tu duoi len" : "tu tren xuong"}`);
+        const workers = Array.from({ length: Math.min(tabCount, Math.max(1, tasks.length)) }, async (_, workerIndex) => {
+          let page = await browser.newPage();
+          await applyWindowTiling(browser, page, workerSlot, workerTotal);
+          try {
+            while (cursor < tasks.length) {
+              if (runtime.stopRequested) throw stoppedError();
+              const task = tasks[cursor++];
+              const label = `${nickLabel} ${sheetLabel} row ${task.rowNumber}`;
+              if (job) job.liveStatus = `${label} (${checked}/${totalTasks})`;
+              log(profileId, "check link", `bat dau ${label}: ${task.link}`);
+              let status = "";
+              const checkedTask = await checkTaskWithRetry(browser, page, task, timeoutMs, profileId, nickLabel, label, workerSlot, workerTotal);
+              status = checkedTask.status;
+              page = checkedTask.page;
+              await writeStatus(plan.client, plan.title, currentStatusIndex, task, status);
+              checked += 1;
+              log(profileId, "ghi Sheet", `${label} => ${status}`, status === "lỗi check" ? "warn" : "success");
+            }
+          } finally {
+            await page.close({ runBeforeUnload: false }).catch(() => {});
           }
-        } finally {
-          await page.close({ runBeforeUnload: false }).catch(() => {});
-        }
-      });
-      await Promise.all(workers);
+        });
+        await Promise.all(workers);
+      }
       if (job) {
         job.status = "success";
-        job.liveStatus = `${nickLabel}: xong ${checked}/${tasks.length}`;
-        job.result = { checked, total: tasks.length };
+        job.liveStatus = `${nickLabel}: xong ${checked}/${totalTasks}`;
+        job.result = { checked, total: totalTasks, sheets: plans.length };
       }
-      return { profileId, checked, total: tasks.length };
+      return { profileId, checked, total: totalTasks, sheets: plans.length };
     } catch (error) {
       if (String(error?.status || "").toLowerCase() === "stopped") {
         if (job) {
@@ -479,7 +448,7 @@ export function createMarketplaceLinkOrderTool({
         job.liveStatus = error.message || "loi check link order";
       }
       log(profileId, "loi tong", `${nickLabel} loi: ${error.message || error}`, "error");
-      return { profileId, error: error.message || String(error), checked, total: tasks.length };
+      return { profileId, error: error.message || String(error), checked, total: totalTasks };
     } finally {
       if (runtime.activeManagers instanceof Map) runtime.activeManagers.delete(profileId);
       try { if (loginPage && !loginPage.isClosed()) await loginPage.close({ runBeforeUnload: false }); } catch {}
@@ -495,10 +464,23 @@ export function createMarketplaceLinkOrderTool({
     const nick2 = String(config.marketplaceCheckNick2Id || "").trim();
     if (!nick1 && !nick2) throw new Error("Chua nhap ID Hide nick 1 hoac nick 2.");
     const tabCount = clampNumber(config.marketplaceCheckTabsPerNick, 5, 1, 20);
-    const plan = await readPlan(config);
+    const sheetInputs = Array.isArray(config.marketplaceCheckSpreadsheetIds) && config.marketplaceCheckSpreadsheetIds.length
+      ? config.marketplaceCheckSpreadsheetIds
+      : [config.marketplaceCheckSpreadsheetId || config.checkOrderSpreadsheetId || ""];
+    const plans = [];
+    const seenSheets = new Set();
+    for (const sheetInput of sheetInputs) {
+      const plan = await readPlan(config, sheetInput);
+      const key = `${plan.spreadsheetId || sheetInput}|${plan.title}`;
+      if (!seenSheets.has(key)) {
+        seenSheets.add(key);
+        plans.push(plan);
+      }
+    }
+    if (!plans.length) throw new Error("Chua nhap link/ID Sheet check link order.");
     const profiles = [
-      nick1 ? { profileId: nick1, nickLabel: "nick 1", statusIndex: plan.nick1Index, direction: "asc" } : null,
-      nick2 ? { profileId: nick2, nickLabel: "nick 2", statusIndex: plan.nick2Index, direction: "desc" } : null
+      nick1 ? { profileId: nick1, nickLabel: "nick 1", statusIndex: plans[0].nick1Index, direction: "asc" } : null,
+      nick2 ? { profileId: nick2, nickLabel: "nick 2", statusIndex: plans[0].nick2Index, direction: "desc" } : null
     ].filter(Boolean);
     let sheetRows = typeof getRowsByProfileIds === "function"
       ? await getRowsByProfileIds(config, profiles.map((item) => item.profileId))
@@ -542,7 +524,7 @@ export function createMarketplaceLinkOrderTool({
         await Promise.all(profiles.map((item, index) => runNick({
           ...item,
           config,
-          plan,
+          plans,
           tabCount,
           direction: item.direction,
           workerSlot: index,
@@ -553,8 +535,8 @@ export function createMarketplaceLinkOrderTool({
         runtime.currentTool = "";
       }
     });
-    return { started: profiles.length, profileIds: profiles.map((item) => item.profileId), sheetTitle: plan.title, tabsPerNick: tabCount };
+    return { started: profiles.length, profileIds: profiles.map((item) => item.profileId), sheetTitles: plans.map((plan) => plan.title), sheets: plans.length, tabsPerNick: tabCount };
   }
 
-  return { run, manageLinks };
+  return { run };
 }

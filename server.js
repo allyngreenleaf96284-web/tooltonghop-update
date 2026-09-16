@@ -121,6 +121,7 @@ const DEFAULT_CONFIG = {
   checkOrderSheetName: "check order",
   checkOrderConcurrency: 1,
   marketplaceCheckSpreadsheetId: "",
+  marketplaceCheckSpreadsheetIds: [],
   marketplaceCheckSheetName: "",
   marketplaceCheckNick1Id: "",
   marketplaceCheckNick2Id: "",
@@ -1027,6 +1028,11 @@ async function readConfig() {
     loaded.checkOrderSheetName = String(loaded.checkOrderSheetName || DEFAULT_CONFIG.checkOrderSheetName).trim() || DEFAULT_CONFIG.checkOrderSheetName;
     loaded.checkOrderConcurrency = clampConcurrency(loaded.checkOrderConcurrency, DEFAULT_CONFIG.checkOrderConcurrency, 4);
     loaded.marketplaceCheckSpreadsheetId = String(loaded.marketplaceCheckSpreadsheetId || "").trim();
+    loaded.marketplaceCheckSpreadsheetIds = normalizeMarketplaceSheetInputs(
+      loaded.marketplaceCheckSpreadsheetIds,
+      loaded.marketplaceCheckSpreadsheetId
+    );
+    loaded.marketplaceCheckSpreadsheetId = loaded.marketplaceCheckSpreadsheetIds[0] || "";
     loaded.marketplaceCheckSheetName = String(loaded.marketplaceCheckSheetName || "").trim();
     loaded.marketplaceCheckNick1Id = String(loaded.marketplaceCheckNick1Id || "").trim();
     loaded.marketplaceCheckNick2Id = String(loaded.marketplaceCheckNick2Id || "").trim();
@@ -1079,6 +1085,10 @@ async function saveConfig(input) {
     checkOrderSheetName: String(input.checkOrderSheetName !== undefined ? input.checkOrderSheetName : current.checkOrderSheetName || DEFAULT_CONFIG.checkOrderSheetName).trim() || DEFAULT_CONFIG.checkOrderSheetName,
     checkOrderConcurrency: clampConcurrency(input.checkOrderConcurrency, current.checkOrderConcurrency || DEFAULT_CONFIG.checkOrderConcurrency, 4),
     marketplaceCheckSpreadsheetId: String(input.marketplaceCheckSpreadsheetId !== undefined ? input.marketplaceCheckSpreadsheetId : current.marketplaceCheckSpreadsheetId || "").trim(),
+    marketplaceCheckSpreadsheetIds: normalizeMarketplaceSheetInputs(
+      input.marketplaceCheckSpreadsheetIds !== undefined ? input.marketplaceCheckSpreadsheetIds : current.marketplaceCheckSpreadsheetIds,
+      input.marketplaceCheckSpreadsheetId !== undefined ? input.marketplaceCheckSpreadsheetId : current.marketplaceCheckSpreadsheetId
+    ),
     marketplaceCheckSheetName: String(input.marketplaceCheckSheetName !== undefined ? input.marketplaceCheckSheetName : current.marketplaceCheckSheetName || "").trim(),
     marketplaceCheckNick1Id: String(input.marketplaceCheckNick1Id !== undefined ? input.marketplaceCheckNick1Id : current.marketplaceCheckNick1Id || "").trim(),
     marketplaceCheckNick2Id: String(input.marketplaceCheckNick2Id !== undefined ? input.marketplaceCheckNick2Id : current.marketplaceCheckNick2Id || "").trim(),
@@ -1130,6 +1140,20 @@ function normalizeSpreadsheetIds(input, options = {}) {
     seen.add(id);
     result.push(id);
   }
+  return result;
+}
+
+function normalizeMarketplaceSheetInputs(input, legacyValue = "") {
+  const items = Array.isArray(input) ? input : String(input || legacyValue || "").split(/[\r\n,;]+/);
+  const seen = new Set();
+  const result = [];
+  for (const item of items) {
+    const value = String(item || "").trim();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    result.push(value);
+  }
+  if (!result.length && String(legacyValue || "").trim()) result.push(String(legacyValue).trim());
   return result;
 }
 
@@ -1200,6 +1224,10 @@ async function saveConfigV2(input) {
     checkOrderSheetName: String(input.checkOrderSheetName !== undefined ? input.checkOrderSheetName : current.checkOrderSheetName || DEFAULT_CONFIG.checkOrderSheetName).trim() || DEFAULT_CONFIG.checkOrderSheetName,
     checkOrderConcurrency: clampConcurrency(input.checkOrderConcurrency, current.checkOrderConcurrency || DEFAULT_CONFIG.checkOrderConcurrency, 4),
     marketplaceCheckSpreadsheetId: String(input.marketplaceCheckSpreadsheetId !== undefined ? input.marketplaceCheckSpreadsheetId : current.marketplaceCheckSpreadsheetId || "").trim(),
+    marketplaceCheckSpreadsheetIds: normalizeMarketplaceSheetInputs(
+      input.marketplaceCheckSpreadsheetIds !== undefined ? input.marketplaceCheckSpreadsheetIds : current.marketplaceCheckSpreadsheetIds,
+      input.marketplaceCheckSpreadsheetId !== undefined ? input.marketplaceCheckSpreadsheetId : current.marketplaceCheckSpreadsheetId
+    ),
     marketplaceCheckSheetName: String(input.marketplaceCheckSheetName !== undefined ? input.marketplaceCheckSheetName : current.marketplaceCheckSheetName || "").trim(),
     marketplaceCheckNick1Id: String(input.marketplaceCheckNick1Id !== undefined ? input.marketplaceCheckNick1Id : current.marketplaceCheckNick1Id || "").trim(),
     marketplaceCheckNick2Id: String(input.marketplaceCheckNick2Id !== undefined ? input.marketplaceCheckNick2Id : current.marketplaceCheckNick2Id || "").trim(),
@@ -3293,17 +3321,6 @@ async function handleApi(req, res) {
       });
       return jsonResponse(res, 200, { ok: true, data });
     }
-    if (req.method === "POST" && url.pathname === "/api/tools/check-link-order/links") {
-      const body = await parseBody(req);
-      const savedConfig = await saveConfigV2({ ...(await readConfig()), ...body });
-      const config = await resolveAccountSheetConfig(savedConfig);
-      const data = await marketplaceLinkOrderModule.manageLinks(
-        config,
-        String(body.action || "add").toLowerCase() === "delete" ? "delete" : "add",
-        body.links
-      );
-      return jsonResponse(res, 200, { ok: true, config, data });
-    }
     if (req.method === "POST" && url.pathname === "/api/tools/check-link-order") {
       const body = await parseBody(req);
       const savedConfig = await saveConfigV2({ ...(await readConfig()), ...body });
@@ -3639,9 +3656,6 @@ server.listen(5177, "127.0.0.1", () => {
   startBackgroundHideSheetSync();
   startProxyMonitor();
 });
-
-
-
 
 
 
