@@ -372,7 +372,7 @@ export function createMarketplaceLinkOrderTool({
     }
   }
 
-  async function runNick({ profileId, nickLabel, statusIndex, direction, sheetRow, config, plan, tabCount, workerSlot = 0, workerTotal = 2 }) {
+  async function runNick({ profileId, nickLabel, direction, sheetRow, config, plans, tabCount, workerSlot = 0, workerTotal = 2 }) {
     const manager = getHideManager();
     if (manager) {
       manager.__profileConfig = async () => ({ ...config, browserApiProvider: "hide" });
@@ -393,7 +393,7 @@ export function createMarketplaceLinkOrderTool({
       loginPage = await ensureLoggedIn(manager, browser, profileId, nickLabel, row, workerSlot, workerTotal, job);
       if (job) {
         job.status = "running";
-        job.liveStatus = `${nickLabel}: con ${tasks.length} link`;
+        job.liveStatus = `${nickLabel}: dang chay ${plans.length} Sheet`;
       }
       const timeoutMs = clampNumber(config.marketplaceCheckTimeoutMs, 90000, 30000, 240000);
       for (let sheetIndex = 0; sheetIndex < plans.length; sheetIndex += 1) {
@@ -441,7 +441,7 @@ export function createMarketplaceLinkOrderTool({
           job.status = "stopped";
           job.liveStatus = `${nickLabel}: da dung, da ghi den dong gan nhat`;
         }
-        return { profileId, stopped: true, checked, total: tasks.length };
+        return { profileId, stopped: true, checked, total: totalTasks };
       }
       if (job) {
         job.status = "error";
