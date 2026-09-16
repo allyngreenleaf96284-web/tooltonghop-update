@@ -636,9 +636,41 @@ label {
   max-width: 100px;
 }
 
-.check-order-config-grid textarea {
-  min-height: 78px;
-  resize: vertical;
+.link-order-sheet-manager {
+  min-width: 0;
+}
+
+.link-order-sheet-manager-head {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.link-order-sheet-list {
+  display: grid;
+  gap: 6px;
+}
+
+.link-order-sheet-row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.link-order-sheet-label {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.link-order-sheet-row input {
+  min-width: 0;
 }
 
 .link-order-sheet-note {
@@ -647,6 +679,16 @@ label {
   border-top: 1px solid var(--line);
   color: var(--muted);
   font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .link-order-sheet-row {
+    grid-template-columns: 1fr auto auto;
+  }
+
+  .link-order-sheet-label {
+    grid-column: 1 / -1;
+  }
 }
 
 .proxy-config-grid .wide-field {
@@ -1511,6 +1553,4 @@ tr.duplicate-row {
     grid-template-columns: 1fr 1fr;
   }
 }
-
-
 

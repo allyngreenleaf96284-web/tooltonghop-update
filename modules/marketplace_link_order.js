@@ -75,12 +75,11 @@ async function ensureHeaders(client, title, values) {
   const linkIndex = findHeaderIndex(headers, ["link sp", "link", "link sản phẩm", "link san pham"]);
   if (linkIndex < 0) throw new Error("Sheet chua co cot LINK SP.");
   const nick1Index = ensure("tình trạng nick 1");
-  const nick2Index = ensure("tình trạng nick 2");
   if ((values[0] || []).length !== headers.length || headers.some((value, index) => value !== values[0]?.[index])) {
     await client.updateRowValues(title, 1, headers);
     values[0] = headers;
   }
-  return { headers, uidIndex, linkIndex, nick1Index, nick2Index };
+  return { headers, uidIndex, linkIndex, nick1Index };
 }
 
 function normalizeText(value) {
@@ -265,7 +264,7 @@ export function createMarketplaceLinkOrderTool({
     return { client, title, gid: sheetInput.gid, spreadsheetId, sheetId, values, ...indexes };
   }
 
-  function buildTasks(values, linkIndex, statusIndex, direction = "asc") {
+  function buildTasks(values, linkIndex, statusIndex) {
     const tasks = [];
     for (let index = 1; index < values.length; index += 1) {
       const row = values[index] || [];
@@ -274,7 +273,54 @@ export function createMarketplaceLinkOrderTool({
       if (!link || (status && !shouldRetryStatus(status))) continue;
       tasks.push({ rowNumber: index + 1, link });
     }
-    return direction === "desc" ? tasks.reverse() : tasks;
+    return tasks;
+  }
+
+  function createSharedQueue(plan, participantCount) {
+    const tasks = buildTasks(plan.values, plan.linkIndex, plan.nick1Index);
+    return {
+      tasks,
+      first: 0,
+      last: tasks.length - 1,
+      total: tasks.length,
+      participantCount: Math.max(1, participantCount),
+      completedParticipants: 0,
+      waiters: [],
+      aborted: false,
+      abortReason: ""
+    };
+  }
+
+  function claimSharedTask(queue, direction) {
+    if (queue.aborted || queue.first > queue.last) return null;
+    if (direction === "desc") return queue.tasks[queue.last--];
+    return queue.tasks[queue.first++];
+  }
+
+  function releaseQueueWaiters(queue) {
+    const waiters = queue.waiters.splice(0);
+    for (const resolve of waiters) resolve();
+  }
+
+  function abortSharedQueues(plans, reason) {
+    for (const plan of plans) {
+      const queue = plan.sharedQueue;
+      if (!queue || queue.aborted) continue;
+      queue.aborted = true;
+      queue.abortReason = reason || "Da dung check link order.";
+      releaseQueueWaiters(queue);
+    }
+  }
+
+  async function waitForSheetPeers(queue) {
+    if (queue.aborted) throw new Error(queue.abortReason);
+    queue.completedParticipants += 1;
+    if (queue.completedParticipants >= queue.participantCount) {
+      releaseQueueWaiters(queue);
+      return;
+    }
+    await new Promise((resolve) => queue.waiters.push(resolve));
+    if (queue.aborted) throw new Error(queue.abortReason);
   }
 
   async function writeStatus(client, title, statusIndex, task, status) {
@@ -398,20 +444,22 @@ export function createMarketplaceLinkOrderTool({
       const timeoutMs = clampNumber(config.marketplaceCheckTimeoutMs, 90000, 30000, 240000);
       for (let sheetIndex = 0; sheetIndex < plans.length; sheetIndex += 1) {
         const plan = plans[sheetIndex];
-        const currentStatusIndex = nickLabel === "nick 1" ? plan.nick1Index : plan.nick2Index;
-        const tasks = buildTasks(plan.values, plan.linkIndex, currentStatusIndex, direction);
-        totalTasks += tasks.length;
-        let cursor = 0;
+        const queue = plan.sharedQueue;
+        if (!queue) throw new Error("Khong tim thay hang doi chung cua Sheet.");
+        if (queue.aborted) throw new Error(queue.abortReason || "Hang doi Sheet da dung.");
+        totalTasks += queue.total;
         const sheetLabel = `Sheet ${sheetIndex + 1}/${plans.length} ${plan.title}`;
-        if (job) job.liveStatus = `${nickLabel}: ${sheetLabel}, ${tasks.length} link`;
-        log(profileId, "xep hang", `${nickLabel} bat dau ${sheetLabel}, chay ${direction === "desc" ? "tu duoi len" : "tu tren xuong"}`);
-        const workers = Array.from({ length: Math.min(tabCount, Math.max(1, tasks.length)) }, async (_, workerIndex) => {
+        if (job) job.liveStatus = `${nickLabel}: ${sheetLabel}, hang doi chung ${queue.total} link`;
+        log(profileId, "xep hang", `${nickLabel} bat dau ${sheetLabel}, lay link ${direction === "desc" ? "tu duoi len" : "tu tren xuong"} trong hang doi chung`);
+        const workers = Array.from({ length: Math.min(tabCount, Math.max(1, queue.total)) }, async (_, workerIndex) => {
           let page = await browser.newPage();
           await applyWindowTiling(browser, page, workerSlot, workerTotal);
           try {
-            while (cursor < tasks.length) {
+            while (true) {
               if (runtime.stopRequested) throw stoppedError();
-              const task = tasks[cursor++];
+              if (queue.aborted) throw new Error(queue.abortReason || "Hang doi Sheet da dung.");
+              const task = claimSharedTask(queue, direction);
+              if (!task) break;
               const label = `${nickLabel} ${sheetLabel} row ${task.rowNumber}`;
               if (job) job.liveStatus = `${label} (${checked}/${totalTasks})`;
               log(profileId, "check link", `bat dau ${label}: ${task.link}`);
@@ -419,7 +467,7 @@ export function createMarketplaceLinkOrderTool({
               const checkedTask = await checkTaskWithRetry(browser, page, task, timeoutMs, profileId, nickLabel, label, workerSlot, workerTotal);
               status = checkedTask.status;
               page = checkedTask.page;
-              await writeStatus(plan.client, plan.title, currentStatusIndex, task, status);
+              await writeStatus(plan.client, plan.title, plan.nick1Index, task, status);
               checked += 1;
               log(profileId, "ghi Sheet", `${label} => ${status}`, status === "lỗi check" ? "warn" : "success");
             }
@@ -428,6 +476,7 @@ export function createMarketplaceLinkOrderTool({
           }
         });
         await Promise.all(workers);
+        await waitForSheetPeers(queue);
       }
       if (job) {
         job.status = "success";
@@ -436,6 +485,7 @@ export function createMarketplaceLinkOrderTool({
       }
       return { profileId, checked, total: totalTasks, sheets: plans.length };
     } catch (error) {
+      abortSharedQueues(plans, error.message || String(error));
       if (String(error?.status || "").toLowerCase() === "stopped") {
         if (job) {
           job.status = "stopped";
@@ -479,9 +529,10 @@ export function createMarketplaceLinkOrderTool({
     }
     if (!plans.length) throw new Error("Chua nhap link/ID Sheet check link order.");
     const profiles = [
-      nick1 ? { profileId: nick1, nickLabel: "nick 1", statusIndex: plans[0].nick1Index, direction: "asc" } : null,
-      nick2 ? { profileId: nick2, nickLabel: "nick 2", statusIndex: plans[0].nick2Index, direction: "desc" } : null
+      nick1 ? { profileId: nick1, nickLabel: "nick 1", direction: "asc" } : null,
+      nick2 ? { profileId: nick2, nickLabel: "nick 2", direction: "desc" } : null
     ].filter(Boolean);
+    for (const plan of plans) plan.sharedQueue = createSharedQueue(plan, profiles.length);
     let sheetRows = typeof getRowsByProfileIds === "function"
       ? await getRowsByProfileIds(config, profiles.map((item) => item.profileId))
       : new Map();
@@ -507,13 +558,13 @@ export function createMarketplaceLinkOrderTool({
         profileId: item.profileId,
         tool: "check link order",
         status: "queued",
-        liveStatus: `${item.nickLabel}: ${item.direction === "desc" ? "tu duoi len" : "tu tren xuong"}, dang cho chay ${tabCount} tab`,
+        liveStatus: `${item.nickLabel}: ${item.direction === "desc" ? "tu duoi len" : "tu tren xuong"} trong hang doi chung, dang cho chay ${tabCount} tab`,
         logs: [],
         startedAt: new Date().toISOString(),
         finishedAt: "",
         result: null
       });
-      log(item.profileId, "xep hang", `${item.nickLabel} da xep hang ${tabCount} tab, chay ${item.direction === "desc" ? "tu duoi len" : "tu tren xuong"}`);
+      log(item.profileId, "xep hang", `${item.nickLabel} da xep hang ${tabCount} tab, lay link ${item.direction === "desc" ? "tu duoi len" : "tu tren xuong"} trong hang doi chung.`);
     }
 
     runtime.running = true;

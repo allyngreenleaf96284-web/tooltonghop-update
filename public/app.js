@@ -61,6 +61,7 @@
   logSearchQuery: "",
   logTypeFilter: "all",
   logToolFilter: "all",
+  marketplaceCheckSheetLinks: [],
   config: null,
   searchQuery: "",
   bulkSearchQuery: "",
@@ -77,6 +78,79 @@
 };
 
 const $ = (id) => document.getElementById(id);
+
+function normalizeMarketplaceSheetLinks(values) {
+  const seen = new Set();
+  const result = [];
+  for (const value of Array.isArray(values) ? values : []) {
+    const text = String(value || "").trim();
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    result.push(text);
+  }
+  return result;
+}
+
+function currentMarketplaceSheetLinks() {
+  const list = $("marketplaceCheckSheetList");
+  if (!list) return normalizeMarketplaceSheetLinks(state.marketplaceCheckSheetLinks);
+  const links = [...list.querySelectorAll("input[data-marketplace-sheet]")].map((input) => input.value);
+  state.marketplaceCheckSheetLinks = normalizeMarketplaceSheetLinks(links);
+  return state.marketplaceCheckSheetLinks;
+}
+
+function renderMarketplaceCheckSheetList(values = state.marketplaceCheckSheetLinks) {
+  const list = $("marketplaceCheckSheetList");
+  if (!list) return;
+  const normalized = normalizeMarketplaceSheetLinks(values);
+  state.marketplaceCheckSheetLinks = normalized;
+  const displayValues = normalized.length ? normalized : [""];
+  list.replaceChildren();
+  displayValues.forEach((value, index) => {
+    const row = document.createElement("div");
+    row.className = "link-order-sheet-row";
+    const label = document.createElement("span");
+    label.className = "link-order-sheet-label";
+    label.textContent = `Sheet ${index + 1}`;
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = value;
+    input.dataset.marketplaceSheet = "true";
+    input.placeholder = "https://docs.google.com/spreadsheets/d/.../edit?gid=0";
+    input.addEventListener("input", () => {
+      const liveValues = [...list.querySelectorAll("input[data-marketplace-sheet]")].map((item) => item.value);
+      state.marketplaceCheckSheetLinks = normalizeMarketplaceSheetLinks(liveValues);
+    });
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "ghost-btn small-btn";
+    edit.textContent = "Sửa";
+    edit.addEventListener("click", () => {
+      input.focus();
+      input.select();
+    });
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "ghost-btn small-btn danger-btn";
+    remove.textContent = "Xóa";
+    remove.addEventListener("click", () => {
+      const remaining = [...list.querySelectorAll("input[data-marketplace-sheet]")]
+        .filter((item) => item !== input)
+        .map((item) => item.value);
+      renderMarketplaceCheckSheetList(remaining);
+    });
+    row.append(label, input, edit, remove);
+    list.append(row);
+  });
+}
+
+function addMarketplaceCheckSheet() {
+  const links = currentMarketplaceSheetLinks();
+  state.marketplaceCheckSheetLinks = [...links, ""];
+  renderMarketplaceCheckSheetList(state.marketplaceCheckSheetLinks);
+  const inputs = $("marketplaceCheckSheetList")?.querySelectorAll("input[data-marketplace-sheet]");
+  inputs?.[inputs.length - 1]?.focus();
+}
 
 function setStatus(message, isError = false) {
   $("statusText").textContent = message;
@@ -161,11 +235,9 @@ async function loadConfig() {
   if ($("checkOrderSpreadsheetId")) $("checkOrderSpreadsheetId").value = config.checkOrderSpreadsheetId || "";
   if ($("checkOrderSheetName")) $("checkOrderSheetName").value = config.checkOrderSheetName || "check order";
   if ($("checkOrderConcurrency")) $("checkOrderConcurrency").value = config.checkOrderConcurrency || 1;
-  if ($("marketplaceCheckSpreadsheetIds")) {
-    $("marketplaceCheckSpreadsheetIds").value = (config.marketplaceCheckSpreadsheetIds?.length
-      ? config.marketplaceCheckSpreadsheetIds
-      : [config.marketplaceCheckSpreadsheetId || ""]).filter(Boolean).join("\n");
-  }
+  renderMarketplaceCheckSheetList(config.marketplaceCheckSpreadsheetIds?.length
+    ? config.marketplaceCheckSpreadsheetIds
+    : [config.marketplaceCheckSpreadsheetId || ""]);
   if ($("marketplaceCheckSheetName")) $("marketplaceCheckSheetName").value = config.marketplaceCheckSheetName || "";
   if ($("marketplaceCheckNick1Id")) $("marketplaceCheckNick1Id").value = config.marketplaceCheckNick1Id || "";
   if ($("marketplaceCheckNick2Id")) $("marketplaceCheckNick2Id").value = config.marketplaceCheckNick2Id || "";
@@ -229,6 +301,7 @@ async function loadConfig() {
 }
 
 async function saveConfig() {
+  const marketplaceCheckSheetLinks = currentMarketplaceSheetLinks();
   const { config } = await api("/api/config", {
     method: "POST",
     body: JSON.stringify({
@@ -247,8 +320,8 @@ async function saveConfig() {
       checkOrderSpreadsheetId: $("checkOrderSpreadsheetId")?.value || "",
       checkOrderSheetName: $("checkOrderSheetName")?.value || "check order",
       checkOrderConcurrency: Math.max(1, Math.min(4, Number($("checkOrderConcurrency")?.value || 1))),
-      marketplaceCheckSpreadsheetId: $("marketplaceCheckSpreadsheetIds")?.value.split(/\r?\n/).map((value) => value.trim()).find(Boolean) || "",
-      marketplaceCheckSpreadsheetIds: $("marketplaceCheckSpreadsheetIds")?.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean) || [],
+      marketplaceCheckSpreadsheetId: marketplaceCheckSheetLinks[0] || "",
+      marketplaceCheckSpreadsheetIds: marketplaceCheckSheetLinks,
       marketplaceCheckSheetName: $("marketplaceCheckSheetName")?.value || "",
       marketplaceCheckNick1Id: $("marketplaceCheckNick1Id")?.value || "",
       marketplaceCheckNick2Id: $("marketplaceCheckNick2Id")?.value || "",
@@ -1630,16 +1703,21 @@ async function startCheckOrder(profileIds) {
 async function startLinkOrder() {
   const nick1 = $("marketplaceCheckNick1Id")?.value.trim() || "";
   const nick2 = $("marketplaceCheckNick2Id")?.value.trim() || "";
+  const marketplaceCheckSheetLinks = currentMarketplaceSheetLinks();
   if (!nick1 && !nick2) {
     $("linkOrderStatusText").textContent = "Bạn cần nhập ID Hide nick 1 hoặc nick 2.";
+    return;
+  }
+  if (!marketplaceCheckSheetLinks.length) {
+    $("linkOrderStatusText").textContent = "Bạn cần thêm ít nhất một link Sheet.";
     return;
   }
   try {
     $("runLinkOrderBtn").disabled = true;
     await saveConfig();
     const body = {
-      marketplaceCheckSpreadsheetId: $("marketplaceCheckSpreadsheetIds")?.value.split(/\r?\n/).map((value) => value.trim()).find(Boolean) || "",
-      marketplaceCheckSpreadsheetIds: $("marketplaceCheckSpreadsheetIds")?.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean) || [],
+      marketplaceCheckSpreadsheetId: marketplaceCheckSheetLinks[0] || "",
+      marketplaceCheckSpreadsheetIds: marketplaceCheckSheetLinks,
       marketplaceCheckSheetName: $("marketplaceCheckSheetName")?.value || "",
       marketplaceCheckNick1Id: nick1,
       marketplaceCheckNick2Id: nick2,
@@ -2823,6 +2901,7 @@ if ($("runCheckOrderFolderBtn")) $("runCheckOrderFolderBtn").addEventListener("c
 if ($("stopCheckOrderBtn")) $("stopCheckOrderBtn").addEventListener("click", stopCurrentTool);
 if ($("runLinkOrderBtn")) $("runLinkOrderBtn").addEventListener("click", startLinkOrder);
 if ($("stopLinkOrderBtn")) $("stopLinkOrderBtn").addEventListener("click", stopCurrentTool);
+if ($("addMarketplaceSheetBtn")) $("addMarketplaceSheetBtn").addEventListener("click", addMarketplaceCheckSheet);
 if ($("checkOrderSearchInput")) $("checkOrderSearchInput").addEventListener("input", (event) => {
   state.checkOrderSearchQuery = event.target.value;
   state.checkOrderBulkSearchQuery = event.target.value;
@@ -3160,9 +3239,6 @@ loadConfig()
     scheduleStateProxyRealtime();
   })
   .catch((error) => setStatus(error.message, true));
-
-
-
 
 
 
