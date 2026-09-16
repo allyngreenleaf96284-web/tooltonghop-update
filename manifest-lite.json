@@ -1,9 +1,9 @@
 {
   "name": "Tool Tong Hop Lite",
   "channel": "lite",
-  "version": "2026.09.11.1",
+  "version": "2026.09.16.1",
   "rawBase": "https://raw.githubusercontent.com/allyngreenleaf96284-web/tooltonghop-update/main/lite",
-  "createdAt": "2026-09-11T03:45:22.457Z",
+  "createdAt": "2026-09-16T08:14:00.200Z",
   "files": [
     {
       "path": "server.js",

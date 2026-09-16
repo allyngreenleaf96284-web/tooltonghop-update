@@ -636,6 +636,37 @@ label {
   max-width: 100px;
 }
 
+.link-order-bulk-tools {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) auto;
+  gap: 10px 14px;
+  align-items: end;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.link-order-bulk-tools label {
+  margin-bottom: 0;
+}
+
+.link-order-bulk-tools textarea {
+  min-height: 86px;
+  resize: vertical;
+}
+
+.link-order-bulk-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.link-order-bulk-tools .config-note {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
 .proxy-config-grid .wide-field {
   grid-column: span 2;
 }
@@ -1498,7 +1529,6 @@ tr.duplicate-row {
     grid-template-columns: 1fr 1fr;
   }
 }
-
 
 
 

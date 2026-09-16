@@ -1656,6 +1656,37 @@ async function startLinkOrder() {
     $("runLinkOrderBtn").disabled = false;
   }
 }
+
+async function manageMarketplaceLinks(action) {
+  const links = $("marketplaceCheckBulkLinks")?.value || "";
+  const statusNode = $("marketplaceCheckBulkStatus");
+  if (!links.trim()) {
+    if (statusNode) statusNode.textContent = "Hãy nhập ít nhất một link http/https, mỗi dòng một link.";
+    return;
+  }
+  const buttonId = action === "delete" ? "deleteMarketplaceLinksBtn" : "addMarketplaceLinksBtn";
+  const button = $(buttonId);
+  try {
+    if (button) button.disabled = true;
+    if (statusNode) statusNode.textContent = action === "delete" ? "Đang xóa link trong Sheet..." : "Đang thêm link vào Sheet...";
+    const { data } = await api("/api/tools/check-link-order/links", {
+      method: "POST",
+      body: JSON.stringify({
+        action,
+        links,
+        marketplaceCheckSpreadsheetId: $("marketplaceCheckSpreadsheetId")?.value || "",
+        marketplaceCheckSheetName: $("marketplaceCheckSheetName")?.value || ""
+      })
+    });
+    if (statusNode) statusNode.textContent = `${action === "delete" ? "Đã xóa" : "Đã thêm"} ${data.changed || 0}/${data.requested || 0} link ở tab ${data.title || ""}.`;
+    if (action === "add") $("marketplaceCheckBulkLinks").value = "";
+  } catch (error) {
+    if (statusNode) statusNode.textContent = error.message || "Không cập nhật được danh sách link.";
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 function isFullDone(profile) {
   return String(profile.sheetData?.Tool || "").trim().toLowerCase().includes("full");
 }
@@ -2750,6 +2781,8 @@ $("saveConfig").addEventListener("click", saveConfig);
 if ($("saveFullConfig")) $("saveFullConfig").addEventListener("click", saveConfig);
 if ($("saveCheckOrderConfig")) $("saveCheckOrderConfig").addEventListener("click", saveConfig);
 if ($("saveLinkOrderConfig")) $("saveLinkOrderConfig").addEventListener("click", saveConfig);
+if ($("addMarketplaceLinksBtn")) $("addMarketplaceLinksBtn").addEventListener("click", () => manageMarketplaceLinks("add"));
+if ($("deleteMarketplaceLinksBtn")) $("deleteMarketplaceLinksBtn").addEventListener("click", () => manageMarketplaceLinks("delete"));
 if ($("savePostConfig")) $("savePostConfig").addEventListener("click", savePostConfig);
 if ($("saveInteractionConfig")) $("saveInteractionConfig").addEventListener("click", saveConfig);
 if ($("savePageConfig")) $("savePageConfig").addEventListener("click", saveConfig);
@@ -3153,7 +3186,6 @@ loadConfig()
     scheduleStateProxyRealtime();
   })
   .catch((error) => setStatus(error.message, true));
-
 
 
 

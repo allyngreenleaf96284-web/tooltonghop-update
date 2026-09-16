@@ -261,10 +261,11 @@ export function createMarketplaceLinkOrderTool({
     const values = await client.getValues(title);
     if (!values.length) throw new Error("Sheet dang trong.");
     const indexes = await ensureHeaders(client, title, values);
-    return { client, title, gid: sheetInput.gid, values, ...indexes };
+    const sheetId = sheets.find((sheet) => sheet.properties?.title === title)?.properties?.sheetId;
+    return { client, title, gid: sheetInput.gid, sheetId, values, ...indexes };
   }
 
-  function buildTasks(values, linkIndex, statusIndex) {
+  function buildTasks(values, linkIndex, statusIndex, direction = "asc") {
     const tasks = [];
     for (let index = 1; index < values.length; index += 1) {
       const row = values[index] || [];
@@ -273,7 +274,47 @@ export function createMarketplaceLinkOrderTool({
       if (!link || (status && !shouldRetryStatus(status))) continue;
       tasks.push({ rowNumber: index + 1, link });
     }
-    return tasks;
+    return direction === "desc" ? tasks.reverse() : tasks;
+  }
+
+  function normalizeLinkList(value) {
+    const raw = Array.isArray(value) ? value : String(value || "").split(/[\r\n,]+/);
+    return [...new Set(raw.map((item) => String(item || "").trim()).filter((item) => /^https?:\/\//i.test(item)))];
+  }
+
+  async function manageLinks(config, action, inputLinks) {
+    if (runtime.running) throw new Error("Khong the sua danh sach link khi tool dang chay.");
+    const plan = await readPlan(config);
+    const links = normalizeLinkList(inputLinks);
+    if (!links.length) throw new Error("Chua co link http/https hop le.");
+    const wanted = new Set(links);
+    if (action === "delete") {
+      const rowsToDelete = [];
+      for (let index = 1; index < plan.values.length; index += 1) {
+        const link = String(plan.values[index]?.[plan.linkIndex] || "").trim();
+        if (wanted.has(link)) rowsToDelete.push(index + 1);
+      }
+      if (!rowsToDelete.length) return { action, requested: links.length, changed: 0, title: plan.title };
+      if (plan.sheetId === undefined || plan.sheetId === null) throw new Error("Khong lay duoc sheetId de xoa dong.");
+      await plan.client.batchUpdate(rowsToDelete.sort((a, b) => b - a).map((rowNumber) => ({
+        deleteDimension: {
+          range: { sheetId: Number(plan.sheetId), dimension: "ROWS", startIndex: rowNumber - 1, endIndex: rowNumber }
+        }
+      })));
+      return { action, requested: links.length, changed: rowsToDelete.length, title: plan.title };
+    }
+
+    const existing = new Set(plan.values.slice(1).map((row) => String(row?.[plan.linkIndex] || "").trim()).filter(Boolean));
+    const rowsToAdd = links.filter((link) => !existing.has(link));
+    if (!rowsToAdd.length) return { action: "add", requested: links.length, changed: 0, title: plan.title };
+    const nextValues = plan.values.map((row) => [...(row || [])]);
+    for (const link of rowsToAdd) {
+      const row = Array(plan.headers.length).fill("");
+      row[plan.linkIndex] = link;
+      nextValues.push(row);
+    }
+    await plan.client.updateValues(plan.title, nextValues);
+    return { action: "add", requested: links.length, changed: rowsToAdd.length, title: plan.title };
   }
 
   async function writeStatus(client, title, statusIndex, task, status) {
@@ -371,7 +412,7 @@ export function createMarketplaceLinkOrderTool({
     }
   }
 
-  async function runNick({ profileId, nickLabel, statusIndex, sheetRow, config, plan, tabCount, workerSlot = 0, workerTotal = 2 }) {
+  async function runNick({ profileId, nickLabel, statusIndex, direction, sheetRow, config, plan, tabCount, workerSlot = 0, workerTotal = 2 }) {
     const manager = getHideManager();
     if (manager) {
       manager.__profileConfig = async () => ({ ...config, browserApiProvider: "hide" });
@@ -380,7 +421,7 @@ export function createMarketplaceLinkOrderTool({
       ? buildToolRow(profileId, sheetRow || {})
       : { uid: String(sheetRow?.uid || profileId).trim(), profile_id: profileId, raw: { ...(sheetRow || {}) } };
     row.profile_id = profileId;
-    const tasks = buildTasks(plan.values, plan.linkIndex, statusIndex);
+    const tasks = buildTasks(plan.values, plan.linkIndex, statusIndex, direction);
     const job = runtime.jobs.get(profileId);
     let browser = null;
     let loginPage = null;
@@ -456,8 +497,8 @@ export function createMarketplaceLinkOrderTool({
     const tabCount = clampNumber(config.marketplaceCheckTabsPerNick, 5, 1, 20);
     const plan = await readPlan(config);
     const profiles = [
-      nick1 ? { profileId: nick1, nickLabel: "nick 1", statusIndex: plan.nick1Index } : null,
-      nick2 ? { profileId: nick2, nickLabel: "nick 2", statusIndex: plan.nick2Index } : null
+      nick1 ? { profileId: nick1, nickLabel: "nick 1", statusIndex: plan.nick1Index, direction: "asc" } : null,
+      nick2 ? { profileId: nick2, nickLabel: "nick 2", statusIndex: plan.nick2Index, direction: "desc" } : null
     ].filter(Boolean);
     let sheetRows = typeof getRowsByProfileIds === "function"
       ? await getRowsByProfileIds(config, profiles.map((item) => item.profileId))
@@ -484,13 +525,13 @@ export function createMarketplaceLinkOrderTool({
         profileId: item.profileId,
         tool: "check link order",
         status: "queued",
-        liveStatus: `${item.nickLabel}: dang cho chay ${tabCount} tab`,
+        liveStatus: `${item.nickLabel}: ${item.direction === "desc" ? "tu duoi len" : "tu tren xuong"}, dang cho chay ${tabCount} tab`,
         logs: [],
         startedAt: new Date().toISOString(),
         finishedAt: "",
         result: null
       });
-      log(item.profileId, "xep hang", `${item.nickLabel} da xep hang ${tabCount} tab`);
+      log(item.profileId, "xep hang", `${item.nickLabel} da xep hang ${tabCount} tab, chay ${item.direction === "desc" ? "tu duoi len" : "tu tren xuong"}`);
     }
 
     runtime.running = true;
@@ -503,6 +544,7 @@ export function createMarketplaceLinkOrderTool({
           config,
           plan,
           tabCount,
+          direction: item.direction,
           workerSlot: index,
           workerTotal: profiles.length
         })));
@@ -514,5 +556,5 @@ export function createMarketplaceLinkOrderTool({
     return { started: profiles.length, profileIds: profiles.map((item) => item.profileId), sheetTitle: plan.title, tabsPerNick: tabCount };
   }
 
-  return { run };
+  return { run, manageLinks };
 }

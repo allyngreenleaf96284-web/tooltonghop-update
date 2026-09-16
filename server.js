@@ -3293,6 +3293,17 @@ async function handleApi(req, res) {
       });
       return jsonResponse(res, 200, { ok: true, data });
     }
+    if (req.method === "POST" && url.pathname === "/api/tools/check-link-order/links") {
+      const body = await parseBody(req);
+      const savedConfig = await saveConfigV2({ ...(await readConfig()), ...body });
+      const config = await resolveAccountSheetConfig(savedConfig);
+      const data = await marketplaceLinkOrderModule.manageLinks(
+        config,
+        String(body.action || "add").toLowerCase() === "delete" ? "delete" : "add",
+        body.links
+      );
+      return jsonResponse(res, 200, { ok: true, config, data });
+    }
     if (req.method === "POST" && url.pathname === "/api/tools/check-link-order") {
       const body = await parseBody(req);
       const savedConfig = await saveConfigV2({ ...(await readConfig()), ...body });
@@ -3628,7 +3639,6 @@ server.listen(5177, "127.0.0.1", () => {
   startBackgroundHideSheetSync();
   startProxyMonitor();
 });
-
 
 
 

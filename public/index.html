@@ -667,7 +667,7 @@
             <div>
               <div class="eyebrow">Marketplace Link Tool</div>
               <h2>Check link order</h2>
-              <p id="linkOrderStatusText">Dùng 2 profile HideMyAcc để check link Marketplace và ghi từng cột nick.</p>
+              <p id="linkOrderStatusText">Nick 1 chạy từ trên xuống, nick 2 chạy từ dưới lên và ghi riêng từng cột trạng thái.</p>
             </div>
             <div class="actions">
               <button id="stopLinkOrderBtn" class="ghost-btn danger-btn" type="button"><span>Dừng hẳn</span></button>
@@ -705,7 +705,18 @@
                 Timeout mỗi link ms
                 <input id="marketplaceCheckTimeoutMs" type="number" min="30000" max="240000" step="5000" />
               </label>
-              <button id="saveLinkOrderConfig" class="primary action-wide" type="button"><span>Lưu cấu hình check link</span></button>
+            <button id="saveLinkOrderConfig" class="primary action-wide" type="button"><span>Lưu cấu hình check link</span></button>
+            </div>
+            <div class="link-order-bulk-tools">
+              <label>
+                Thêm hoặc xóa nhiều link
+                <textarea id="marketplaceCheckBulkLinks" rows="4" placeholder="Mỗi dòng một link Marketplace"></textarea>
+              </label>
+              <div class="link-order-bulk-actions">
+                <button id="addMarketplaceLinksBtn" class="ghost-btn" type="button"><span>Thêm nhiều link</span></button>
+                <button id="deleteMarketplaceLinksBtn" class="ghost-btn danger-btn" type="button"><span>Xóa các link này</span></button>
+              </div>
+              <small id="marketplaceCheckBulkStatus" class="config-note">Link trùng sẽ được bỏ qua khi thêm. Xóa sẽ xóa toàn bộ dòng có URL trùng khớp.</small>
             </div>
           </section>
 
@@ -1940,7 +1951,6 @@
     <script src="/app.js?v=online-update-20260831-1"></script>
   </body>
 </html>
-
 
 
 
