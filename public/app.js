@@ -8,6 +8,7 @@
   selectedCheckOrderIds: new Set(),
   selectedFullIds: new Set(),
   selectedPostIds: new Set(),
+  selectedPost4VIds: new Set(),
   selectedInteractionIds: new Set(),
   selectedPageIds: new Set(),
   selectedAvatarIds: new Set(),
@@ -18,6 +19,7 @@
   linkOrderBatchIds: [],
   fullBatchIds: [],
   postBatchIds: [],
+  post4VBatchIds: [],
   interactionBatchIds: [],
   pageBatchIds: [],
   avatarBatchIds: [],
@@ -43,6 +45,8 @@
   postBulkSearchQuery: "",
   postProgressFilter: "all",
   postResultFilter: "all",
+  post4VSearchQuery: "",
+  post4VBulkSearchQuery: "",
   interactionSearchQuery: "",
   interactionBulkSearchQuery: "",
   interactionProgressFilter: "all",
@@ -231,6 +235,11 @@ async function loadConfig() {
   if ($("postDataRoot")) $("postDataRoot").value = config.fullDataRoot || "E:\\dangbai";
   if ($("postPriceMin")) $("postPriceMin").value = config.fullPriceMin || "";
   if ($("postPriceMax")) $("postPriceMax").value = config.fullPriceMax || "";
+  if ($("fourVPostSpreadsheetId")) $("fourVPostSpreadsheetId").value = config.fourVPostSpreadsheetId || "";
+  if ($("fourVPostPriceMin")) $("fourVPostPriceMin").value = config.fourVPostPriceMin || 20;
+  if ($("fourVPostPriceMax")) $("fourVPostPriceMax").value = config.fourVPostPriceMax || 25;
+  if ($("fourVPostPackageWeight")) $("fourVPostPackageWeight").value = config.fourVPostPackageWeight || "2-5 lbs";
+  if ($("fourVPostSuccessPrefix")) $("fourVPostSuccessPrefix").value = config.fourVPostSuccessPrefix || "";
   if ($("checkConcurrency")) $("checkConcurrency").value = config.checkConcurrency || 4;
   if ($("checkOrderSpreadsheetId")) $("checkOrderSpreadsheetId").value = config.checkOrderSpreadsheetId || "";
   if ($("checkOrderSheetName")) $("checkOrderSheetName").value = config.checkOrderSheetName || "check order";
@@ -316,6 +325,11 @@ async function saveConfig() {
       fullDataRoot: $("fullDataRoot").value,
       fullPriceMin: $("fullPriceMin").value,
       fullPriceMax: $("fullPriceMax").value,
+      fourVPostSpreadsheetId: $("fourVPostSpreadsheetId")?.value || "",
+      fourVPostPriceMin: Math.max(1, Number($("fourVPostPriceMin")?.value || 20)),
+      fourVPostPriceMax: Math.max(1, Number($("fourVPostPriceMax")?.value || 25)),
+      fourVPostPackageWeight: $("fourVPostPackageWeight")?.value || "2-5 lbs",
+      fourVPostSuccessPrefix: $("fourVPostSuccessPrefix")?.value || "",
       checkConcurrency: Number($("checkConcurrency")?.value || 4),
       checkOrderSpreadsheetId: $("checkOrderSpreadsheetId")?.value || "",
       checkOrderSheetName: $("checkOrderSheetName")?.value || "check order",
@@ -665,6 +679,7 @@ function renderActiveModule() {
   if (state.activeModule === "checkorder") renderCheckOrderRows();
   if (state.activeModule === "full") renderFullRows();
   if (state.activeModule === "post") renderPostRows();
+  if (state.activeModule === "post4v") renderPost4VRows();
   if (state.activeModule === "interaction") renderInteractionRows();
   if (state.activeModule === "pages") renderPageRows();
   if (state.activeModule === "avatar") renderAvatarRows();
@@ -1241,6 +1256,7 @@ function setActiveModule(moduleName) {
   $("linkOrderModule")?.classList.toggle("hidden", moduleName !== "linkorder");
   $("fullModule").classList.toggle("hidden", moduleName !== "full");
   $("postModule").classList.toggle("hidden", moduleName !== "post");
+  $("post4vModule")?.classList.toggle("hidden", moduleName !== "post4v");
   $("interactionModule").classList.toggle("hidden", moduleName !== "interaction");
   $("pageModule").classList.toggle("hidden", moduleName !== "pages");
   $("avatarModule").classList.toggle("hidden", moduleName !== "avatar");
@@ -1253,6 +1269,7 @@ function setActiveModule(moduleName) {
   $("linkOrderModule")?.classList.toggle("active", moduleName === "linkorder");
   $("fullModule").classList.toggle("active", moduleName === "full");
   $("postModule").classList.toggle("active", moduleName === "post");
+  $("post4vModule")?.classList.toggle("active", moduleName === "post4v");
   $("interactionModule").classList.toggle("active", moduleName === "interaction");
   $("pageModule").classList.toggle("active", moduleName === "pages");
   $("avatarModule").classList.toggle("active", moduleName === "avatar");
@@ -1980,6 +1997,117 @@ async function startDangBai(profileIds) {
   }
 }
 
+function post4VProfiles() {
+  let profiles = state.selectedFolderId === "all"
+    ? [...state.profiles]
+    : state.profiles.filter((profile) => profile.folderId === state.selectedFolderId);
+  profiles = profiles.filter((profile) => matchesProfileFilters(profile, state.post4VSearchQuery, state.post4VBulkSearchQuery));
+  profiles.sort((a, b) => (a.folderName || "").localeCompare(b.folderName || "", "vi", { sensitivity: "base" })
+    || (a.name || "").localeCompare(b.name || "", "vi", { numeric: true, sensitivity: "base" }));
+  return profiles;
+}
+
+function isPost4VError(profile) {
+  const status = String(sheetValue(profile, "trạng thái", "trang thai") || "").trim().toLowerCase();
+  return status === "loi" || status === "lỗi" || status.startsWith("lỗi ");
+}
+
+function isMarked4V(profile) {
+  return String(sheetValue(profile, "số vạch", "so vach") || "").trim().toLowerCase() === "4v";
+}
+
+function renderPost4VRows() {
+  if (!$("post4vRows")) return;
+  const all = state.selectedFolderId === "all"
+    ? [...state.profiles]
+    : state.profiles.filter((profile) => profile.folderId === state.selectedFolderId);
+  const folderName = state.selectedFolderId === "all"
+    ? "Tất cả folder"
+    : state.folders.find((folder) => folder.id === state.selectedFolderId)?.name || "Folder đang chọn";
+  if (!toolRuntimeIsVisible()) $("post4vStatusText").textContent = `Đang xem: ${folderName}. Chỉ profile có 4v mới đăng bài.`;
+  $("post4vTotal").textContent = all.length;
+  $("post4vSelected").textContent = state.selectedPost4VIds.size;
+  $("post4vMarked4v").textContent = all.filter(isMarked4V).length;
+  $("post4vError").textContent = all.filter(isPost4VError).length;
+  const profiles = post4VProfiles();
+  $("post4vVisible").textContent = profiles.length;
+  updateSelectionSummary("post4vSelectionSummary", "clearPost4VSelectionBtn", state.selectedPost4VIds.size);
+  const rows = $("post4vRows");
+  if (!profiles.length) {
+    rows.innerHTML = `<tr><td colspan="9" class="empty">Không có profile phù hợp.</td></tr>`;
+    updatePost4VSelectAllState();
+    return;
+  }
+  rows.innerHTML = "";
+  for (const profile of profiles) {
+    const status = String(sheetValue(profile, "trạng thái", "trang thai") || "").trim();
+    const tr = document.createElement("tr");
+    if (isPost4VError(profile)) tr.classList.add("duplicate-row");
+    tr.innerHTML = `
+      <td><input class="post4v-check" type="checkbox" data-id="${escapeAttr(profile.id)}" ${state.selectedPost4VIds.has(profile.id) ? "checked" : ""} /></td>
+      <td>${escapeHtml(profile.name)}</td>
+      <td>${escapeHtml(profile.id)}</td>
+      <td class="uid">${escapeHtml(profile.uid || "")}</td>
+      <td>${escapeHtml(profile.sheetData?.Tool || "")}</td>
+      <td>${escapeHtml(status)}</td>
+      <td>${escapeHtml(sheetValue(profile, "số vạch", "so vach"))}</td>
+      <td>${escapeHtml(sheetValue(profile, "chi tiết", "chi tiet"))}</td>
+      <td>${escapeHtml(profile.folderName)}</td>
+    `;
+    rows.appendChild(tr);
+  }
+  rows.querySelectorAll(".post4v-check").forEach((checkbox) => {
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) state.selectedPost4VIds.add(checkbox.dataset.id);
+      else state.selectedPost4VIds.delete(checkbox.dataset.id);
+      $("post4vSelected").textContent = state.selectedPost4VIds.size;
+      updatePost4VSelectAllState();
+    });
+  });
+  updatePost4VSelectAllState();
+}
+
+function updatePost4VSelectAllState() {
+  const selectAll = $("selectAllPost4VRows");
+  if (!selectAll) return;
+  const profiles = post4VProfiles();
+  const selectedCount = profiles.filter((profile) => state.selectedPost4VIds.has(profile.id)).length;
+  selectAll.checked = profiles.length > 0 && selectedCount === profiles.length;
+  selectAll.indeterminate = selectedCount > 0 && selectedCount < profiles.length;
+}
+
+async function savePost4VConfig({ quiet = false } = {}) {
+  await saveConfig();
+  if (!quiet && $("post4vStatusText")) $("post4vStatusText").textContent = "Đã lưu cấu hình đăng bài 4v.";
+}
+
+async function startDangBai4V(profileIds) {
+  if (!profileIds.length) {
+    $("post4vStatusText").textContent = "Bạn cần chọn ít nhất một profile để kiểm tra 4v.";
+    return;
+  }
+  try {
+    $("runPost4VSelectedBtn").disabled = true;
+    $("runPost4VAllBtn").disabled = true;
+    await savePost4VConfig({ quiet: true });
+    const concurrency = Math.max(1, Math.min(4, Number($("postConcurrency")?.value || 4)));
+    const { data } = await api("/api/tools/dang-bai-4v", {
+      method: "POST",
+      body: JSON.stringify({ profileIds, concurrency })
+    });
+    state.post4VBatchIds = [...profileIds];
+    primeToolProgress(profileIds, "bắt đầu: kiểm tra 4v", "post4v");
+    $("post4vStatusText").textContent = `Đã bắt đầu kiểm tra và đăng bài 4v cho ${data.started} profile với ${data.concurrency || 1} luồng.`;
+    await refreshToolStatus();
+    startToolStatusPolling();
+  } catch (error) {
+    $("post4vStatusText").textContent = error.message;
+  } finally {
+    $("runPost4VSelectedBtn").disabled = false;
+    $("runPost4VAllBtn").disabled = false;
+  }
+}
+
 function isInteractionDone(profile) {
   const tool = String(profile.sheetData?.Tool || "").trim().toLowerCase();
   return tool.includes("tuong tac") || tool.includes("tương tác");
@@ -2383,6 +2511,7 @@ async function refreshToolStatus() {
       await refreshHide({ silent: true });
       if ($("fullStatusText")) $("fullStatusText").textContent = "Tool làm full đã chạy xong.";
       if ($("postStatusText")) $("postStatusText").textContent = "Tool đăng bài đã chạy xong.";
+      if ($("post4vStatusText")) $("post4vStatusText").textContent = "Tool đăng bài 4v đã chạy xong.";
       if ($("interactionStatusText")) $("interactionStatusText").textContent = "Tool tương tác đã chạy xong.";
       if ($("pageStatusText")) $("pageStatusText").textContent = "Tool tạo page đã chạy xong.";
       if ($("avatarStatusText")) $("avatarStatusText").textContent = "Tool đổi avatar đã chạy xong.";
@@ -2468,6 +2597,7 @@ function renderToolProgress(data) {
   });
   const fullProgress = buildProgress(state.fullBatchIds, "lam full");
   const postProgress = buildProgress(state.postBatchIds, "dang bai");
+  const post4VProgress = buildProgress(state.post4VBatchIds, "dang bai 4v");
   const interactionProgress = buildProgress(state.interactionBatchIds, "tuong tac");
   const pageProgress = buildProgress(state.pageBatchIds, "tao page");
   const avatarProgress = buildProgress(state.avatarBatchIds, "doi avatar");
@@ -2510,6 +2640,19 @@ function renderToolProgress(data) {
     textLabel: postProgress.summaryText,
     percent: postProgress.percent,
     jobs: postProgress.jobs
+  });
+  renderToolProgressPanel({
+    panelId: "post4vToolProgressPanel",
+    stateId: "post4vToolProgressState",
+    countId: "post4vToolProgressCount",
+    textId: "post4vToolProgressText",
+    barId: "post4vToolProgressBar",
+    listId: "post4vToolProgressList",
+    stateLabel: post4VProgress.total ? (post4VProgress.batch?.active ? (post4VProgress.batch.phase === "retry" ? "đang retry" : "đang chạy") : "xong") : "idle",
+    countLabel: `${post4VProgress.completed} / ${post4VProgress.total}`,
+    textLabel: post4VProgress.summaryText,
+    percent: post4VProgress.percent,
+    jobs: post4VProgress.jobs
   });
   renderToolProgressPanel({
     panelId: "interactionToolProgressPanel",
@@ -2673,6 +2816,7 @@ function renderActivityLogs() {
   renderActivityLogBox("linkOrderActivityLog", logs);
   renderActivityLogBox("fullActivityLog", logs);
   renderActivityLogBox("postActivityLog", logs);
+  renderActivityLogBox("post4vActivityLog", logs);
   renderActivityLogBox("interactionActivityLog", logs);
   renderActivityLogBox("pageActivityLog", logs);
   renderActivityLogBox("avatarActivityLog", logs);
@@ -2816,6 +2960,7 @@ async function stopCurrentTool() {
     setStatus(`Đã gửi lệnh dừng hẳn cho ${toolName}.`);
     if ($("fullStatusText") && state.activeModule === "full") $("fullStatusText").textContent = "Đã gửi lệnh dừng hẳn.";
     if ($("postStatusText") && state.activeModule === "post") $("postStatusText").textContent = "Đã gửi lệnh dừng hẳn.";
+    if ($("post4vStatusText") && state.activeModule === "post4v") $("post4vStatusText").textContent = "Đã gửi lệnh dừng hẳn.";
     if ($("passwordStatusText") && state.activeModule === "passwords") $("passwordStatusText").textContent = "Đã gửi lệnh dừng hẳn.";
     if ($("notificationStatusText") && state.activeModule === "notifications") $("notificationStatusText").textContent = "Đã gửi lệnh dừng hẳn.";
     if ($("checkOrderStatusText") && state.activeModule === "checkorder") $("checkOrderStatusText").textContent = "Đã gửi lệnh dừng hẳn.";
@@ -2836,6 +2981,9 @@ if ($("saveFullConfig")) $("saveFullConfig").addEventListener("click", saveConfi
 if ($("saveCheckOrderConfig")) $("saveCheckOrderConfig").addEventListener("click", saveConfig);
 if ($("saveLinkOrderConfig")) $("saveLinkOrderConfig").addEventListener("click", saveConfig);
 if ($("savePostConfig")) $("savePostConfig").addEventListener("click", savePostConfig);
+if ($("savePost4VConfig")) $("savePost4VConfig").addEventListener("click", () => savePost4VConfig().catch((error) => {
+  $("post4vStatusText").textContent = error.message;
+}));
 if ($("saveInteractionConfig")) $("saveInteractionConfig").addEventListener("click", saveConfig);
 if ($("savePageConfig")) $("savePageConfig").addEventListener("click", saveConfig);
 if ($("saveAvatarConfig")) $("saveAvatarConfig").addEventListener("click", saveConfig);
@@ -2992,6 +3140,13 @@ if ($("runPostTodoBtn")) $("runPostTodoBtn").addEventListener("click", () => {
   const ids = postProfiles().filter((profile) => !isPostDone(profile)).map((profile) => profile.id);
   startDangBai(ids);
 });
+if ($("runPost4VSelectedBtn")) $("runPost4VSelectedBtn").addEventListener("click", () => {
+  startDangBai4V([...state.selectedPost4VIds]);
+});
+if ($("runPost4VAllBtn")) $("runPost4VAllBtn").addEventListener("click", () => {
+  startDangBai4V(post4VProfiles().map((profile) => profile.id));
+});
+if ($("stopPost4VBtn")) $("stopPost4VBtn").addEventListener("click", stopCurrentTool);
 if ($("runRenewStandaloneBtn")) $("runRenewStandaloneBtn").addEventListener("click", () => {
   startRenewStandalone([...state.selectedInteractionIds]);
 });
@@ -3123,6 +3278,33 @@ if ($("selectAllPostRows")) $("selectAllPostRows").addEventListener("change", (e
   }
   renderPostRows();
 });
+if ($("post4vSearchInput")) $("post4vSearchInput").addEventListener("input", (event) => {
+  state.post4VSearchQuery = event.target.value;
+  state.post4VBulkSearchQuery = event.target.value;
+  renderPost4VRows();
+});
+if ($("clearPost4VSelectionBtn")) $("clearPost4VSelectionBtn").addEventListener("click", () => {
+  state.selectedPost4VIds.clear();
+  renderPost4VRows();
+});
+if ($("selectAllPost4VRows")) $("selectAllPost4VRows").addEventListener("change", (event) => {
+  for (const profile of post4VProfiles()) {
+    if (event.target.checked) state.selectedPost4VIds.add(profile.id);
+    else state.selectedPost4VIds.delete(profile.id);
+  }
+  renderPost4VRows();
+});
+let post4VConfigSaveTimer = null;
+["fourVPostSuccessPrefix", "fourVPostSpreadsheetId", "fourVPostPriceMin", "fourVPostPriceMax", "fourVPostPackageWeight"].forEach((id) => {
+  $(id)?.addEventListener("change", () => {
+    window.clearTimeout(post4VConfigSaveTimer);
+    post4VConfigSaveTimer = window.setTimeout(() => {
+      savePost4VConfig({ quiet: true }).catch((error) => {
+        if ($("post4vStatusText")) $("post4vStatusText").textContent = error.message;
+      });
+    }, 300);
+  });
+});
 if ($("interactionSearchInput")) $("interactionSearchInput").addEventListener("input", (event) => {
   state.interactionSearchQuery = event.target.value;
   state.interactionBulkSearchQuery = event.target.value;
@@ -3198,6 +3380,7 @@ if ($("selectAllAvatarRows")) $("selectAllAvatarRows").addEventListener("change"
 if ($("openLogsFromPasswordBtn")) $("openLogsFromPasswordBtn").addEventListener("click", () => setActiveModule("logs"));
 $("openLogsFromFullBtn").addEventListener("click", () => setActiveModule("logs"));
 if ($("openLogsFromPostBtn")) $("openLogsFromPostBtn").addEventListener("click", () => setActiveModule("logs"));
+if ($("openLogsFromPost4VBtn")) $("openLogsFromPost4VBtn").addEventListener("click", () => setActiveModule("logs"));
 if ($("openLogsFromInteractionBtn")) $("openLogsFromInteractionBtn").addEventListener("click", () => setActiveModule("logs"));
 if ($("openLogsFromPageBtn")) $("openLogsFromPageBtn").addEventListener("click", () => setActiveModule("logs"));
 if ($("openLogsFromAvatarBtn")) $("openLogsFromAvatarBtn").addEventListener("click", () => setActiveModule("logs"));
@@ -3239,12 +3422,6 @@ loadConfig()
     scheduleStateProxyRealtime();
   })
   .catch((error) => setStatus(error.message, true));
-
-
-
-
-
-
 
 
 

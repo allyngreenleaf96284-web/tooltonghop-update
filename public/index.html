@@ -74,6 +74,13 @@
               <small>2v đăng bài, 3v làm full, 4v dừng kiểm tra</small>
             </span>
           </button>
+          <button class="module-item" data-module="post4v">
+            <span class="module-icon">⬡</span>
+            <span>
+              <strong>Đăng bài 4v</strong>
+              <small>Delivery hoặc Shipping</small>
+            </span>
+          </button>
           <button class="module-item" data-module="interaction">
             <span class="module-icon">◇</span>
             <span>
@@ -900,7 +907,7 @@
             <div>
               <div class="eyebrow">Post Tool</div>
               <h2>Đăng bài</h2>
-              <p id="postStatusText">Dùng chung đăng nhập. 2v và 3v đăng bài, 4v dừng.</p>
+              <p id="postStatusText">Dùng chung đăng nhập. 2v và 3v đăng bài; 4v dùng tool riêng.</p>
             </div>
             <div class="actions">
               <button id="stopPostBtn" class="ghost-btn danger-btn" type="button">
@@ -1021,7 +1028,7 @@
             <section class="table-panel">
               <div class="table-title">
                 <span>Danh sách đăng bài</span>
-                <span>2v và 3v đăng bài; 4v được bỏ qua.</span>
+                <span>2v và 3v đăng bài; 4v dùng tool riêng.</span>
               </div>
               <div class="table-wrap">
                 <table>
@@ -1053,6 +1060,155 @@
                 <button id="openLogsFromPostBtn" class="ghost-btn small-btn">Chi tiết</button>
               </div>
               <div id="postActivityLog" class="activity-log"></div>
+            </section>
+          </section>
+        </section>
+
+        <section id="post4vModule" class="module-view hidden">
+          <header class="hero">
+            <div>
+              <div class="eyebrow">4V Marketplace</div>
+              <h2>Đăng bài 4v</h2>
+              <p id="post4vStatusText">Tự kiểm tra vạch: chỉ đăng khi đúng 4v; 2v sẽ đổi tên tụt 2v.</p>
+            </div>
+            <div class="actions">
+              <button id="stopPost4VBtn" class="ghost-btn danger-btn" type="button">
+                <span>Dừng hẳn</span>
+              </button>
+              <button id="runPost4VSelectedBtn" class="primary alt-primary" type="button">
+                <span>Chạy đã chọn</span>
+              </button>
+              <button id="runPost4VAllBtn" class="primary" type="button">
+                <span>Chạy tất cả</span>
+              </button>
+            </div>
+          </header>
+
+          <section class="tool-config-card">
+            <div class="table-title">
+              <span>Cấu hình đăng bài 4v</span>
+              <span>Tự lưu khi thay đổi.</span>
+            </div>
+            <div class="tool-config-grid post4v-config-grid">
+              <label class="wide-field">
+                Tên thêm khi thành công
+                <input id="fourVPostSuccessPrefix" type="text" placeholder="ok-" />
+              </label>
+              <label class="wide-field">
+                Sheet kết quả (cột A UID, cột B LINK SP)
+                <input id="fourVPostSpreadsheetId" type="text" placeholder="https://docs.google.com/spreadsheets/d/.../edit?gid=0" />
+              </label>
+              <label>
+                Giá nhỏ nhất ($)
+                <input id="fourVPostPriceMin" type="number" min="1" step="1" value="20" />
+              </label>
+              <label>
+                Giá lớn nhất ($)
+                <input id="fourVPostPriceMax" type="number" min="1" step="1" value="25" />
+              </label>
+              <label>
+                Package weight
+                <select id="fourVPostPackageWeight">
+                  <option value="Under 0.5 lbs">Under 0.5 lbs</option>
+                  <option value="0.5-1 lbs">0.5-1 lbs</option>
+                  <option value="1-2 lbs">1-2 lbs</option>
+                  <option value="2-5 lbs" selected>2-5 lbs</option>
+                  <option value="5-10 lbs">5-10 lbs</option>
+                  <option value="10-70 lbs">10-70 lbs</option>
+                </select>
+              </label>
+              <button id="savePost4VConfig" class="primary action-wide" type="button">
+                <span>Lưu cấu hình</span>
+              </button>
+            </div>
+          </section>
+
+          <section class="stats">
+            <div class="stat-card">
+              <span>Tổng profile</span>
+              <strong id="post4vTotal">0</strong>
+            </div>
+            <div class="stat-card">
+              <span>Đang chọn</span>
+              <strong id="post4vSelected">0</strong>
+            </div>
+            <div class="stat-card">
+              <span>Đã có 4v</span>
+              <strong id="post4vMarked4v">0</strong>
+            </div>
+            <div class="stat-card warning">
+              <span>Lỗi</span>
+              <strong id="post4vError">0</strong>
+            </div>
+            <div class="stat-card">
+              <span>Đang xem</span>
+              <strong id="post4vVisible">0</strong>
+            </div>
+          </section>
+
+          <section id="post4vToolProgressPanel" class="tool-progress hidden">
+            <div class="tool-progress-title">
+              <span>Tiến độ đăng bài 4v</span>
+              <span id="post4vToolProgressState" class="chip">idle</span>
+            </div>
+            <div class="tool-progress-summary">
+              <div class="tool-progress-meta">
+                <strong id="post4vToolProgressCount">0 / 0</strong>
+                <span id="post4vToolProgressText">Chưa có batch đang chạy.</span>
+              </div>
+              <div class="tool-progress-bar-track">
+                <div id="post4vToolProgressBar" class="tool-progress-bar-fill"></div>
+              </div>
+            </div>
+            <div id="post4vToolProgressList" class="tool-progress-list"></div>
+          </section>
+
+          <section class="control-deck">
+            <label class="search-panel">
+              <span>Tìm kiếm / lọc hàng loạt</span>
+              <textarea id="post4vSearchInput" rows="3" placeholder="Dán nhiều UID / id hide / trạng thái, mỗi dòng một giá trị..."></textarea>
+              <small>Chọn profile cần kiểm tra 4v. Tool chỉ đăng khi trang tạo bài xác nhận đúng 4v.</small>
+            </label>
+            <button id="clearPost4VSelectionBtn" class="ghost-btn">Bỏ chọn</button>
+          </section>
+          <div class="filter-meta-row">
+            <span id="post4vSelectionSummary" class="bulk-filter-summary">Đang chọn 0 con.</span>
+          </div>
+
+          <section class="work-grid">
+            <section class="table-panel">
+              <div class="table-title">
+                <span>Danh sách đăng bài 4v</span>
+                <span>4v đăng bài; vạch khác được ghi rõ trạng thái.</span>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th><input id="selectAllPost4VRows" type="checkbox" /></th>
+                      <th>Tên profile hiện tại</th>
+                      <th>ID profile</th>
+                      <th>UID</th>
+                      <th>Tool</th>
+                      <th>Trạng thái</th>
+                      <th>Số vạch</th>
+                      <th>Chi tiết</th>
+                      <th>Folder</th>
+                    </tr>
+                  </thead>
+                  <tbody id="post4vRows">
+                    <tr><td colspan="9" class="empty">Chưa có dữ liệu.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="activity-panel">
+              <div class="activity-title">
+                <span>Nhật ký</span>
+                <button id="openLogsFromPost4VBtn" class="ghost-btn small-btn">Chi tiết</button>
+              </div>
+              <div id="post4vActivityLog" class="activity-log"></div>
             </section>
           </section>
         </section>
@@ -1944,8 +2100,6 @@
     <script src="/app.js?v=online-update-20260831-1"></script>
   </body>
 </html>
-
-
 
 
 

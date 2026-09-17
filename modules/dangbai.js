@@ -72,6 +72,8 @@ function mapPostError(error) {
   const status = String(error?.status || "").trim().toLowerCase();
   const message = String(error?.message || error || "loi khong ro");
   if (status === "stopped") return { status: "stopped", detail: "Da dung han theo yeu cau." };
+  if (status === "loisp") return { status: "lỗi sp", detail: message };
+  if (status === "loi link sp") return { status: "lỗi link sp", detail: message };
   if (status === "limitdb") return { status: "limitdb", detail: message };
   if (status) return { status, detail: message };
   const lower = message.toLowerCase();
@@ -121,12 +123,17 @@ export function createDangBai({
   createSheetRowSession,
   allocateSellerInfoRow,
   updateSellerInfoUid,
+  appendMarketplacePostResult = null,
   stateProxy,
-  runtime
+  runtime,
+  mode = "standard"
 }) {
+  const isFourVPost = mode === "4v";
+  const toolName = isFourVPost ? "dang bai 4v" : "dang bai";
+
   function log(profileId, step, message, type = "info", detail = "") {
     addRuntimeLog(`[${profileId}] ${message}`, type, profileId, {
-      tool: "dang bai",
+      tool: toolName,
       step,
       detail
     });
@@ -998,14 +1005,344 @@ export function createDangBai({
     return { ok: true, detail: "Đã đăng bài thành công.", location: picked || target };
   }
 
+  function marketplaceError(status, message) {
+    const error = new Error(message);
+    error.status = status;
+    return error;
+  }
+
+  function normalizePackageWeight(value) {
+    const allowed = ["Under 0.5 lbs", "0.5-1 lbs", "1-2 lbs", "2-5 lbs", "5-10 lbs", "10-70 lbs"];
+    const wanted = String(value || "").trim().toLowerCase();
+    return allowed.find((item) => item.toLowerCase() === wanted) || "2-5 lbs";
+  }
+
+  function numericListingPrice(value, fallbackMin = 20, fallbackMax = 25) {
+    const text = String(value ?? "");
+    const parsed = Number((text.match(/\d+(?:\.\d+)?/) || [])[0]);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    const min = Math.max(1, Math.floor(Number(fallbackMin) || 20));
+    const max = Math.max(min, Math.floor(Number(fallbackMax) || 25));
+    return min + Math.floor(Math.random() * (max - min + 1));
+  }
+
+  async function readDeliveryMethod(page) {
+    return page.evaluate(() => {
+      const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
+      const visible = (node) => {
+        const rect = node?.getBoundingClientRect?.();
+        const style = node ? window.getComputedStyle(node) : null;
+        return Boolean(rect && rect.width > 0 && rect.height > 0 && style?.display !== "none" && style?.visibility !== "hidden");
+      };
+      const labels = Array.from(document.querySelectorAll("div, span, label"))
+        .filter((node) => visible(node) && /^delivery method$/i.test(clean(node.textContent || "")));
+      const cards = [];
+      for (const label of labels) {
+        let node = label;
+        for (let depth = 0; node && depth < 6; depth += 1, node = node.parentElement) {
+          const rect = node.getBoundingClientRect?.();
+          const text = clean(node.innerText || node.textContent || "");
+          if (!rect || rect.width < 180 || rect.width > 460 || rect.height < 38 || rect.height > 180 || rect.left > window.innerWidth * 0.45) continue;
+          if (!/^delivery method\b/i.test(text)) continue;
+          cards.push({ node, text, rect });
+          break;
+        }
+      }
+      cards.sort((a, b) => a.rect.top - b.rect.top || a.text.length - b.text.length);
+      const card = cards[0];
+      return card ? { text: card.text, top: Math.round(card.rect.top) } : null;
+    }).catch(() => null);
+  }
+
+  async function openDeliveryMethodMenu(page) {
+    const opened = await page.evaluate(() => {
+      const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
+      const visible = (node) => {
+        const rect = node?.getBoundingClientRect?.();
+        const style = node ? window.getComputedStyle(node) : null;
+        return Boolean(rect && rect.width > 0 && rect.height > 0 && style?.display !== "none" && style?.visibility !== "hidden");
+      };
+      const label = Array.from(document.querySelectorAll("div, span, label"))
+        .find((node) => visible(node) && /^delivery method$/i.test(clean(node.textContent || "")));
+      if (!label) return false;
+      let candidate = label;
+      for (let depth = 0; candidate && depth < 7; depth += 1, candidate = candidate.parentElement) {
+        const rect = candidate.getBoundingClientRect?.();
+        const text = clean(candidate.innerText || candidate.textContent || "");
+        if (!rect || rect.width < 180 || rect.width > 460 || rect.height < 38 || rect.height > 180 || !/^delivery method\b/i.test(text)) continue;
+        const target = candidate.matches("button, [role='button'], [role='combobox']")
+          ? candidate
+          : candidate.querySelector("button, [role='button'], [role='combobox']") || candidate;
+        target.scrollIntoView({ block: "center", inline: "nearest" });
+        target.click();
+        return true;
+      }
+      return false;
+    }).catch(() => false);
+    if (!opened) throw marketplaceError("loisp", "Khong mo duoc Delivery method.");
+    await sleep(700);
+  }
+
+  async function selectDeliveryMenuOption(page, wanted, wantedChecked = true) {
+    return page.evaluate(({ value, shouldBeChecked }) => {
+      const clean = (text) => String(text || "").replace(/\s+/g, " ").trim();
+      const visible = (node) => {
+        const rect = node?.getBoundingClientRect?.();
+        const style = node ? window.getComputedStyle(node) : null;
+        return Boolean(rect && rect.width > 0 && rect.height > 0 && style?.display !== "none" && style?.visibility !== "hidden");
+      };
+      const disabled = (node) => {
+        let current = node;
+        for (let depth = 0; current && depth < 5; depth += 1, current = current.parentElement) {
+          if (current.disabled || current.getAttribute?.("aria-disabled") === "true") return true;
+          const style = window.getComputedStyle(current);
+          if (style.pointerEvents === "none") return true;
+        }
+        return false;
+      };
+      const labels = Array.from(document.querySelectorAll("div, span, label, [role='checkbox'], [role='option']"))
+        .filter((node) => visible(node) && clean(node.textContent || "").toLowerCase() === String(value).toLowerCase());
+      const label = labels[0];
+      if (!label) return { found: false, clicked: false, disabled: false };
+      let target = label;
+      for (let depth = 0; target && depth < 6; depth += 1, target = target.parentElement) {
+        const role = target.getAttribute?.("role") || "";
+        const rect = target.getBoundingClientRect?.();
+        if (role === "checkbox" || role === "option" || role === "button" || (rect && rect.width > 160 && rect.height > 26 && rect.height < 130)) break;
+      }
+      if (!target) target = label;
+      const isDisabled = disabled(target);
+      const checked = target.getAttribute?.("aria-checked") === "true" || target.querySelector?.("input:checked") !== null;
+      const needsClick = checked !== shouldBeChecked;
+      if (!isDisabled && needsClick) target.click();
+      return { found: true, clicked: !isDisabled && needsClick, disabled: isDisabled, checked, needsClick };
+    }, { value: wanted, shouldBeChecked: wantedChecked }).catch(() => ({ found: false, clicked: false, disabled: false }));
+  }
+
+  async function ensureFourVDeliveryMethod(page, profileId) {
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      const before = await readDeliveryMethod(page);
+      const beforeText = String(before?.text || "").toLowerCase();
+      if (/^delivery method\s+(shipping|delivery)$/i.test(before?.text || "")) return /shipping/i.test(before.text) ? "Shipping" : "Delivery";
+      await openDeliveryMethodMenu(page);
+      const shipping = await selectDeliveryMenuOption(page, "Shipping");
+      let selected = "";
+      if (shipping.found) {
+        if (shipping.disabled) throw marketplaceError("loisp", "Shipping bi mo, khong the bat cho san pham nay.");
+        if (!shipping.checked) await sleep(500);
+        selected = "Shipping";
+      } else {
+        const delivery = await selectDeliveryMenuOption(page, "Delivery");
+        if (!delivery.found || delivery.disabled) throw marketplaceError("loisp", "Khong bat duoc Shipping hoac Delivery cho san pham nay.");
+        if (!delivery.checked) await sleep(500);
+        selected = "Delivery";
+      }
+      const localPickup = await selectDeliveryMenuOption(page, "Local pickup", false);
+      if (localPickup.found && localPickup.clicked) await sleep(500);
+      await page.keyboard.press("Escape").catch(() => {});
+      await sleep(900);
+      const after = await readDeliveryMethod(page);
+      const afterText = String(after?.text || "").toLowerCase();
+      if (afterText === `delivery method ${selected.toLowerCase()}`) return selected;
+      log(profileId, "delivery method", `kiem tra lai lan ${attempt}/2: ${after?.text || beforeText || "khong doc duoc"}`, "warn");
+    }
+    throw marketplaceError("loisp", "Delivery method chua dung Shipping hoac Delivery sau khi da chinh.");
+  }
+
+  async function openShippingLabel(page, method) {
+    const opened = await page.evaluate((choice) => {
+      const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
+      const visible = (node) => {
+        const rect = node?.getBoundingClientRect?.();
+        const style = node ? window.getComputedStyle(node) : null;
+        return Boolean(rect && rect.width > 0 && rect.height > 0 && style?.display !== "none" && style?.visibility !== "hidden");
+      };
+      const keyword = choice.toLowerCase();
+      const candidates = Array.from(document.querySelectorAll("div, span, button, [role='button']"))
+        .filter((node) => visible(node))
+        .filter((node) => {
+          const text = clean(node.innerText || node.textContent || "").toLowerCase();
+          return text.includes(`${keyword} label`) && text.length < 180;
+        });
+      const node = candidates[0];
+      if (!node) return false;
+      let target = node;
+      for (let depth = 0; target && depth < 6; depth += 1, target = target.parentElement) {
+        const rect = target.getBoundingClientRect?.();
+        if (target.matches?.("button, [role='button']") || (rect && rect.width > 180 && rect.height > 36 && rect.height < 130)) break;
+      }
+      (target || node).click();
+      return true;
+    }, method).catch(() => false);
+    if (!opened) throw marketplaceError("loisp", `Khong mo duoc ${method} label.`);
+    await sleep(900);
+  }
+
+  async function choosePackageWeight(page, weight) {
+    const opened = await page.evaluate(() => {
+      const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
+      const visible = (node) => {
+        const rect = node?.getBoundingClientRect?.();
+        return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
+      };
+      const label = Array.from(document.querySelectorAll("div, span, label"))
+        .find((node) => visible(node) && /^package weight$/i.test(clean(node.textContent || "")));
+      if (!label) return false;
+      let target = label;
+      for (let depth = 0; target && depth < 6; depth += 1, target = target.parentElement) {
+        const rect = target.getBoundingClientRect?.();
+        if (target.matches?.("button, [role='button'], [role='combobox']") || (rect && rect.width > 250 && rect.height > 42 && rect.height < 120)) break;
+      }
+      (target || label).click();
+      return true;
+    }).catch(() => false);
+    if (!opened) throw marketplaceError("loisp", "Khong mo duoc Package weight.");
+    await sleep(500);
+    const chosen = await page.evaluate((value) => {
+      const clean = (text) => String(text || "").replace(/\s+/g, " ").trim();
+      const visible = (node) => {
+        const rect = node?.getBoundingClientRect?.();
+        return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
+      };
+      const node = Array.from(document.querySelectorAll("div, span, [role='option'], [role='radio']"))
+        .find((item) => visible(item) && clean(item.textContent || "").toLowerCase() === String(value).toLowerCase());
+      if (!node) return false;
+      let target = node;
+      for (let depth = 0; target && depth < 6; depth += 1, target = target.parentElement) {
+        const role = target.getAttribute?.("role") || "";
+        if (role === "option" || role === "radio" || role === "button") break;
+      }
+      (target || node).click();
+      return true;
+    }, weight).catch(() => false);
+    if (!chosen) throw marketplaceError("loisp", `Khong chon duoc Package weight ${weight}.`);
+    await sleep(500);
+  }
+
+  async function setOfferMinimum(manager, page, amount) {
+    await page.evaluate(() => {
+      const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
+      const visible = (node) => {
+        const rect = node?.getBoundingClientRect?.();
+        return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
+      };
+      const label = Array.from(document.querySelectorAll("div, span, label"))
+        .find((node) => visible(node) && /let buyers negotiate a price/i.test(clean(node.textContent || "")));
+      if (!label) return false;
+      const scope = label.parentElement?.parentElement || label.parentElement || label;
+      const toggle = scope.querySelector?.("[role='switch'], [role='checkbox'], input[type='checkbox']");
+      const checked = toggle?.getAttribute?.("aria-checked") === "true" || Boolean(toggle?.checked);
+      if (toggle && !checked) toggle.click();
+      return Boolean(toggle);
+    }).catch(() => false);
+    await sleep(500);
+    const text = String(Math.max(1, Math.floor(Number(amount) || 1)));
+    const filled = typeof manager.setFieldValueByExactLabel === "function"
+      ? await manager.setFieldValueByExactLabel(page, "Minimum price you'll consider", text).catch(() => false)
+      : false;
+    if (filled !== false) return;
+    const fallback = await page.evaluate((value) => {
+      const visible = (node) => {
+        const rect = node?.getBoundingClientRect?.();
+        return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
+      };
+      const input = Array.from(document.querySelectorAll("input"))
+        .find((node) => visible(node) && /minimum price/i.test(`${node.getAttribute("aria-label") || ""} ${node.getAttribute("placeholder") || ""}`));
+      if (!input) return false;
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    }, text).catch(() => false);
+    if (!fallback) throw marketplaceError("loisp", "Khong dien duoc Minimum price you'll consider.");
+  }
+
+  async function closeBoostDialog(page) {
+    await page.evaluate(() => {
+      const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
+      const visible = (node) => {
+        const rect = node?.getBoundingClientRect?.();
+        return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
+      };
+      const close = Array.from(document.querySelectorAll("button, [role='button']"))
+        .find((node) => visible(node) && (/^close$/i.test(clean(node.textContent || "")) || /close/i.test(node.getAttribute("aria-label") || "")));
+      close?.click();
+    }).catch(() => {});
+    await sleep(600);
+  }
+
+  async function findPublishedListingLink(page, title) {
+    const sellingUrl = withFacebookLocale("https://www.facebook.com/marketplace/you/selling");
+    await page.goto(sellingUrl, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await page.waitForSelector("body", { timeout: 20000 }).catch(() => {});
+    await page.reload({ waitUntil: "domcontentloaded", timeout: 90000 }).catch(() => {});
+    await sleep(1500);
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
+      const link = await page.evaluate((wantedTitle) => {
+        const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
+        const wanted = clean(wantedTitle).toLowerCase();
+        const visible = (node) => {
+          const rect = node?.getBoundingClientRect?.();
+          return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
+        };
+        const candidates = Array.from(document.querySelectorAll("a[href*='/marketplace/item/']"))
+          .filter(visible)
+          .map((node) => {
+            let container = node;
+            for (let depth = 0; container && depth < 7; depth += 1, container = container.parentElement) {
+              const text = clean(container.innerText || container.textContent || "").toLowerCase();
+              if (text.includes(wanted)) break;
+            }
+            return { href: node.href, text: clean(container?.innerText || node.innerText || "").toLowerCase(), top: node.getBoundingClientRect().top };
+          })
+          .filter((item) => item.text.includes(wanted))
+          .sort((a, b) => a.top - b.top);
+        return candidates[0]?.href || "";
+      }, title).catch(() => "");
+      if (link) return withFacebookLocale(link);
+      await page.reload({ waitUntil: "domcontentloaded", timeout: 90000 }).catch(() => {});
+      await sleep(2500);
+    }
+    throw marketplaceError("loi link sp", `Da dang bai nhung khong tim thay link listing theo title: ${title}`);
+  }
+
+  async function runFourVListing(manager, page, payload, row, profileId, config, markNoRollback = () => {}) {
+    await manager.fillStepOne(page, payload);
+    await sleep(1800);
+    await manager.clickActionButton(page, "Next");
+    await page.waitForFunction(() => /delivery method/i.test(String(document.body?.innerText || "")), { timeout: 60000 });
+    const method = await ensureFourVDeliveryMethod(page, profileId);
+    await openShippingLabel(page, method);
+    const weight = normalizePackageWeight(config.fourVPostPackageWeight);
+    await choosePackageWeight(page, weight);
+    await manager.clickActionButton(page, "Update");
+    await sleep(1200);
+    await manager.clickActionButton(page, "Next");
+    await page.waitForFunction(() => /minimum price you'll consider|allow offers/i.test(String(document.body?.innerText || "")), { timeout: 60000 });
+    const price = numericListingPrice(payload?.price, config.fourVPostPriceMin, config.fourVPostPriceMax);
+    const discount = 3 + Math.floor(Math.random() * 3);
+    const minimumPrice = Math.max(1, price - discount);
+    await setOfferMinimum(manager, page, minimumPrice);
+    await manager.clickActionButton(page, "Next");
+    await sleep(1200);
+    markNoRollback();
+    await manager.clickActionButton(page, "Publish");
+    await waitForPublishSuccess(page);
+    await closeBoostDialog(page);
+    if (typeof manager.consumeUsedTitle === "function") manager.consumeUsedTitle(payload.titleFile, payload.title);
+    const link = await findPublishedListingLink(page, payload.title);
+    return { method, weight, price, minimumPrice, link };
+  }
+
   async function runOne(profileId, sheetRow, config, sheetSession, workerSlot = 0, workerTotal = 1) {
     const manager = getManager({ fresh: true });
     patchManager(manager);
     patchStableWindowTiling(manager, workerSlot, workerTotal);
     manager.saveConfig({
       dataRoot: config.fullDataRoot,
-      priceMin: config.fullPriceMin,
-      priceMax: config.fullPriceMax,
+      priceMin: isFourVPost ? config.fourVPostPriceMin : config.fullPriceMin,
+      priceMax: isFourVPost ? config.fourVPostPriceMax : config.fullPriceMax,
       maxConcurrency: 1
     });
 
@@ -1018,6 +1355,7 @@ export function createDangBai({
     let proxyLease = null;
     let currentName = String(sheetValue(sheetRow, "tên profile hiện tại", "ten profile hien tai") || profileId).trim();
     let originalName = currentName;
+    let nameAfterPublishedPost = "";
     let noRollback = false;
     let restoreManagerLoginGuards = () => {};
     let allocatedSeller = null;
@@ -1085,7 +1423,57 @@ export function createDangBai({
           ? "3v"
           : Number(initialState.totalSteps) === 2
             ? "2v"
-            : String(initialState.totalSteps || "").trim();
+            : String(initialState.totalSteps || "").trim().replace(/v$/i, "");
+      if (isFourVPost) {
+        if (detectedBar !== "4") {
+          const rawBar = String(detectedBar || "khong ro");
+          const droppedBar = /v$/i.test(rawBar) ? rawBar : `${rawBar}v`;
+          const droppedStatus = `tụt ${droppedBar}`;
+          const nextName = `${droppedStatus}-${currentName}`;
+          await rename(manager, profileId, nextName);
+          const update = {
+            Tool: "đăng bài 4v",
+            trangThai: droppedStatus,
+            soVach: droppedBar,
+            chiTiet: `4v post dung: create item hien ${droppedBar}`,
+            tenChuan: nextName
+          };
+          await writeSheet(sheetWriter, profileId, update);
+          await sheetWriter.commit();
+          job.status = "success";
+          job.result = update;
+          return update;
+        }
+        const payload = await step(profileId, job, "lay payload dang bai 4v", async () =>
+          readListingDescription(await manager.getRandomListingPayload()), { timeoutMs: 30000 });
+        const postResult = await step(profileId, job, "dang bai 4v shipping", async () =>
+          runFourVListing(manager, page, payload, row, profileId, config, () => { noRollback = true; })
+        , { timeoutMs: 600000 });
+        const configuredPrefix = String(config.fourVPostSuccessPrefix || "");
+        const successfulPostName = configuredPrefix ? `${configuredPrefix}${currentName}` : currentName;
+        if (typeof appendMarketplacePostResult !== "function") {
+          throw marketplaceError("loi link sp", "Chua cau hinh duoc ghi link san pham vao Sheet.");
+        }
+        const output = await step(profileId, job, "ghi link san pham", async () =>
+          appendMarketplacePostResult(config, { uid, link: postResult.link, title: payload.title })
+        , { timeoutMs: 90000 });
+        nameAfterPublishedPost = successfulPostName;
+        await rename(manager, profileId, nameAfterPublishedPost);
+        const update = {
+          Tool: "đã đăng bài 4v",
+          trangThai: "thành công",
+          soVach: "4v",
+          chiTiet: `4v - ${postResult.method}, ${postResult.weight}, link: ${postResult.link}`,
+          tenChuan: nameAfterPublishedPost,
+          linkSanPham: postResult.link,
+          outputSheet: output?.sheetTitle || ""
+        };
+        await writeSheet(sheetWriter, profileId, update);
+        await sheetWriter.commit();
+        job.status = "success";
+        job.result = update;
+        return update;
+      }
       if (detectedBar === "4") {
         const update = {
           Tool: "đã dừng",
@@ -1145,10 +1533,17 @@ export function createDangBai({
         sheetRow,
         uid
       });
-      await rename(manager, profileId, buildRuntimeProfileName({ status: mapped.status, tenChuan }));
+      if (!nameAfterPublishedPost) {
+        const errorName = mapped.status === "lỗi sp"
+          ? `lỗi sp-${currentName}`
+          : mapped.status === "lỗi link sp"
+            ? `lỗi link sp-${currentName}`
+            : buildRuntimeProfileName({ status: mapped.status, tenChuan });
+        await rename(manager, profileId, errorName);
+      }
       const update = {
         Tool: sheetValue(sheetRow, "Tool") || "",
-        trangThai: "loi",
+        trangThai: mapped.status === "loi" ? "lỗi" : mapped.status,
         chiTiet: mapped.detail,
         tenChuan
       };
@@ -1175,8 +1570,13 @@ export function createDangBai({
     if (runtime.running) throw new Error("Dang co tool khac chay, vui long doi xong.");
     const ids = [...new Set(profileIds.map((id) => String(id || "").trim()).filter(Boolean))];
     if (!ids.length) throw new Error("Chua chon profile de chay.");
-    if (!config.fullDataRoot || !config.fullPriceMin || !config.fullPriceMax) {
-      throw new Error("Ban can nhap thu muc dang bai va gia min/max truoc khi chay dang bai.");
+    const priceMin = isFourVPost ? config.fourVPostPriceMin : config.fullPriceMin;
+    const priceMax = isFourVPost ? config.fourVPostPriceMax : config.fullPriceMax;
+    if (!config.fullDataRoot || !priceMin || !priceMax) {
+      throw new Error("Ban can nhap thu muc dang bai va gia min/max truoc khi chay.");
+    }
+    if (isFourVPost && !String(config.fourVPostSpreadsheetId || "").trim()) {
+      throw new Error("Ban can nhap Sheet ghi UID va LINK SP cho dang bai 4v.");
     }
     const sheetSession = await createSheetRowSession(config, ids);
     const concurrency = Math.min(clampToolConcurrency(config.postConcurrency), ids.length);
@@ -1184,7 +1584,7 @@ export function createDangBai({
     for (const id of ids) {
       runtime.jobs.set(id, {
         profileId: id,
-        tool: "dang bai",
+        tool: toolName,
         status: "queued",
         liveStatus: `dang cho chay ${concurrency} luong`,
         logs: [],
@@ -1193,12 +1593,12 @@ export function createDangBai({
         result: null,
         sheetWriteError: ""
       });
-      log(id, "xep hang", `da xep hang dang bai ${concurrency} luong`);
+      log(id, "xep hang", `da xep hang ${toolName} ${concurrency} luong`);
     }
 
     runtime.running = true;
     runtime.stopRequested = false;
-    runtime.currentTool = "dang bai";
+    runtime.currentTool = toolName;
     setImmediate(async () => {
       try {
         let cursor = 0;
@@ -1254,7 +1654,7 @@ export function createDangBai({
           }
         }
       } catch (error) {
-        addRuntimeLog(`Loi queue dang bai: ${error.message}`, "error", "", { step: "queue dang bai", tool: "dang bai" });
+        addRuntimeLog(`Loi queue ${toolName}: ${error.message}`, "error", "", { step: `queue ${toolName}`, tool: toolName });
       } finally {
         runtime.running = false;
         runtime.stopRequested = false;

@@ -114,6 +114,11 @@ const DEFAULT_CONFIG = {
   fullDataRoot: "E:\\dangbai",
   fullPriceMin: "",
   fullPriceMax: "",
+  fourVPostSpreadsheetId: "",
+  fourVPostPriceMin: 20,
+  fourVPostPriceMax: 25,
+  fourVPostPackageWeight: "2-5 lbs",
+  fourVPostSuccessPrefix: "",
   fullConcurrency: 4,
   postConcurrency: 4,
   checkConcurrency: 4,
@@ -1021,6 +1026,11 @@ async function readConfig() {
     loaded.accountSheets = sanitizeAccountSheetAssignments(loaded.accountSheets, loaded.spreadsheetIds);
     loaded.knownHideAccounts = loaded.knownHideAccounts && typeof loaded.knownHideAccounts === "object" ? loaded.knownHideAccounts : {};
     loaded.lastHideAccountId = String(loaded.lastHideAccountId || "").trim();
+    loaded.fourVPostSpreadsheetId = String(loaded.fourVPostSpreadsheetId || "").trim();
+    loaded.fourVPostPriceMin = Math.max(1, Math.floor(Number(loaded.fourVPostPriceMin || DEFAULT_CONFIG.fourVPostPriceMin)) || DEFAULT_CONFIG.fourVPostPriceMin);
+    loaded.fourVPostPriceMax = Math.max(loaded.fourVPostPriceMin, Math.floor(Number(loaded.fourVPostPriceMax || DEFAULT_CONFIG.fourVPostPriceMax)) || DEFAULT_CONFIG.fourVPostPriceMax);
+    loaded.fourVPostPackageWeight = String(loaded.fourVPostPackageWeight || DEFAULT_CONFIG.fourVPostPackageWeight).trim() || DEFAULT_CONFIG.fourVPostPackageWeight;
+    loaded.fourVPostSuccessPrefix = String(loaded.fourVPostSuccessPrefix || "");
     loaded.fullConcurrency = clampConcurrency(loaded.fullConcurrency, DEFAULT_CONFIG.fullConcurrency, 4);
     loaded.postConcurrency = clampConcurrency(loaded.postConcurrency, DEFAULT_CONFIG.postConcurrency, 4);
     loaded.checkConcurrency = clampConcurrency(loaded.checkConcurrency, DEFAULT_CONFIG.checkConcurrency, 4);
@@ -1078,6 +1088,11 @@ async function saveConfig(input) {
     fullDataRoot: String(input.fullDataRoot || current.fullDataRoot || DEFAULT_CONFIG.fullDataRoot).trim(),
     fullPriceMin: String(input.fullPriceMin || current.fullPriceMin || "").trim(),
     fullPriceMax: String(input.fullPriceMax || current.fullPriceMax || "").trim(),
+    fourVPostSpreadsheetId: String(input.fourVPostSpreadsheetId !== undefined ? input.fourVPostSpreadsheetId : current.fourVPostSpreadsheetId || "").trim(),
+    fourVPostPriceMin: Math.max(1, Math.floor(Number(input.fourVPostPriceMin ?? current.fourVPostPriceMin ?? DEFAULT_CONFIG.fourVPostPriceMin)) || DEFAULT_CONFIG.fourVPostPriceMin),
+    fourVPostPriceMax: Math.max(1, Math.floor(Number(input.fourVPostPriceMax ?? current.fourVPostPriceMax ?? DEFAULT_CONFIG.fourVPostPriceMax)) || DEFAULT_CONFIG.fourVPostPriceMax),
+    fourVPostPackageWeight: String(input.fourVPostPackageWeight !== undefined ? input.fourVPostPackageWeight : current.fourVPostPackageWeight || DEFAULT_CONFIG.fourVPostPackageWeight).trim() || DEFAULT_CONFIG.fourVPostPackageWeight,
+    fourVPostSuccessPrefix: String(input.fourVPostSuccessPrefix !== undefined ? input.fourVPostSuccessPrefix : current.fourVPostSuccessPrefix || ""),
     fullConcurrency: clampConcurrency(input.fullConcurrency, current.fullConcurrency || DEFAULT_CONFIG.fullConcurrency, 4),
     postConcurrency: clampConcurrency(input.postConcurrency, current.postConcurrency || DEFAULT_CONFIG.postConcurrency, 4),
     checkConcurrency: clampConcurrency(input.checkConcurrency, current.checkConcurrency || DEFAULT_CONFIG.checkConcurrency),
@@ -1120,6 +1135,7 @@ async function saveConfig(input) {
   const providerChanged = normalizeBrowserApiProvider(current.browserApiProvider) !== normalizeBrowserApiProvider(next.browserApiProvider)
     || normalizeGpmBaseUrl(current) !== normalizeGpmBaseUrl(next)
     || normalizeHideBaseUrl(current) !== normalizeHideBaseUrl(next);
+  next.fourVPostPriceMax = Math.max(next.fourVPostPriceMin, next.fourVPostPriceMax);
   await writeFile(configPath, JSON.stringify(next, null, 2), "utf8");
   if (providerChanged) resetProfileManagers("profile-provider-changed");
   return next;
@@ -1217,6 +1233,11 @@ async function saveConfigV2(input) {
     fullDataRoot: String(input.fullDataRoot || current.fullDataRoot || DEFAULT_CONFIG.fullDataRoot).trim(),
     fullPriceMin: String(input.fullPriceMin || current.fullPriceMin || "").trim(),
     fullPriceMax: String(input.fullPriceMax || current.fullPriceMax || "").trim(),
+    fourVPostSpreadsheetId: String(input.fourVPostSpreadsheetId !== undefined ? input.fourVPostSpreadsheetId : current.fourVPostSpreadsheetId || "").trim(),
+    fourVPostPriceMin: Math.max(1, Math.floor(Number(input.fourVPostPriceMin ?? current.fourVPostPriceMin ?? DEFAULT_CONFIG.fourVPostPriceMin)) || DEFAULT_CONFIG.fourVPostPriceMin),
+    fourVPostPriceMax: Math.max(1, Math.floor(Number(input.fourVPostPriceMax ?? current.fourVPostPriceMax ?? DEFAULT_CONFIG.fourVPostPriceMax)) || DEFAULT_CONFIG.fourVPostPriceMax),
+    fourVPostPackageWeight: String(input.fourVPostPackageWeight !== undefined ? input.fourVPostPackageWeight : current.fourVPostPackageWeight || DEFAULT_CONFIG.fourVPostPackageWeight).trim() || DEFAULT_CONFIG.fourVPostPackageWeight,
+    fourVPostSuccessPrefix: String(input.fourVPostSuccessPrefix !== undefined ? input.fourVPostSuccessPrefix : current.fourVPostSuccessPrefix || ""),
     fullConcurrency: clampConcurrency(input.fullConcurrency, current.fullConcurrency || DEFAULT_CONFIG.fullConcurrency, 4),
     postConcurrency: clampConcurrency(input.postConcurrency, current.postConcurrency || DEFAULT_CONFIG.postConcurrency, 4),
     checkConcurrency: clampConcurrency(input.checkConcurrency, current.checkConcurrency || DEFAULT_CONFIG.checkConcurrency),
@@ -1260,6 +1281,7 @@ async function saveConfigV2(input) {
   const providerChanged = normalizeBrowserApiProvider(current.browserApiProvider) !== normalizeBrowserApiProvider(next.browserApiProvider)
     || normalizeGpmBaseUrl(current) !== normalizeGpmBaseUrl(next)
     || normalizeHideBaseUrl(current) !== normalizeHideBaseUrl(next);
+  next.fourVPostPriceMax = Math.max(next.fourVPostPriceMin, next.fourVPostPriceMax);
   await writeFile(configPath, JSON.stringify(next, null, 2), "utf8");
   if (providerChanged) resetProfileManagers("profile-provider-changed");
   return next;
@@ -2557,6 +2579,68 @@ async function updateSellerInfoUid(config, allocation, value) {
   });
 }
 
+let marketplacePostResultWriteQueue = Promise.resolve();
+
+async function withMarketplacePostResultLock(action) {
+  const previous = marketplacePostResultWriteQueue;
+  let release = () => {};
+  marketplacePostResultWriteQueue = new Promise((resolve) => { release = resolve; });
+  await previous;
+  try {
+    return await action();
+  } finally {
+    release();
+  }
+}
+
+function parseSpreadsheetLink(value) {
+  const text = String(value || "").trim();
+  const matched = text.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  const spreadsheetId = matched?.[1] || text;
+  let gid = "";
+  try {
+    const url = new URL(text);
+    gid = url.searchParams.get("gid") || "";
+    const hash = String(url.hash || "").match(/gid=(\d+)/);
+    if (hash?.[1]) gid = hash[1];
+  } catch {}
+  return { spreadsheetId, gid };
+}
+
+async function appendMarketplacePostResult(config, { uid, link }) {
+  const sheetInput = parseSpreadsheetLink(config.fourVPostSpreadsheetId);
+  if (!sheetInput.spreadsheetId) throw new Error("Chua nhap Sheet ghi UID va LINK SP cho dang bai 4v.");
+  if (!config.credentialsPath) throw new Error("Chua cau hinh Service Account JSON de ghi Sheet dang bai 4v.");
+  return withMarketplacePostResultLock(async () => {
+    const token = await getGoogleAccessToken(config.credentialsPath);
+    const client = new SheetsClient({ ...config, spreadsheetId: sheetInput.spreadsheetId }, token);
+    const meta = await client.metadata();
+    const sheets = meta.sheets || [];
+    const sheet = sheetInput.gid
+      ? sheets.find((item) => String(item.properties?.sheetId ?? "") === String(sheetInput.gid))
+      : sheets[0];
+    const sheetTitle = sheet?.properties?.title;
+    if (!sheetTitle) throw new Error("Khong tim thay tab trong Sheet ghi LINK SP.");
+    const values = await client.getValues(sheetTitle);
+    const headers = values[0] || [];
+    if (headers.length < 2) {
+      await client.updateRowValues(sheetTitle, 1, ["UID", "LINK SP"]);
+      values[0] = ["UID", "LINK SP"];
+    }
+    let rowNumber = 2;
+    for (let index = 1; index < values.length; index += 1) {
+      const row = values[index] || [];
+      if (!String(row[0] || "").trim() && !String(row[1] || "").trim()) {
+        rowNumber = index + 1;
+        break;
+      }
+      rowNumber = index + 2;
+    }
+    await client.updateRowValues(sheetTitle, rowNumber, [String(uid || "").trim(), String(link || "").trim()]);
+    return { sheetTitle, rowNumber, uid: String(uid || "").trim(), link: String(link || "").trim() };
+  });
+}
+
 function normalizeProfileIdText(value) {
   return String(value || "").replace(/[\s\u200b-\u200d\ufeff]+/g, "").trim();
 }
@@ -2968,6 +3052,20 @@ const dangBaiModule = createDangBai({
   updateSellerInfoUid,
   stateProxy: stateProxyTool,
   runtime: toolRuntime
+});
+
+const dangBai4VModule = createDangBai({
+  getManager: getShippingFullManager,
+  dangNhap: dangNhapModule,
+  addRuntimeLog,
+  buildToolRow,
+  createSheetRowSession,
+  allocateSellerInfoRow,
+  updateSellerInfoUid,
+  appendMarketplacePostResult,
+  stateProxy: stateProxyTool,
+  runtime: toolRuntime,
+  mode: "4v"
 });
 
 const tuongTacModule = createTuongTac({
@@ -3391,6 +3489,23 @@ async function handleApi(req, res) {
       });
       return jsonResponse(res, 200, { ok: true, data });
     }
+    if (req.method === "POST" && url.pathname === "/api/tools/dang-bai-4v") {
+      const body = await parseBody(req);
+      const saved = await saveConfigV2({ ...(await readConfig()), ...body });
+      const config = forceSingleThreadForProxyPanel(await resolveAccountSheetConfig(saved));
+      if (body.concurrency !== undefined) config.postConcurrency = clampConcurrency(body.concurrency, config.postConcurrency || DEFAULT_CONFIG.postConcurrency, 4);
+      if (stateProxyUsesProxyPanel(config)) config.postConcurrency = 1;
+      const data = await startAutoRetryBatch({
+        runtime: toolRuntime,
+        module: dangBai4VModule,
+        tool: "dang bai 4v",
+        profileIds: body.profileIds || [],
+        config,
+        options: {},
+        addRuntimeLog
+      });
+      return jsonResponse(res, 200, { ok: true, config, data });
+    }
     if (req.method === "POST" && url.pathname === "/api/tools/tuong-tac") {
       const body = await parseBody(req);
       const config = forceSingleThreadForProxyPanel(await resolveAccountSheetConfig(await readConfig()));
@@ -3656,14 +3771,6 @@ server.listen(5177, "127.0.0.1", () => {
   startBackgroundHideSheetSync();
   startProxyMonitor();
 });
-
-
-
-
-
-
-
-
 
 
 
