@@ -2024,6 +2024,18 @@ export function createDangNhap({ addRuntimeLog }) {
       throw new Error("Da thu dang nhap nhung facebook.com chua co session c_user.");
     }
 
+    if (String(process.env.DANGNHAP_FAST_SESSION_ONLY || "").trim() === "1") {
+      const cookieHeader = await loginStep(profileId, updateLiveStatus, "login: lay cookie moi", "dang lay cookie moi", async () => {
+        if (typeof manager?.buildCurrentFacebookCookieHeader === "function") {
+          return manager.buildCurrentFacebookCookieHeader(page).catch(() => "");
+        }
+        return buildCurrentFacebookCookieHeader(page).catch(() => "");
+      });
+      updateLiveStatus("dang nhap Facebook thanh cong");
+      logLogin(profileId, "login: thanh cong", "dang nhap Facebook thanh cong", "success", "fast session only");
+      return { ok: true, source: loginSource, cookieHeader, page };
+    }
+
     const cookieHeader = await loginStep(profileId, updateLiveStatus, "login: lay cookie moi", "dang lay cookie moi", async () => {
       if (typeof manager?.buildCurrentFacebookCookieHeader === "function") {
         return manager.buildCurrentFacebookCookieHeader(page).catch(() => "");
