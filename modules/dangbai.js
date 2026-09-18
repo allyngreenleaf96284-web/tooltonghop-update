@@ -1446,23 +1446,29 @@ export function createDangBai({
       }, title).catch(() => false);
 
       if (menuOpened) {
-        await sleep(850);
-        const viewOpened = await page.evaluate(() => {
-          const clean = (value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
-          const visible = (node) => {
-            const rect = node?.getBoundingClientRect?.();
-            return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
-          };
-          const menus = Array.from(document.querySelectorAll("[role='menu'], [role='dialog'], [role='presentation']"))
-            .filter((node) => visible(node) && /view listing/i.test(node.innerText || node.textContent || ""));
-          const scope = menus[0] || document;
-          const item = Array.from(scope.querySelectorAll("button, a, [role='button'], [role='menuitem'], div, span"))
-            .find((node) => visible(node) && clean(node.innerText || node.textContent || "") === "view listing");
-          if (!item) return false;
-          const target = item.closest?.("a, button, [role='button'], [role='menuitem']") || item;
-          target.click();
-          return true;
-        }).catch(() => false);
+        // Proxy connections can render this menu slowly. Poll for up to five
+        // seconds and click as soon as View listing exists; never reload early.
+        let viewOpened = false;
+        for (let menuWaitAttempt = 1; menuWaitAttempt <= 10; menuWaitAttempt += 1) {
+          viewOpened = await page.evaluate(() => {
+            const clean = (value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+            const visible = (node) => {
+              const rect = node?.getBoundingClientRect?.();
+              return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
+            };
+            const menus = Array.from(document.querySelectorAll("[role='menu'], [role='dialog'], [role='presentation']"))
+              .filter((node) => visible(node) && /view listing/i.test(node.innerText || node.textContent || ""));
+            const scope = menus[0] || document;
+            const item = Array.from(scope.querySelectorAll("button, a, [role='button'], [role='menuitem'], div, span"))
+              .find((node) => visible(node) && clean(node.innerText || node.textContent || "") === "view listing");
+            if (!item) return false;
+            const target = item.closest?.("a, button, [role='button'], [role='menuitem']") || item;
+            target.click();
+            return true;
+          }).catch(() => false);
+          if (viewOpened) break;
+          await sleep(500);
+        }
         if (viewOpened) {
           await page.waitForFunction(
             () => /\/marketplace\/item\/\d+/.test(String(window.location.pathname || "")),
