@@ -235,6 +235,7 @@ async function loadConfig() {
   if ($("postDataRoot")) $("postDataRoot").value = config.fullDataRoot || "E:\\dangbai";
   if ($("postPriceMin")) $("postPriceMin").value = config.fullPriceMin || "";
   if ($("postPriceMax")) $("postPriceMax").value = config.fullPriceMax || "";
+  if ($("fourVPostDataRoot")) $("fourVPostDataRoot").value = config.fourVPostDataRoot || config.fullDataRoot || "E:\\dangbai";
   if ($("fourVPostSpreadsheetId")) $("fourVPostSpreadsheetId").value = config.fourVPostSpreadsheetId || "";
   if ($("fourVPostPriceMin")) $("fourVPostPriceMin").value = config.fourVPostPriceMin || 20;
   if ($("fourVPostPriceMax")) $("fourVPostPriceMax").value = config.fourVPostPriceMax || 25;
@@ -325,6 +326,7 @@ async function saveConfig() {
       fullDataRoot: $("fullDataRoot").value,
       fullPriceMin: $("fullPriceMin").value,
       fullPriceMax: $("fullPriceMax").value,
+      fourVPostDataRoot: $("fourVPostDataRoot")?.value || "",
       fourVPostSpreadsheetId: $("fourVPostSpreadsheetId")?.value || "",
       fourVPostPriceMin: Math.max(1, Number($("fourVPostPriceMin")?.value || 20)),
       fourVPostPriceMax: Math.max(1, Number($("fourVPostPriceMax")?.value || 25)),
@@ -3295,7 +3297,7 @@ if ($("selectAllPost4VRows")) $("selectAllPost4VRows").addEventListener("change"
   renderPost4VRows();
 });
 let post4VConfigSaveTimer = null;
-["fourVPostSuccessPrefix", "fourVPostSpreadsheetId", "fourVPostPriceMin", "fourVPostPriceMax", "fourVPostPackageWeight"].forEach((id) => {
+["fourVPostDataRoot", "fourVPostSuccessPrefix", "fourVPostSpreadsheetId", "fourVPostPriceMin", "fourVPostPriceMax", "fourVPostPackageWeight"].forEach((id) => {
   $(id)?.addEventListener("change", () => {
     window.clearTimeout(post4VConfigSaveTimer);
     post4VConfigSaveTimer = window.setTimeout(() => {
@@ -3422,7 +3424,6 @@ loadConfig()
     scheduleStateProxyRealtime();
   })
   .catch((error) => setStatus(error.message, true));
-
 
 
 

@@ -1340,7 +1340,7 @@ export function createDangBai({
     patchManager(manager);
     patchStableWindowTiling(manager, workerSlot, workerTotal);
     manager.saveConfig({
-      dataRoot: config.fullDataRoot,
+      dataRoot: isFourVPost ? config.fourVPostDataRoot : config.fullDataRoot,
       priceMin: isFourVPost ? config.fourVPostPriceMin : config.fullPriceMin,
       priceMax: isFourVPost ? config.fourVPostPriceMax : config.fullPriceMax,
       maxConcurrency: 1
@@ -1572,7 +1572,8 @@ export function createDangBai({
     if (!ids.length) throw new Error("Chua chon profile de chay.");
     const priceMin = isFourVPost ? config.fourVPostPriceMin : config.fullPriceMin;
     const priceMax = isFourVPost ? config.fourVPostPriceMax : config.fullPriceMax;
-    if (!config.fullDataRoot || !priceMin || !priceMax) {
+    const dataRoot = isFourVPost ? config.fourVPostDataRoot : config.fullDataRoot;
+    if (!dataRoot || !priceMin || !priceMax) {
       throw new Error("Ban can nhap thu muc dang bai va gia min/max truoc khi chay.");
     }
     if (isFourVPost && !String(config.fourVPostSpreadsheetId || "").trim()) {

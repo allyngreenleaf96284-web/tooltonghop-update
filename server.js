@@ -114,6 +114,7 @@ const DEFAULT_CONFIG = {
   fullDataRoot: "E:\\dangbai",
   fullPriceMin: "",
   fullPriceMax: "",
+  fourVPostDataRoot: "E:\\dangbai",
   fourVPostSpreadsheetId: "",
   fourVPostPriceMin: 20,
   fourVPostPriceMax: 25,
@@ -1026,6 +1027,7 @@ async function readConfig() {
     loaded.accountSheets = sanitizeAccountSheetAssignments(loaded.accountSheets, loaded.spreadsheetIds);
     loaded.knownHideAccounts = loaded.knownHideAccounts && typeof loaded.knownHideAccounts === "object" ? loaded.knownHideAccounts : {};
     loaded.lastHideAccountId = String(loaded.lastHideAccountId || "").trim();
+    loaded.fourVPostDataRoot = String(loaded.fourVPostDataRoot || loaded.fullDataRoot || DEFAULT_CONFIG.fourVPostDataRoot).trim();
     loaded.fourVPostSpreadsheetId = String(loaded.fourVPostSpreadsheetId || "").trim();
     loaded.fourVPostPriceMin = Math.max(1, Math.floor(Number(loaded.fourVPostPriceMin || DEFAULT_CONFIG.fourVPostPriceMin)) || DEFAULT_CONFIG.fourVPostPriceMin);
     loaded.fourVPostPriceMax = Math.max(loaded.fourVPostPriceMin, Math.floor(Number(loaded.fourVPostPriceMax || DEFAULT_CONFIG.fourVPostPriceMax)) || DEFAULT_CONFIG.fourVPostPriceMax);
@@ -1088,6 +1090,7 @@ async function saveConfig(input) {
     fullDataRoot: String(input.fullDataRoot || current.fullDataRoot || DEFAULT_CONFIG.fullDataRoot).trim(),
     fullPriceMin: String(input.fullPriceMin || current.fullPriceMin || "").trim(),
     fullPriceMax: String(input.fullPriceMax || current.fullPriceMax || "").trim(),
+    fourVPostDataRoot: String(input.fourVPostDataRoot !== undefined ? input.fourVPostDataRoot : current.fourVPostDataRoot || current.fullDataRoot || DEFAULT_CONFIG.fourVPostDataRoot).trim(),
     fourVPostSpreadsheetId: String(input.fourVPostSpreadsheetId !== undefined ? input.fourVPostSpreadsheetId : current.fourVPostSpreadsheetId || "").trim(),
     fourVPostPriceMin: Math.max(1, Math.floor(Number(input.fourVPostPriceMin ?? current.fourVPostPriceMin ?? DEFAULT_CONFIG.fourVPostPriceMin)) || DEFAULT_CONFIG.fourVPostPriceMin),
     fourVPostPriceMax: Math.max(1, Math.floor(Number(input.fourVPostPriceMax ?? current.fourVPostPriceMax ?? DEFAULT_CONFIG.fourVPostPriceMax)) || DEFAULT_CONFIG.fourVPostPriceMax),
@@ -1233,6 +1236,7 @@ async function saveConfigV2(input) {
     fullDataRoot: String(input.fullDataRoot || current.fullDataRoot || DEFAULT_CONFIG.fullDataRoot).trim(),
     fullPriceMin: String(input.fullPriceMin || current.fullPriceMin || "").trim(),
     fullPriceMax: String(input.fullPriceMax || current.fullPriceMax || "").trim(),
+    fourVPostDataRoot: String(input.fourVPostDataRoot !== undefined ? input.fourVPostDataRoot : current.fourVPostDataRoot || current.fullDataRoot || DEFAULT_CONFIG.fourVPostDataRoot).trim(),
     fourVPostSpreadsheetId: String(input.fourVPostSpreadsheetId !== undefined ? input.fourVPostSpreadsheetId : current.fourVPostSpreadsheetId || "").trim(),
     fourVPostPriceMin: Math.max(1, Math.floor(Number(input.fourVPostPriceMin ?? current.fourVPostPriceMin ?? DEFAULT_CONFIG.fourVPostPriceMin)) || DEFAULT_CONFIG.fourVPostPriceMin),
     fourVPostPriceMax: Math.max(1, Math.floor(Number(input.fourVPostPriceMax ?? current.fourVPostPriceMax ?? DEFAULT_CONFIG.fourVPostPriceMax)) || DEFAULT_CONFIG.fourVPostPriceMax),
@@ -3771,7 +3775,6 @@ server.listen(5177, "127.0.0.1", () => {
   startBackgroundHideSheetSync();
   startProxyMonitor();
 });
-
 
 
 
