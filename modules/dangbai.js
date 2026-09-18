@@ -93,6 +93,19 @@ function mapPostError(error) {
   return { status: "loi", detail: message };
 }
 
+function normalizeVietnameseText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function isDroppedBarStatus(value) {
+  return /^tut\s+\d+v$/.test(normalizeVietnameseText(value));
+}
+
 function buildRuntimeProfileName({ status = "", tenChuan = "" }) {
   const normalizedStatus = String(status || "").trim().toLowerCase();
   const base = String(tenChuan || "").trim() || "profile-tool";
@@ -1034,6 +1047,14 @@ export function createDangBai({
         const style = node ? window.getComputedStyle(node) : null;
         return Boolean(rect && rect.width > 0 && rect.height > 0 && style?.display !== "none" && style?.visibility !== "hidden");
       };
+      const direct = Array.from(document.querySelectorAll("[role='combobox']"))
+        .find((node) => {
+          if (!visible(node)) return false;
+          const labelledBy = node.getAttribute("aria-labelledby");
+          const label = labelledBy ? document.getElementById(labelledBy)?.textContent : "";
+          return /^delivery method$/i.test(clean(label || ""));
+        });
+      if (direct) return { text: clean(direct.innerText || direct.textContent || ""), top: Math.round(direct.getBoundingClientRect().top) };
       const labels = Array.from(document.querySelectorAll("div, span, label"))
         .filter((node) => visible(node) && /^delivery method$/i.test(clean(node.textContent || "")));
       const cards = [];
@@ -1062,6 +1083,18 @@ export function createDangBai({
         const style = node ? window.getComputedStyle(node) : null;
         return Boolean(rect && rect.width > 0 && rect.height > 0 && style?.display !== "none" && style?.visibility !== "hidden");
       };
+      const direct = Array.from(document.querySelectorAll("[role='combobox']"))
+        .find((node) => {
+          if (!visible(node)) return false;
+          const labelledBy = node.getAttribute("aria-labelledby");
+          const label = labelledBy ? document.getElementById(labelledBy)?.textContent : "";
+          return /^delivery method$/i.test(clean(label || ""));
+        });
+      if (direct) {
+        direct.scrollIntoView({ block: "center", inline: "nearest" });
+        direct.click();
+        return true;
+      }
       const label = Array.from(document.querySelectorAll("div, span, label"))
         .find((node) => visible(node) && /^delivery method$/i.test(clean(node.textContent || "")));
       if (!label) return false;
@@ -1100,6 +1133,20 @@ export function createDangBai({
         }
         return false;
       };
+      const wantedText = String(value).toLowerCase();
+      const menuItem = Array.from(document.querySelectorAll("[role='menuitemcheckbox'], [role='checkbox'], [role='option'], [role='menuitem']"))
+        .find((node) => {
+          if (!visible(node)) return false;
+          const text = clean(node.getAttribute("aria-label") || node.innerText || node.textContent || "").toLowerCase();
+          return text === wantedText || text.startsWith(`${wantedText}.`) || text.startsWith(`${wantedText} `);
+        });
+      if (menuItem) {
+        const isDisabled = disabled(menuItem);
+        const checked = menuItem.getAttribute("aria-checked") === "true" || menuItem.querySelector?.("input:checked") !== null;
+        const needsClick = checked !== shouldBeChecked;
+        if (!isDisabled && needsClick) menuItem.click();
+        return { found: true, clicked: !isDisabled && needsClick, disabled: isDisabled, checked, needsClick };
+      }
       const labels = Array.from(document.querySelectorAll("div, span, label, [role='checkbox'], [role='option']"))
         .filter((node) => visible(node) && clean(node.textContent || "").toLowerCase() === String(value).toLowerCase());
       const label = labels[0];
@@ -1365,6 +1412,19 @@ export function createDangBai({
       if (manager.activeJobs) manager.activeJobs.set(uid, { type: "post", pauseRequested: false, paused: false, resumed: false, stopRequested: false });
       manager.currentActiveUid = uid;
       manager.stopAllRequested = false;
+      const savedStatus = sheetValue(sheetRow, "trạng thái", "trang thai");
+      if (isFourVPost && isDroppedBarStatus(savedStatus)) {
+        const update = {
+          Tool: sheetValue(sheetRow, "Tool") || "đăng bài 4v",
+          trangThai: savedStatus,
+          soVach: sheetValue(sheetRow, "số vạch", "so vach") || "2v",
+          chiTiet: sheetValue(sheetRow, "chi tiết", "chi tiet") || "Đã ghi tụt vạch từ lần chạy trước."
+        };
+        log(profileId, "check vach create item", `bo qua profile da co trang thai ${savedStatus}`, "info");
+        job.status = "success";
+        job.result = update;
+        return update;
+      }
       if (!runtime.activeManagers) runtime.activeManagers = new Map();
       runtime.activeManagers.set(profileId, { manager, uid, shouldFinish: () => noRollback });
       const profileInfo = await step(profileId, job, "kiem tra profile HideMyAcc", async () => manager.getProfileById(profileId), { timeoutMs: 30000 });
@@ -1429,6 +1489,20 @@ export function createDangBai({
           const rawBar = String(detectedBar || "khong ro");
           const droppedBar = /v$/i.test(rawBar) ? rawBar : `${rawBar}v`;
           const droppedStatus = `tụt ${droppedBar}`;
+          const existingStandardName = sheetValue(sheetRow, "tên chuẩn", "ten chuan");
+          if (normalizeVietnameseText(currentName).startsWith(`${normalizeVietnameseText(droppedStatus)}-`)
+            || normalizeVietnameseText(existingStandardName).startsWith(`${normalizeVietnameseText(droppedStatus)}-`)) {
+            const update = {
+              Tool: sheetValue(sheetRow, "Tool") || "đăng bài 4v",
+              trangThai: sheetValue(sheetRow, "trạng thái", "trang thai") || droppedStatus,
+              soVach: sheetValue(sheetRow, "số vạch", "so vach") || droppedBar,
+              chiTiet: sheetValue(sheetRow, "chi tiết", "chi tiet") || `Đã ghi ${droppedStatus} từ lần chạy trước.`
+            };
+            log(profileId, "check vach create item", `bo qua profile da co ten ${droppedStatus}`, "info");
+            job.status = "success";
+            job.result = update;
+            return update;
+          }
           const nextName = `${droppedStatus}-${currentName}`;
           await rename(manager, profileId, nextName);
           const update = {
