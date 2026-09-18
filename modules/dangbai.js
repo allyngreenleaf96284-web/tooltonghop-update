@@ -1316,8 +1316,7 @@ export function createDangBai({
     // The following Package weight reader waits up to 15 seconds for the modal.
   }
 
-  async function choosePackageWeight(page, weight) {
-    let opened = false;
+  async function openPackageWeightMenu(page) {
     for (let attempt = 1; attempt <= Math.ceil(FOUR_V_UI_WAIT_MS / FOUR_V_UI_POLL_MS); attempt += 1) {
       const state = await page.evaluate(() => {
         const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
@@ -1348,27 +1347,50 @@ export function createDangBai({
         return "clicked";
       }).catch(() => "missing");
       if (state === "open") {
-        opened = true;
-        break;
+        return true;
       }
       await sleep(FOUR_V_UI_POLL_MS);
     }
-    if (!opened) throw marketplaceError("loisp", "Khong mo duoc Package weight.");
-    const chosen = await page.evaluate((value) => {
-      const clean = (text) => String(text || "").replace(/\s+/g, " ").trim();
+    return false;
+  }
+
+  async function isPackageWeightSelected(page, weight) {
+    return page.evaluate((value) => {
+      const clean = (text) => String(text || "").replace(/\s+/g, " ").trim().toLowerCase();
+      const wanted = clean(value);
+      const radio = Array.from(document.querySelectorAll("input[type='radio'][name='package_weight_range']"))
+        .find((input) => clean(input.value) === wanted);
+      if (radio?.checked || radio?.getAttribute("aria-checked") === "true") return true;
+      return Array.from(document.querySelectorAll("[role='combobox']")).some((node) => {
+        const labelledBy = node.getAttribute("aria-labelledby");
+        const label = labelledBy ? document.getElementById(labelledBy)?.textContent : "";
+        return clean(label) === "package weight" && clean(node.innerText || node.textContent || "").includes(wanted);
+      });
+    }, weight).catch(() => false);
+  }
+
+  async function clickPackageWeightRadio(page, weight) {
+    return page.evaluate((value) => {
+      const clean = (text) => String(text || "").replace(/\s+/g, " ").trim().toLowerCase();
       const visible = (node) => {
         const rect = node?.getBoundingClientRect?.();
         return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
       };
       const radio = Array.from(document.querySelectorAll("input[type='radio'][name='package_weight_range']"))
-        .find((input) => String(input.value || "").trim().toLowerCase() === String(value).trim().toLowerCase());
-      if (radio) {
-        radio.click();
-        // Facebook changes the radio state asynchronously after the click.
+        .find((input) => clean(input.value) === clean(value));
+      if (radio && visible(radio)) {
+        radio.scrollIntoView({ block: "center", inline: "nearest" });
+        const rect = radio.getBoundingClientRect();
+        const pointTarget = document.elementFromPoint(rect.left + (rect.width / 2), rect.top + (rect.height / 2));
+        const label = radio.id ? document.querySelector(`label[for="${CSS.escape(radio.id)}"]`) : null;
+        for (const target of [radio, label, pointTarget].filter(Boolean)) {
+          target.click();
+          if (radio.checked || radio.getAttribute("aria-checked") === "true") break;
+        }
         return true;
       }
       const node = Array.from(document.querySelectorAll("div, span, [role='option'], [role='radio']"))
-        .find((item) => visible(item) && clean(item.textContent || "").toLowerCase() === String(value).toLowerCase());
+        .find((item) => visible(item) && clean(item.textContent || "") === clean(value));
       if (!node) return false;
       let target = node;
       for (let depth = 0; target && depth < 6; depth += 1, target = target.parentElement) {
@@ -1378,26 +1400,50 @@ export function createDangBai({
       (target || node).click();
       return true;
     }, weight).catch(() => false);
-    if (!chosen) throw marketplaceError("loisp", `Khong chon duoc Package weight ${weight}.`);
-    let confirmed = false;
-    for (let attempt = 1; attempt <= Math.ceil(FOUR_V_UI_WAIT_MS / FOUR_V_UI_POLL_MS); attempt += 1) {
-      confirmed = await page.evaluate((value) => {
-        const radio = Array.from(document.querySelectorAll("input[type='radio'][name='package_weight_range']"))
-          .find((input) => String(input.value || "").trim().toLowerCase() === String(value).trim().toLowerCase());
-        return Boolean(radio && (radio.checked || radio.getAttribute("aria-checked") === "true"));
-      }, weight).catch(() => false);
-      if (confirmed) break;
-      if (attempt % 10 === 0) {
-        await page.evaluate((value) => {
-          const radio = Array.from(document.querySelectorAll("input[type='radio'][name='package_weight_range']"))
-            .find((input) => String(input.value || "").trim().toLowerCase() === String(value).trim().toLowerCase());
-          radio?.click();
-        }, weight).catch(() => {});
+  }
+
+  async function closeShippingLabelDialog(page) {
+    await page.keyboard.press("Escape").catch(() => {});
+    await sleep(FOUR_V_UI_POLL_MS);
+    const closed = await page.evaluate(() => {
+      const visible = (node) => {
+        const rect = node?.getBoundingClientRect?.();
+        return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
+      };
+      const dialog = Array.from(document.querySelectorAll("[role='dialog'], [aria-modal='true']"))
+        .find((node) => visible(node) && /change shipping method|change delivery method/i.test(node.innerText || node.textContent || ""));
+      if (!dialog) return true;
+      const close = Array.from(dialog.querySelectorAll("button, [role='button']"))
+        .find((node) => /^(close|x)$/i.test(String(node.textContent || "").trim()) || /close/i.test(node.getAttribute("aria-label") || ""));
+      close?.click();
+      return false;
+    }).catch(() => false);
+    if (!closed) await waitForShippingLabelDialogToClose(page).catch(() => {});
+  }
+
+  async function choosePackageWeight(page, weight, method) {
+    const retryCount = 3;
+    for (let recovery = 1; recovery <= retryCount; recovery += 1) {
+      const opened = await openPackageWeightMenu(page);
+      if (opened) {
+        const clicked = await clickPackageWeightRadio(page, weight);
+        if (clicked) {
+          for (let waitAttempt = 1; waitAttempt <= Math.ceil(FOUR_V_UI_WAIT_MS / FOUR_V_UI_POLL_MS); waitAttempt += 1) {
+            if (await isPackageWeightSelected(page, weight)) return;
+            await sleep(FOUR_V_UI_POLL_MS);
+          }
+        }
       }
+      // Close only the dropdown first. On the next failed pass, close and
+      // reopen Shipping label itself; do not refresh the create-item page.
+      await page.keyboard.press("Escape").catch(() => {});
       await sleep(FOUR_V_UI_POLL_MS);
+      if (recovery < retryCount) {
+        await closeShippingLabelDialog(page);
+        await openShippingLabel(page, method);
+      }
     }
-    if (!confirmed) throw marketplaceError("loisp", `Khong chon duoc Package weight ${weight}.`);
-    // clickReadyAction waits for the Update button rather than sleeping blindly.
+    throw marketplaceError("loisp", `Khong chon duoc Package weight ${weight} sau ${retryCount} lan mo lai Shipping label.`);
   }
 
   async function setOfferMinimum(manager, page, amount) {
@@ -1559,7 +1605,7 @@ export function createDangBai({
     const method = await ensureFourVDeliveryMethod(page, profileId);
     await openShippingLabel(page, method);
     const weight = normalizePackageWeight(config.fourVPostPackageWeight);
-    await choosePackageWeight(page, weight);
+    await choosePackageWeight(page, weight, method);
     await clickReadyAction(manager, page, "Update", "chon Package weight");
     await waitForShippingLabelDialogToClose(page);
     await clickReadyAction(manager, page, "Next", "cap nhat shipping");
