@@ -1205,6 +1205,17 @@ export function createDangBai({
         return Boolean(rect && rect.width > 0 && rect.height > 0 && style?.display !== "none" && style?.visibility !== "hidden");
       };
       const keyword = choice.toLowerCase();
+      const direct = Array.from(document.querySelectorAll("button, [role='button']"))
+        .find((node) => {
+          if (!visible(node)) return false;
+          const text = clean(node.innerText || node.textContent || "").toLowerCase();
+          return text === `select ${keyword} label` || text === `change ${keyword} label`;
+        });
+      if (direct) {
+        direct.scrollIntoView({ block: "center", inline: "nearest" });
+        direct.click();
+        return true;
+      }
       const candidates = Array.from(document.querySelectorAll("div, span, button, [role='button']"))
         .filter((node) => visible(node))
         .filter((node) => {
@@ -1232,6 +1243,18 @@ export function createDangBai({
         const rect = node?.getBoundingClientRect?.();
         return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
       };
+      const direct = Array.from(document.querySelectorAll("[role='combobox']"))
+        .find((node) => {
+          if (!visible(node)) return false;
+          const labelledBy = node.getAttribute("aria-labelledby");
+          const label = labelledBy ? document.getElementById(labelledBy)?.textContent : "";
+          return /^package weight$/i.test(clean(label || ""));
+        });
+      if (direct) {
+        direct.scrollIntoView({ block: "center", inline: "nearest" });
+        direct.click();
+        return true;
+      }
       const label = Array.from(document.querySelectorAll("div, span, label"))
         .find((node) => visible(node) && /^package weight$/i.test(clean(node.textContent || "")));
       if (!label) return false;
@@ -1251,6 +1274,12 @@ export function createDangBai({
         const rect = node?.getBoundingClientRect?.();
         return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
       };
+      const radio = Array.from(document.querySelectorAll("input[type='radio'][name='package_weight_range']"))
+        .find((input) => visible(input) && String(input.value || "").trim().toLowerCase() === String(value).trim().toLowerCase());
+      if (radio) {
+        radio.click();
+        return Boolean(radio.checked || radio.getAttribute("aria-checked") === "true");
+      }
       const node = Array.from(document.querySelectorAll("div, span, [role='option'], [role='radio']"))
         .find((item) => visible(item) && clean(item.textContent || "").toLowerCase() === String(value).toLowerCase());
       if (!node) return false;
