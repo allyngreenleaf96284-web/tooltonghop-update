@@ -1330,7 +1330,7 @@ export function createDangBai({
     await manager.clickActionButton(page, "Publish");
     await waitForPublishSuccess(page);
     await closeBoostDialog(page);
-    if (typeof manager.consumeUsedTitle === "function") manager.consumeUsedTitle(payload.titleFile, payload.title);
+    // 4v uses one fixed canonical title, so it must remain in Title.txt after posting.
     const link = await findPublishedListingLink(page, payload.title);
     return { method, weight, price, minimumPrice, link };
   }
