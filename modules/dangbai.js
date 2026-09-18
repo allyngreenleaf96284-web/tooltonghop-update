@@ -106,12 +106,32 @@ function isDroppedBarStatus(value) {
   return /^tut\s+\d+v$/.test(normalizeVietnameseText(value));
 }
 
+function stripRuntimeNamePrefixes(value) {
+  let name = String(value || "").trim();
+  // A retry replaces the old runtime state instead of growing a name chain.
+  const prefix = /^(?:(?:lỗi|loi)\s*(?:sp|link\s*sp|location|publish|login)?|(?:tụt|tut)\s*[^-]+|limitdb|cp\d+|loicapcha|hetproxy|biout|bỏ\s*qua|bo\s*qua)\s*-\s*/i;
+  while (prefix.test(name)) name = name.replace(prefix, "").trim();
+  return name;
+}
+
+function buildStatusProfileName(status, value) {
+  const label = String(status || "").trim();
+  const base = stripRuntimeNamePrefixes(value) || "profile-tool";
+  return label ? `${label}-${base}` : base;
+}
+
+function buildSuccessPrefixProfileName(prefix, value) {
+  const label = String(prefix || "").trim();
+  const base = stripRuntimeNamePrefixes(value) || "profile-tool";
+  if (!label) return base;
+  return normalizeVietnameseText(base).startsWith(normalizeVietnameseText(label)) ? base : `${label}${base}`;
+}
+
 function buildRuntimeProfileName({ status = "", tenChuan = "" }) {
   const normalizedStatus = String(status || "").trim().toLowerCase();
-  const base = String(tenChuan || "").trim() || "profile-tool";
+  const base = stripRuntimeNamePrefixes(tenChuan) || "profile-tool";
   if (!normalizedStatus || normalizedStatus === "thanh cong" || normalizedStatus === "thành công") return base;
-  if (normalizedStatus === "loi") return `loi-${base}`;
-  return `${normalizedStatus}-${base}`;
+  return buildStatusProfileName(normalizedStatus, base);
 }
 
 async function readLatestHideProfileName(manager, profileId, fallbackName = "") {
@@ -1284,7 +1304,8 @@ export function createDangBai({
         .find((input) => String(input.value || "").trim().toLowerCase() === String(value).trim().toLowerCase());
       if (radio) {
         radio.click();
-        return Boolean(radio.checked || radio.getAttribute("aria-checked") === "true");
+        // Facebook changes the radio state asynchronously after the click.
+        return true;
       }
       const node = Array.from(document.querySelectorAll("div, span, [role='option'], [role='radio']"))
         .find((item) => visible(item) && clean(item.textContent || "").toLowerCase() === String(value).toLowerCase());
@@ -1298,7 +1319,26 @@ export function createDangBai({
       return true;
     }, weight).catch(() => false);
     if (!chosen) throw marketplaceError("loisp", `Khong chon duoc Package weight ${weight}.`);
-    await sleep(500);
+    let confirmed = false;
+    for (let attempt = 1; attempt <= 18; attempt += 1) {
+      confirmed = await page.evaluate((value) => {
+        const radio = Array.from(document.querySelectorAll("input[type='radio'][name='package_weight_range']"))
+          .find((input) => String(input.value || "").trim().toLowerCase() === String(value).trim().toLowerCase());
+        return Boolean(radio && (radio.checked || radio.getAttribute("aria-checked") === "true"));
+      }, weight).catch(() => false);
+      if (confirmed) break;
+      if (attempt % 6 === 0) {
+        await page.evaluate((value) => {
+          const radio = Array.from(document.querySelectorAll("input[type='radio'][name='package_weight_range']"))
+            .find((input) => String(input.value || "").trim().toLowerCase() === String(value).trim().toLowerCase());
+          radio?.click();
+        }, weight).catch(() => {});
+      }
+      await sleep(500);
+    }
+    if (!confirmed) throw marketplaceError("loisp", `Khong chon duoc Package weight ${weight}.`);
+    // Update becomes active slightly after the radio itself is checked.
+    await sleep(1400);
   }
 
   async function setOfferMinimum(manager, page, amount) {
@@ -1538,7 +1578,7 @@ export function createDangBai({
             job.result = update;
             return update;
           }
-          const nextName = `${droppedStatus}-${currentName}`;
+          const nextName = buildStatusProfileName(droppedStatus, currentName || existingStandardName);
           await rename(manager, profileId, nextName);
           const update = {
             Tool: "đăng bài 4v",
@@ -1559,7 +1599,7 @@ export function createDangBai({
           runFourVListing(manager, page, payload, row, profileId, config, () => { noRollback = true; })
         , { timeoutMs: 600000 });
         const configuredPrefix = String(config.fourVPostSuccessPrefix || "");
-        const successfulPostName = configuredPrefix ? `${configuredPrefix}${currentName}` : currentName;
+        const successfulPostName = buildSuccessPrefixProfileName(configuredPrefix, currentName);
         if (typeof appendMarketplacePostResult !== "function") {
           throw marketplaceError("loi link sp", "Chua cau hinh duoc ghi link san pham vao Sheet.");
         }
@@ -1643,11 +1683,9 @@ export function createDangBai({
         uid
       });
       if (!nameAfterPublishedPost) {
-        const errorName = mapped.status === "lỗi sp"
-          ? `lỗi sp-${currentName}`
-          : mapped.status === "lỗi link sp"
-            ? `lỗi link sp-${currentName}`
-            : buildRuntimeProfileName({ status: mapped.status, tenChuan });
+        const errorName = mapped.status === "lỗi sp" || mapped.status === "lỗi link sp"
+          ? buildStatusProfileName(mapped.status, currentName)
+          : buildRuntimeProfileName({ status: mapped.status, tenChuan });
         await rename(manager, profileId, errorName);
       }
       const update = {
