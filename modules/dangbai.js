@@ -1312,24 +1312,14 @@ export function createDangBai({
         const style = node ? window.getComputedStyle(node) : null;
         return Boolean(rect && rect.width > 0 && rect.height > 0 && style?.display !== "none" && style?.visibility !== "hidden");
       };
-      const controls = Array.from(document.querySelectorAll("[role='combobox'], [aria-haspopup='menu'], [aria-haspopup='listbox'], button, [role='button']"))
-        .filter(visible)
-        .map((node) => ({
-          node,
-          text: clean(node.innerText || node.textContent || node.getAttribute("aria-label") || ""),
-          rect: node.getBoundingClientRect()
-        }))
-        .filter(({ rect, text }) => rect.left < window.innerWidth * 0.5 && rect.width >= 160 && rect.width <= 520 && rect.height >= 32 && rect.height <= 180 && /shipping/.test(text));
-      controls.sort((a, b) => a.rect.top - b.rect.top || b.text.length - a.text.length);
-      const match = controls.find(({ text }) => /^delivery method\s+shipping\b/.test(text))
-        || controls.find(({ text }) => /^shipping(?:\s|&|and|-)/.test(text))
-        || controls.find(({ text }) => /shipping\s*(?:&|and)\s*local/.test(text));
-      if (!match) return false;
-      const target = match.node.matches("[role='combobox'], button, [role='button']")
-        ? match.node
-        : match.node.closest("[role='combobox'], button, [role='button']") || match.node;
-      target.scrollIntoView({ block: "center", inline: "nearest" });
-      target.click();
+      // Shipping has a stable, specific control: a LABEL combobox whose value
+      // starts with "Delivery method Shipping". Do not reuse the Delivery
+      // finder here because the two Facebook variants can render differently.
+      const control = Array.from(document.querySelectorAll("label[role='combobox'], [role='combobox']"))
+        .find((node) => visible(node) && /^delivery method\s+shipping\b/.test(clean(node.innerText || node.textContent || "")));
+      if (!control) return false;
+      control.scrollIntoView({ block: "center", inline: "nearest" });
+      control.click();
       return true;
     }).catch(() => false);
     if (!opened) throw marketplaceError("loisp", "Khong mo duoc Shipping method.");
@@ -1338,8 +1328,10 @@ export function createDangBai({
         const rect = node?.getBoundingClientRect?.();
         return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
       };
-      return Array.from(document.querySelectorAll("[role='menuitemcheckbox'], [role='checkbox'], [role='option'], [role='menuitem']"))
-        .some((node) => visible(node) && /^shipping\b/i.test(String(node.getAttribute("aria-label") || node.innerText || node.textContent || "").trim()));
+      const menu = Array.from(document.querySelectorAll("[role='menu']"))
+        .find((node) => visible(node) && /^shipping options$/i.test(String(node.getAttribute("aria-label") || "").trim()));
+      return Boolean(menu && Array.from(menu.querySelectorAll("[role='menuitemcheckbox']"))
+        .some((node) => visible(node) && /^shipping\b/i.test(String(node.getAttribute("aria-label") || node.innerText || node.textContent || "").trim())));
     }, { timeout: FOUR_V_UI_WAIT_MS }).then(() => true).catch(() => false);
     if (!menuReady) throw marketplaceError("loisp", "Shipping method mo ra nhung menu Shipping chua tai xong sau 15 giay.");
   }
