@@ -1301,6 +1301,49 @@ export function createDangBai({
     if (!menuReady) throw marketplaceError("loisp", "Delivery method mo ra nhung menu chua tai xong sau 15 giay.");
   }
 
+  // Facebook renders the Shipping variation of this field differently from the
+  // Delivery variation on some accounts. Keep this lookup independent so a
+  // Shipping-only DOM change cannot break the known-good Delivery path above.
+  async function openShippingMethodMenu(page) {
+    const opened = await page.evaluate(() => {
+      const clean = (value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+      const visible = (node) => {
+        const rect = node?.getBoundingClientRect?.();
+        const style = node ? window.getComputedStyle(node) : null;
+        return Boolean(rect && rect.width > 0 && rect.height > 0 && style?.display !== "none" && style?.visibility !== "hidden");
+      };
+      const controls = Array.from(document.querySelectorAll("[role='combobox'], [aria-haspopup='menu'], [aria-haspopup='listbox'], button, [role='button']"))
+        .filter(visible)
+        .map((node) => ({
+          node,
+          text: clean(node.innerText || node.textContent || node.getAttribute("aria-label") || ""),
+          rect: node.getBoundingClientRect()
+        }))
+        .filter(({ rect, text }) => rect.left < window.innerWidth * 0.5 && rect.width >= 160 && rect.width <= 520 && rect.height >= 32 && rect.height <= 180 && /shipping/.test(text));
+      controls.sort((a, b) => a.rect.top - b.rect.top || b.text.length - a.text.length);
+      const match = controls.find(({ text }) => /^delivery method\s+shipping\b/.test(text))
+        || controls.find(({ text }) => /^shipping(?:\s|&|and|-)/.test(text))
+        || controls.find(({ text }) => /shipping\s*(?:&|and)\s*local/.test(text));
+      if (!match) return false;
+      const target = match.node.matches("[role='combobox'], button, [role='button']")
+        ? match.node
+        : match.node.closest("[role='combobox'], button, [role='button']") || match.node;
+      target.scrollIntoView({ block: "center", inline: "nearest" });
+      target.click();
+      return true;
+    }).catch(() => false);
+    if (!opened) throw marketplaceError("loisp", "Khong mo duoc Shipping method.");
+    const menuReady = await page.waitForFunction(() => {
+      const visible = (node) => {
+        const rect = node?.getBoundingClientRect?.();
+        return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
+      };
+      return Array.from(document.querySelectorAll("[role='menuitemcheckbox'], [role='checkbox'], [role='option'], [role='menuitem']"))
+        .some((node) => visible(node) && /^shipping\b/i.test(String(node.getAttribute("aria-label") || node.innerText || node.textContent || "").trim()));
+    }, { timeout: FOUR_V_UI_WAIT_MS }).then(() => true).catch(() => false);
+    if (!menuReady) throw marketplaceError("loisp", "Shipping method mo ra nhung menu Shipping chua tai xong sau 15 giay.");
+  }
+
   async function selectDeliveryMenuOption(page, wanted, wantedChecked = true) {
     return page.evaluate(({ value, shouldBeChecked }) => {
       const clean = (text) => String(text || "").replace(/\s+/g, " ").trim();
@@ -1381,13 +1424,19 @@ export function createDangBai({
       const before = await readDeliveryMethod(page);
       const beforeText = String(before?.text || "").toLowerCase();
       if (/^delivery method\s+(shipping|delivery)$/i.test(before?.text || "")) return /shipping/i.test(before.text) ? "Shipping" : "Delivery";
-      await openDeliveryMethodMenu(page);
-      const shipping = await selectDeliveryMenuOption(page, "Shipping");
       let selected = "";
-      if (shipping.found) {
+      const methodValue = beforeText.replace(/^delivery method\s*/i, "");
+      const isShippingScreen = /\bshipping\b/.test(methodValue);
+      if (isShippingScreen) {
+        await openShippingMethodMenu(page);
+        const shipping = await selectDeliveryMenuOption(page, "Shipping");
+        if (!shipping.found) throw marketplaceError("loisp", "Da mo Shipping method nhung khong thay tuy chon Shipping.");
         if (shipping.disabled) throw marketplaceError("loisp", "Shipping bi mo, khong the bat cho san pham nay.");
         selected = "Shipping";
       } else {
+        // Delivery keeps the previous, proven selector and does not depend on
+        // the Shipping-specific finder.
+        await openDeliveryMethodMenu(page);
         const delivery = await selectDeliveryMenuOption(page, "Delivery");
         if (!delivery.found || delivery.disabled) throw marketplaceError("loisp", "Khong bat duoc Shipping hoac Delivery cho san pham nay.");
         selected = "Delivery";
