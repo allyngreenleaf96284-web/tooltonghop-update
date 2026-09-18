@@ -8,6 +8,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const US_LOCATION_FILE = path.resolve(__dirname, "../data/us_locations.txt");
 const CREATE_ITEM_URL = "https://www.facebook.com/marketplace/create/item";
 const STABLE_POST_CONCURRENCY = 4;
+const FOUR_V_UI_WAIT_MS = 15000;
+const FOUR_V_UI_POLL_MS = 500;
 
 function clampToolConcurrency(value, fallback = STABLE_POST_CONCURRENCY) {
   const parsed = Math.floor(Number(value));
@@ -1040,6 +1042,65 @@ export function createDangBai({
     return error;
   }
 
+  async function waitForReadyAction(page, label, timeoutMs = FOUR_V_UI_WAIT_MS) {
+    const attempts = Math.max(1, Math.ceil(timeoutMs / FOUR_V_UI_POLL_MS));
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      const ready = await page.evaluate((wanted) => {
+        const clean = (value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+        const visible = (node) => {
+          const rect = node?.getBoundingClientRect?.();
+          return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
+        };
+        return Array.from(document.querySelectorAll("button, [role='button']")).some((node) =>
+          visible(node)
+          && clean(node.innerText || node.textContent || "") === clean(wanted)
+          && node.getAttribute("aria-disabled") !== "true"
+          && !node.disabled
+        );
+      }, label).catch(() => false);
+      if (ready) return true;
+      await sleep(FOUR_V_UI_POLL_MS);
+    }
+    return false;
+  }
+
+  async function clickReadyAction(manager, page, label, stepName) {
+    const ready = await waitForReadyAction(page, label);
+    if (!ready) throw marketplaceError("loisp", `Cho qua 15 giay van chua thay nut ${label} san sang (${stepName}).`);
+    await manager.clickActionButton(page, label);
+  }
+
+  async function waitForStepOneUpload(page) {
+    const attempts = Math.ceil(FOUR_V_UI_WAIT_MS / FOUR_V_UI_POLL_MS);
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      const ready = await page.evaluate(() => {
+        const visible = (node) => {
+          const rect = node?.getBoundingClientRect?.();
+          return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
+        };
+        const text = String(document.body?.innerText || "").replace(/\s+/g, " ").toLowerCase();
+        const uploadInProgress = /uploading|processing photo|processing image|upload in progress/.test(text)
+          || Array.from(document.querySelectorAll("[role='progressbar']")).some(visible);
+        return !uploadInProgress;
+      }).catch(() => false);
+      if (ready) return true;
+      await sleep(FOUR_V_UI_POLL_MS);
+    }
+    return false;
+  }
+
+  async function waitForShippingLabelDialogToClose(page) {
+    const closed = await page.waitForFunction(() => {
+      const visible = (node) => {
+        const rect = node?.getBoundingClientRect?.();
+        return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
+      };
+      return !Array.from(document.querySelectorAll("[role='dialog'], [aria-modal='true']"))
+        .some((node) => visible(node) && /package weight|change shipping method|change delivery method/i.test(node.innerText || node.textContent || ""));
+    }, { timeout: FOUR_V_UI_WAIT_MS }).then(() => true).catch(() => false);
+    if (!closed) throw marketplaceError("loisp", "Cho qua 15 giay ma cua so Shipping label chua dong sau khi bam Update.");
+  }
+
   function normalizePackageWeight(value) {
     const allowed = ["Under 0.5 lbs", "0.5-1 lbs", "1-2 lbs", "2-5 lbs", "5-10 lbs", "10-70 lbs"];
     const wanted = String(value || "").trim().toLowerCase();
@@ -1203,10 +1264,13 @@ export function createDangBai({
       const localPickup = await selectDeliveryMenuOption(page, "Local pickup", false);
       if (localPickup.found && localPickup.clicked) await sleep(500);
       await page.keyboard.press("Escape").catch(() => {});
-      await sleep(900);
-      const after = await readDeliveryMethod(page);
-      const afterText = String(after?.text || "").toLowerCase();
-      if (afterText === `delivery method ${selected.toLowerCase()}`) return selected;
+      let after = null;
+      for (let waitAttempt = 1; waitAttempt <= Math.ceil(FOUR_V_UI_WAIT_MS / FOUR_V_UI_POLL_MS); waitAttempt += 1) {
+        after = await readDeliveryMethod(page);
+        const afterText = String(after?.text || "").toLowerCase();
+        if (afterText === `delivery method ${selected.toLowerCase()}`) return selected;
+        await sleep(FOUR_V_UI_POLL_MS);
+      }
       log(profileId, "delivery method", `kiem tra lai lan ${attempt}/2: ${after?.text || beforeText || "khong doc duoc"}`, "warn");
     }
     throw marketplaceError("loisp", "Delivery method chua dung Shipping hoac Delivery sau khi da chinh.");
@@ -1249,12 +1313,12 @@ export function createDangBai({
       return true;
     }, method).catch(() => false);
     if (!opened) throw marketplaceError("loisp", `Khong mo duoc ${method} label.`);
-    await sleep(900);
+    // The following Package weight reader waits up to 15 seconds for the modal.
   }
 
   async function choosePackageWeight(page, weight) {
     let opened = false;
-    for (let attempt = 1; attempt <= 6; attempt += 1) {
+    for (let attempt = 1; attempt <= Math.ceil(FOUR_V_UI_WAIT_MS / FOUR_V_UI_POLL_MS); attempt += 1) {
       const state = await page.evaluate(() => {
         const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
         const visible = (node) => {
@@ -1287,7 +1351,7 @@ export function createDangBai({
         opened = true;
         break;
       }
-      await sleep(500);
+      await sleep(FOUR_V_UI_POLL_MS);
     }
     if (!opened) throw marketplaceError("loisp", "Khong mo duoc Package weight.");
     const chosen = await page.evaluate((value) => {
@@ -1316,25 +1380,24 @@ export function createDangBai({
     }, weight).catch(() => false);
     if (!chosen) throw marketplaceError("loisp", `Khong chon duoc Package weight ${weight}.`);
     let confirmed = false;
-    for (let attempt = 1; attempt <= 18; attempt += 1) {
+    for (let attempt = 1; attempt <= Math.ceil(FOUR_V_UI_WAIT_MS / FOUR_V_UI_POLL_MS); attempt += 1) {
       confirmed = await page.evaluate((value) => {
         const radio = Array.from(document.querySelectorAll("input[type='radio'][name='package_weight_range']"))
           .find((input) => String(input.value || "").trim().toLowerCase() === String(value).trim().toLowerCase());
         return Boolean(radio && (radio.checked || radio.getAttribute("aria-checked") === "true"));
       }, weight).catch(() => false);
       if (confirmed) break;
-      if (attempt % 6 === 0) {
+      if (attempt % 10 === 0) {
         await page.evaluate((value) => {
           const radio = Array.from(document.querySelectorAll("input[type='radio'][name='package_weight_range']"))
             .find((input) => String(input.value || "").trim().toLowerCase() === String(value).trim().toLowerCase());
           radio?.click();
         }, weight).catch(() => {});
       }
-      await sleep(500);
+      await sleep(FOUR_V_UI_POLL_MS);
     }
     if (!confirmed) throw marketplaceError("loisp", `Khong chon duoc Package weight ${weight}.`);
-    // Update becomes active slightly after the radio itself is checked.
-    await sleep(1400);
+    // clickReadyAction waits for the Update button rather than sleeping blindly.
   }
 
   async function setOfferMinimum(manager, page, amount) {
@@ -1395,8 +1458,14 @@ export function createDangBai({
     await page.goto(sellingUrl, { waitUntil: "domcontentloaded", timeout: 90000 });
     await page.waitForSelector("body", { timeout: 20000 }).catch(() => {});
     await page.reload({ waitUntil: "domcontentloaded", timeout: 90000 }).catch(() => {});
-    await sleep(1500);
     for (let attempt = 1; attempt <= 5; attempt += 1) {
+      // Let a proxy-delayed Selling page render the matching listing before
+      // deciding that it is absent. Exit as soon as it is visible.
+      await page.waitForFunction((wantedTitle) => {
+        const wanted = String(wantedTitle || "").replace(/\s+/g, " ").trim().toLowerCase();
+        const text = String(document.body?.innerText || "").replace(/\s+/g, " ").toLowerCase();
+        return text.includes(wanted);
+      }, { timeout: FOUR_V_UI_WAIT_MS }, title).catch(() => {});
       const directLink = await page.evaluate((wantedTitle) => {
         const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
         const wanted = clean(wantedTitle).toLowerCase();
@@ -1442,10 +1511,10 @@ export function createDangBai({
       }, title).catch(() => false);
 
       if (menuOpened) {
-        // Proxy connections can render this menu slowly. Poll for up to five
+        // Proxy connections can render this menu slowly. Poll for up to 15
         // seconds and click as soon as View listing exists; never reload early.
         let viewOpened = false;
-        for (let menuWaitAttempt = 1; menuWaitAttempt <= 10; menuWaitAttempt += 1) {
+        for (let menuWaitAttempt = 1; menuWaitAttempt <= Math.ceil(FOUR_V_UI_WAIT_MS / FOUR_V_UI_POLL_MS); menuWaitAttempt += 1) {
           viewOpened = await page.evaluate(() => {
             const clean = (value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
             const visible = (node) => {
@@ -1463,44 +1532,45 @@ export function createDangBai({
             return true;
           }).catch(() => false);
           if (viewOpened) break;
-          await sleep(500);
+          await sleep(FOUR_V_UI_POLL_MS);
         }
         if (viewOpened) {
           await page.waitForFunction(
             () => /\/marketplace\/item\/\d+/.test(String(window.location.pathname || "")),
-            { timeout: 20000 }
+            { timeout: FOUR_V_UI_WAIT_MS }
           ).catch(() => {});
           const openedUrl = String(page.url?.() || "");
           if (/\/marketplace\/item\/\d+/.test(openedUrl)) return withFacebookLocale(openedUrl);
         }
       }
       await page.reload({ waitUntil: "domcontentloaded", timeout: 90000 }).catch(() => {});
-      await sleep(2500);
+      await sleep(FOUR_V_UI_POLL_MS);
     }
     throw marketplaceError("loi link sp", `Da dang bai nhung khong tim thay link listing theo title: ${title}`);
   }
 
   async function runFourVListing(manager, page, payload, row, profileId, config, markNoRollback = () => {}) {
     await manager.fillStepOne(page, payload);
-    await sleep(1800);
-    await manager.clickActionButton(page, "Next");
-    await page.waitForFunction(() => /delivery method/i.test(String(document.body?.innerText || "")), { timeout: 60000 });
+    if (!await waitForStepOneUpload(page)) {
+      throw marketplaceError("loisp", "Anh van dang tai sau 15 giay, chua the bam Next an toan.");
+    }
+    await clickReadyAction(manager, page, "Next", "tai anh va dien buoc dau");
+    await page.waitForFunction(() => /delivery method/i.test(String(document.body?.innerText || "")), { timeout: FOUR_V_UI_WAIT_MS });
     const method = await ensureFourVDeliveryMethod(page, profileId);
     await openShippingLabel(page, method);
     const weight = normalizePackageWeight(config.fourVPostPackageWeight);
     await choosePackageWeight(page, weight);
-    await manager.clickActionButton(page, "Update");
-    await sleep(1200);
-    await manager.clickActionButton(page, "Next");
-    await page.waitForFunction(() => /minimum price you'll consider|allow offers/i.test(String(document.body?.innerText || "")), { timeout: 60000 });
+    await clickReadyAction(manager, page, "Update", "chon Package weight");
+    await waitForShippingLabelDialogToClose(page);
+    await clickReadyAction(manager, page, "Next", "cap nhat shipping");
+    await page.waitForFunction(() => /minimum price you'll consider|allow offers/i.test(String(document.body?.innerText || "")), { timeout: FOUR_V_UI_WAIT_MS });
     const price = numericListingPrice(payload?.price, config.fourVPostPriceMin, config.fourVPostPriceMax);
     const discount = 3 + Math.floor(Math.random() * 3);
     const minimumPrice = Math.max(1, price - discount);
     await setOfferMinimum(manager, page, minimumPrice);
-    await manager.clickActionButton(page, "Next");
-    await sleep(1200);
+    await clickReadyAction(manager, page, "Next", "dien minimum price");
     markNoRollback();
-    await manager.clickActionButton(page, "Publish");
+    await clickReadyAction(manager, page, "Publish", "hoan tat buoc audience");
     await waitForPublishSuccess(page);
     await closeBoostDialog(page);
     // 4v uses one fixed canonical title, so it must remain in Title.txt after posting.
