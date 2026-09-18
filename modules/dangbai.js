@@ -1307,6 +1307,7 @@ export function createDangBai({
   // Shipping-only DOM change cannot break the known-good Delivery path above.
   async function openShippingMethodMenu(page) {
     const attempts = Math.ceil(SHIPPING_UI_WAIT_MS / FOUR_V_UI_POLL_MS);
+    const fallbackAfterAttempts = Math.ceil(5000 / FOUR_V_UI_POLL_MS);
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       const state = await page.evaluate(() => {
       const clean = (value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
@@ -1329,7 +1330,7 @@ export function createDangBai({
       const rect = control.getBoundingClientRect();
       return { opened: false, point: { x: rect.left + (rect.width / 2), y: rect.top + (rect.height / 2) } };
       }).catch(() => ({ opened: false, point: null }));
-      if (state.opened) return;
+      if (state.opened) return true;
       // A real pointer click is more reliable on Facebook's LABEL combobox than
       // HTMLElement.click() when React has not finished attaching handlers.
       if (state.point && (attempt === 1 || attempt % 10 === 1)) {
@@ -1339,9 +1340,13 @@ export function createDangBai({
           await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.click(), state.point).catch(() => {});
         }
       }
+      // The Delivery variant does not have the Shipping control at all. Give
+      // Facebook a short render window, then let the caller switch to the
+      // independent Delivery flow instead of waiting 30 seconds and failing.
+      if (!state.point && attempt >= fallbackAfterAttempts) return false;
       await sleep(FOUR_V_UI_POLL_MS);
     }
-    throw marketplaceError("loisp", "Khong mo duoc Shipping method sau 30 giay cho control va menu Shipping options.");
+    return false;
   }
 
   async function selectDeliveryMenuOption(page, wanted, wantedChecked = true) {
@@ -1425,20 +1430,18 @@ export function createDangBai({
       const beforeText = String(before?.text || "").toLowerCase();
       if (/^delivery method\s+(shipping|delivery)$/i.test(before?.text || "")) return /shipping/i.test(before.text) ? "Shipping" : "Delivery";
       let selected = "";
-      const methodValue = beforeText.replace(/^delivery method\s*/i, "");
-      // Facebook can initially show only "Local pickup" even though its
-      // dropdown is the Shipping-options variant. Only an explicit Delivery
-      // value may use the separate Delivery implementation.
-      const isDeliveryScreen = /^delivery\b/.test(methodValue);
-      if (!isDeliveryScreen) {
-        await openShippingMethodMenu(page);
+      // Try the Shipping-specific DOM first. It is deliberately separate from
+      // Delivery; a missing/slow Shipping menu simply falls through to the
+      // existing Delivery implementation below.
+      const shippingMenuOpened = await openShippingMethodMenu(page);
+      if (shippingMenuOpened) {
         const shipping = await selectDeliveryMenuOption(page, "Shipping");
         if (!shipping.found) throw marketplaceError("loisp", "Da mo Shipping method nhung khong thay tuy chon Shipping.");
         if (shipping.disabled) throw marketplaceError("loisp", "Shipping bi mo, khong the bat cho san pham nay.");
         selected = "Shipping";
       } else {
-        // Delivery keeps the previous, proven selector and does not depend on
-        // the Shipping-specific finder.
+        // Delivery keeps its proven selector. This is also the safe fallback
+        // when Facebook serves a Delivery-only combobox to a profile.
         await openDeliveryMethodMenu(page);
         const delivery = await selectDeliveryMenuOption(page, "Delivery");
         if (!delivery.found || delivery.disabled) throw marketplaceError("loisp", "Khong bat duoc Shipping hoac Delivery cho san pham nay.");
