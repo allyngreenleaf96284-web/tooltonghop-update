@@ -1401,7 +1401,7 @@ export function createDangBai({
     await page.reload({ waitUntil: "domcontentloaded", timeout: 90000 }).catch(() => {});
     await sleep(1500);
     for (let attempt = 1; attempt <= 5; attempt += 1) {
-      const link = await page.evaluate((wantedTitle) => {
+      const directLink = await page.evaluate((wantedTitle) => {
         const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
         const wanted = clean(wantedTitle).toLowerCase();
         const visible = (node) => {
@@ -1422,7 +1422,56 @@ export function createDangBai({
           .sort((a, b) => a.top - b.top);
         return candidates[0]?.href || "";
       }, title).catch(() => "");
-      if (link) return withFacebookLocale(link);
+      if (directLink) return withFacebookLocale(directLink);
+
+      // On the current Selling page Facebook renders a listing as buttons, not
+      // as an item anchor. The permanent link is available from its More menu.
+      const menuOpened = await page.evaluate((wantedTitle) => {
+        const clean = (value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+        const visible = (node) => {
+          const rect = node?.getBoundingClientRect?.();
+          return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
+        };
+        const wanted = clean(wantedTitle);
+        const more = Array.from(document.querySelectorAll("button, [role='button'], [aria-label]"))
+          .find((node) => {
+            if (!visible(node)) return false;
+            const label = clean(node.getAttribute("aria-label") || "");
+            return label.startsWith("more options for") && label.includes(wanted);
+          });
+        if (!more) return false;
+        more.scrollIntoView({ block: "center", inline: "nearest" });
+        more.click();
+        return true;
+      }, title).catch(() => false);
+
+      if (menuOpened) {
+        await sleep(850);
+        const viewOpened = await page.evaluate(() => {
+          const clean = (value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+          const visible = (node) => {
+            const rect = node?.getBoundingClientRect?.();
+            return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
+          };
+          const menus = Array.from(document.querySelectorAll("[role='menu'], [role='dialog'], [role='presentation']"))
+            .filter((node) => visible(node) && /view listing/i.test(node.innerText || node.textContent || ""));
+          const scope = menus[0] || document;
+          const item = Array.from(scope.querySelectorAll("button, a, [role='button'], [role='menuitem'], div, span"))
+            .find((node) => visible(node) && clean(node.innerText || node.textContent || "") === "view listing");
+          if (!item) return false;
+          const target = item.closest?.("a, button, [role='button'], [role='menuitem']") || item;
+          target.click();
+          return true;
+        }).catch(() => false);
+        if (viewOpened) {
+          await page.waitForFunction(
+            () => /\/marketplace\/item\/\d+/.test(String(window.location.pathname || "")),
+            { timeout: 20000 }
+          ).catch(() => {});
+          const openedUrl = String(page.url?.() || "");
+          if (/\/marketplace\/item\/\d+/.test(openedUrl)) return withFacebookLocale(openedUrl);
+        }
+      }
       await page.reload({ waitUntil: "domcontentloaded", timeout: 90000 }).catch(() => {});
       await sleep(2500);
     }
