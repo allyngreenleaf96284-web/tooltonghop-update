@@ -10,6 +10,7 @@ const CREATE_ITEM_URL = "https://www.facebook.com/marketplace/create/item";
 const STABLE_POST_CONCURRENCY = 4;
 const FOUR_V_UI_WAIT_MS = 15000;
 const FOUR_V_UI_POLL_MS = 500;
+const SHIPPING_UI_WAIT_MS = 30000;
 
 function clampToolConcurrency(value, fallback = STABLE_POST_CONCURRENCY) {
   const parsed = Math.floor(Number(value));
@@ -1305,35 +1306,42 @@ export function createDangBai({
   // Delivery variation on some accounts. Keep this lookup independent so a
   // Shipping-only DOM change cannot break the known-good Delivery path above.
   async function openShippingMethodMenu(page) {
-    const opened = await page.evaluate(() => {
+    const attempts = Math.ceil(SHIPPING_UI_WAIT_MS / FOUR_V_UI_POLL_MS);
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      const state = await page.evaluate(() => {
       const clean = (value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
       const visible = (node) => {
         const rect = node?.getBoundingClientRect?.();
         const style = node ? window.getComputedStyle(node) : null;
         return Boolean(rect && rect.width > 0 && rect.height > 0 && style?.display !== "none" && style?.visibility !== "hidden");
       };
+      const shippingMenu = Array.from(document.querySelectorAll("[role='menu']"))
+        .find((node) => visible(node) && /^shipping options$/i.test(String(node.getAttribute("aria-label") || "").trim()));
+      if (shippingMenu) return { opened: true };
       // Shipping has a stable, specific control: a LABEL combobox whose value
       // starts with "Delivery method Shipping". Do not reuse the Delivery
       // finder here because the two Facebook variants can render differently.
       const control = Array.from(document.querySelectorAll("label[role='combobox'], [role='combobox']"))
         .find((node) => visible(node) && /^delivery method\s+(?:shipping\b|local\s+pick[ -]?up\b)/.test(clean(node.innerText || node.textContent || "")));
-      if (!control) return false;
+      if (!control) return { opened: false, point: null };
+      if (control.getAttribute("aria-expanded") === "true") return { opened: true };
       control.scrollIntoView({ block: "center", inline: "nearest" });
-      control.click();
-      return true;
-    }).catch(() => false);
-    if (!opened) throw marketplaceError("loisp", "Khong mo duoc Shipping method.");
-    const menuReady = await page.waitForFunction(() => {
-      const visible = (node) => {
-        const rect = node?.getBoundingClientRect?.();
-        return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
-      };
-      const menu = Array.from(document.querySelectorAll("[role='menu']"))
-        .find((node) => visible(node) && /^shipping options$/i.test(String(node.getAttribute("aria-label") || "").trim()));
-      return Boolean(menu && Array.from(menu.querySelectorAll("[role='menuitemcheckbox']"))
-        .some((node) => visible(node) && /^shipping\b/i.test(String(node.getAttribute("aria-label") || node.innerText || node.textContent || "").trim())));
-    }, { timeout: FOUR_V_UI_WAIT_MS }).then(() => true).catch(() => false);
-    if (!menuReady) throw marketplaceError("loisp", "Shipping method mo ra nhung menu Shipping chua tai xong sau 15 giay.");
+      const rect = control.getBoundingClientRect();
+      return { opened: false, point: { x: rect.left + (rect.width / 2), y: rect.top + (rect.height / 2) } };
+      }).catch(() => ({ opened: false, point: null }));
+      if (state.opened) return;
+      // A real pointer click is more reliable on Facebook's LABEL combobox than
+      // HTMLElement.click() when React has not finished attaching handlers.
+      if (state.point && (attempt === 1 || attempt % 10 === 1)) {
+        if (page.mouse?.click) {
+          await page.mouse.click(state.point.x, state.point.y).catch(() => {});
+        } else {
+          await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.click(), state.point).catch(() => {});
+        }
+      }
+      await sleep(FOUR_V_UI_POLL_MS);
+    }
+    throw marketplaceError("loisp", "Khong mo duoc Shipping method sau 30 giay cho control va menu Shipping options.");
   }
 
   async function selectDeliveryMenuOption(page, wanted, wantedChecked = true) {
