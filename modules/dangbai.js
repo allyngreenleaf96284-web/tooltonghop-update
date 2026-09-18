@@ -102,10 +102,6 @@ function normalizeVietnameseText(value) {
     .toLowerCase();
 }
 
-function isDroppedBarStatus(value) {
-  return /^tut\s+\d+v$/.test(normalizeVietnameseText(value));
-}
-
 function stripRuntimeNamePrefixes(value) {
   let name = String(value || "").trim();
   // A retry replaces the old runtime state instead of growing a name chain.
@@ -1542,19 +1538,8 @@ export function createDangBai({
       if (manager.activeJobs) manager.activeJobs.set(uid, { type: "post", pauseRequested: false, paused: false, resumed: false, stopRequested: false });
       manager.currentActiveUid = uid;
       manager.stopAllRequested = false;
-      const savedStatus = sheetValue(sheetRow, "trạng thái", "trang thai");
-      if (isFourVPost && isDroppedBarStatus(savedStatus)) {
-        const update = {
-          Tool: sheetValue(sheetRow, "Tool") || "đăng bài 4v",
-          trangThai: savedStatus,
-          soVach: sheetValue(sheetRow, "số vạch", "so vach") || "2v",
-          chiTiet: sheetValue(sheetRow, "chi tiết", "chi tiet") || "Đã ghi tụt vạch từ lần chạy trước."
-        };
-        log(profileId, "check vach create item", `bo qua profile da co trang thai ${savedStatus}`, "info");
-        job.status = "success";
-        job.result = update;
-        return update;
-      }
+      // Never skip from an old Sheet status alone. A profile previously marked
+      // "tụt 2v" can later reach 4v, and the current Facebook screen decides.
       if (!runtime.activeManagers) runtime.activeManagers = new Map();
       runtime.activeManagers.set(profileId, { manager, uid, shouldFinish: () => noRollback });
       const profileInfo = await step(profileId, job, "kiem tra profile HideMyAcc", async () => manager.getProfileById(profileId), { timeoutMs: 30000 });
