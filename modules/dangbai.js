@@ -1665,7 +1665,45 @@ export function createDangBai({
     throw marketplaceError("loisp", `Khong chon duoc Package weight ${weight} sau ${retryCount} lan mo lai Shipping label.`);
   }
 
-  async function setOfferMinimum(manager, page, amount) {
+  async function setDeliveryOfferMinimum(page, amount) {
+    const text = String(Math.max(1, Math.floor(Number(amount) || 1)));
+    const expected = Number(text);
+    for (let attempt = 1; attempt <= Math.ceil(FOUR_V_UI_WAIT_MS / FOUR_V_UI_POLL_MS); attempt += 1) {
+      const result = await page.evaluate((value) => {
+        const visible = (node) => {
+          const rect = node?.getBoundingClientRect?.();
+          const style = node ? window.getComputedStyle(node) : null;
+          return Boolean(rect && rect.width > 0 && rect.height > 0 && style?.display !== "none" && style?.visibility !== "hidden");
+        };
+        const parsePrice = (text) => Number(String(text || "").replace(/[^0-9.]/g, ""));
+        const offerSwitch = Array.from(document.querySelectorAll("input[role='switch'], [role='switch']"))
+          .find((node) => visible(node) && /let buyers negotiate a price/i.test(node.getAttribute("aria-label") || ""));
+        if (offerSwitch && offerSwitch.getAttribute("aria-checked") !== "true" && !offerSwitch.checked) offerSwitch.click();
+        const label = Array.from(document.querySelectorAll("label"))
+          .find((node) => visible(node) && /^minimum price that you'll consider$/i.test(String(node.innerText || node.textContent || "").replace(/\s+/g, " ").trim()));
+        const input = label?.querySelector("input[type='text'], input:not([type])");
+        if (!input || !visible(input)) return { found: false, confirmed: false };
+        if (parsePrice(input.value) === Number(value)) return { found: true, confirmed: true };
+        input.scrollIntoView({ block: "center", inline: "nearest" });
+        input.focus();
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+        setter?.call(input, value);
+        input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value }));
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+        input.dispatchEvent(new FocusEvent("blur", { bubbles: true }));
+        return { found: true, confirmed: parsePrice(input.value) === Number(value) };
+      }, text).catch(() => ({ found: false, confirmed: false }));
+      if (result.confirmed) return;
+      await sleep(FOUR_V_UI_POLL_MS);
+    }
+    throw marketplaceError("loisp", `Khong dien va xac nhan duoc Minimum price cua Delivery = $${expected}.`);
+  }
+
+  async function setOfferMinimum(manager, page, amount, method = "Shipping") {
+    if (method === "Delivery") {
+      await setDeliveryOfferMinimum(page, amount);
+      return;
+    }
     await page.evaluate(() => {
       const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
       const visible = (node) => {
@@ -1832,7 +1870,7 @@ export function createDangBai({
     const price = numericListingPrice(payload?.price, config.fourVPostPriceMin, config.fourVPostPriceMax);
     const discount = 3 + Math.floor(Math.random() * 3);
     const minimumPrice = Math.max(1, price - discount);
-    await setOfferMinimum(manager, page, minimumPrice);
+    await setOfferMinimum(manager, page, minimumPrice, method);
     await clickReadyAction(manager, page, "Next", "dien minimum price");
     markNoRollback();
     await clickReadyAction(manager, page, "Publish", "hoan tat buoc audience");
