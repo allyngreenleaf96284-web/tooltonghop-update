@@ -1316,7 +1316,7 @@ export function createDangBai({
       // starts with "Delivery method Shipping". Do not reuse the Delivery
       // finder here because the two Facebook variants can render differently.
       const control = Array.from(document.querySelectorAll("label[role='combobox'], [role='combobox']"))
-        .find((node) => visible(node) && /^delivery method\s+shipping\b/.test(clean(node.innerText || node.textContent || "")));
+        .find((node) => visible(node) && /^delivery method\s+(?:shipping\b|local\s+pick[ -]?up\b)/.test(clean(node.innerText || node.textContent || "")));
       if (!control) return false;
       control.scrollIntoView({ block: "center", inline: "nearest" });
       control.click();
@@ -1418,8 +1418,11 @@ export function createDangBai({
       if (/^delivery method\s+(shipping|delivery)$/i.test(before?.text || "")) return /shipping/i.test(before.text) ? "Shipping" : "Delivery";
       let selected = "";
       const methodValue = beforeText.replace(/^delivery method\s*/i, "");
-      const isShippingScreen = /\bshipping\b/.test(methodValue);
-      if (isShippingScreen) {
+      // Facebook can initially show only "Local pickup" even though its
+      // dropdown is the Shipping-options variant. Only an explicit Delivery
+      // value may use the separate Delivery implementation.
+      const isDeliveryScreen = /^delivery\b/.test(methodValue);
+      if (!isDeliveryScreen) {
         await openShippingMethodMenu(page);
         const shipping = await selectDeliveryMenuOption(page, "Shipping");
         if (!shipping.found) throw marketplaceError("loisp", "Da mo Shipping method nhung khong thay tuy chon Shipping.");
