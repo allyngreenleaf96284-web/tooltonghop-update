@@ -360,6 +360,12 @@ export function createDangBai({
       };
       manager.__toolDescriptionPatchApplied = true;
     }
+    if (typeof manager.chooseConditionNew === "function" && !manager.__toolUsedLikeNewConditionPatched) {
+      manager.chooseConditionNew = async function chooseUsedLikeNewInstead(page) {
+        await ensureUsedLikeNewCondition(page);
+      };
+      manager.__toolUsedLikeNewConditionPatched = true;
+    }
   }
 
   async function restoreNaturalMarketplaceView(manager, page) {
@@ -409,8 +415,8 @@ export function createDangBai({
   }
 
   async function ensureCreateItemReady(manager, page, row, profileId, job) {
+    await manager.gotoWithRetry(page, withFacebookLocale(CREATE_ITEM_URL), row, 3);
     for (let attempt = 1; attempt <= 3; attempt += 1) {
-      await manager.gotoWithRetry(page, withFacebookLocale(CREATE_ITEM_URL), row, 3);
       await page.waitForSelector("body", { timeout: 15000 });
       const state = await page.evaluate(() => {
         const bodyText = String(document.body?.innerText || "").replace(/\s+/g, " ").trim();
@@ -438,11 +444,26 @@ export function createDangBai({
         throw error;
       }
       if (state.hasItemForSale || state.hasNext || state.hasPublish) return;
-      log(profileId, "vao create/item", `create/item chua tai xong lan ${attempt}/3, dang F5 lai`, "warn", state.bodyText);
+      // Mobile proxies often need several seconds after DOMContentLoaded. Wait
+      // for the actual composer before reloading, rather than F5-ing a page
+      // that is still legitimately rendering.
+      const becameReady = await page.waitForFunction(() => {
+        const text = String(document.body?.innerText || "").replace(/\s+/g, " ").trim();
+        return /item for sale/i.test(text)
+          || /\bnext\b/i.test(text)
+          || /\bpublish\b/i.test(text)
+          || Array.from(document.querySelectorAll("input[type='file']")).some((node) => {
+            const rect = node.getBoundingClientRect();
+            return rect.width > 0 || rect.height > 0;
+          });
+      }, { timeout: FOUR_V_UI_WAIT_MS }).then(() => true).catch(() => false);
+      if (becameReady) return;
+      if (attempt >= 3) break;
+      log(profileId, "vao create/item", `create/item chua tai xong sau 15 giay (lan ${attempt}/3), dang F5 lai`, "warn", state.bodyText);
       await page.reload({ waitUntil: "domcontentloaded", timeout: 45000 }).catch(() => {});
-      await sleep(1800);
+      await sleep(FOUR_V_UI_POLL_MS);
     }
-    throw new Error("Marketplace create/item bi treo qua lau, da F5 3 lan van khong tai duoc.");
+    throw new Error("Marketplace create/item chua tai xong sau 3 lan cho 15 giay; da thu F5 lai 2 lan.");
   }
 
   async function clickMoreDetailsIfNeeded(page) {
@@ -1070,6 +1091,74 @@ export function createDangBai({
     await manager.clickActionButton(page, label);
   }
 
+  async function ensureUsedLikeNewCondition(page) {
+    const clean = (value) => String(value || "")
+      .replace(/[–—]/g, "-")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+    const wanted = "used - like new";
+    for (let recovery = 1; recovery <= 3; recovery += 1) {
+      const alreadySelected = await page.evaluate((value) => {
+        const cleanText = (text) => String(text || "").replace(/[–—]/g, "-").replace(/\s+/g, " ").trim().toLowerCase();
+        return Array.from(document.querySelectorAll("label[role='combobox'], [role='combobox']"))
+          .some((node) => cleanText(node.innerText || node.textContent || "").includes(value));
+      }, wanted).catch(() => false);
+      if (alreadySelected) return;
+
+      const opened = await page.evaluate(() => {
+        const visible = (node) => {
+          const rect = node?.getBoundingClientRect?.();
+          return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
+        };
+        const cleanText = (text) => String(text || "").replace(/\s+/g, " ").trim().toLowerCase();
+        const target = Array.from(document.querySelectorAll("label[role='combobox'], [role='combobox']"))
+          .find((node) => visible(node) && /^condition\b/.test(cleanText(node.innerText || node.textContent || "")));
+        if (!target) return false;
+        target.scrollIntoView({ block: "center", inline: "nearest" });
+        target.click();
+        return true;
+      }).catch(() => false);
+      if (!opened) {
+        await sleep(FOUR_V_UI_POLL_MS);
+        continue;
+      }
+
+      let clicked = false;
+      for (let waitAttempt = 1; waitAttempt <= Math.ceil(FOUR_V_UI_WAIT_MS / FOUR_V_UI_POLL_MS); waitAttempt += 1) {
+        clicked = await page.evaluate((value) => {
+          const cleanText = (text) => String(text || "").replace(/[–—]/g, "-").replace(/\s+/g, " ").trim().toLowerCase();
+          const visible = (node) => {
+            const rect = node?.getBoundingClientRect?.();
+            return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
+          };
+          const option = Array.from(document.querySelectorAll("[role='option'], [role='menuitem'], div, span"))
+            .find((node) => visible(node) && cleanText(node.innerText || node.textContent || "") === value);
+          if (!option) return false;
+          const target = option.closest?.("[role='option'], [role='menuitem'], [role='button'], button") || option;
+          target.click();
+          return true;
+        }, wanted).catch(() => false);
+        if (clicked) break;
+        await sleep(FOUR_V_UI_POLL_MS);
+      }
+      if (clicked) {
+        for (let waitAttempt = 1; waitAttempt <= Math.ceil(FOUR_V_UI_WAIT_MS / FOUR_V_UI_POLL_MS); waitAttempt += 1) {
+          const selected = await page.evaluate((value) => {
+            const cleanText = (text) => String(text || "").replace(/[–—]/g, "-").replace(/\s+/g, " ").trim().toLowerCase();
+            return Array.from(document.querySelectorAll("label[role='combobox'], [role='combobox']"))
+              .some((node) => cleanText(node.innerText || node.textContent || "").includes(value));
+          }, wanted).catch(() => false);
+          if (selected) return;
+          await sleep(FOUR_V_UI_POLL_MS);
+        }
+      }
+      await page.keyboard.press("Escape").catch(() => {});
+      await sleep(FOUR_V_UI_POLL_MS);
+    }
+    throw marketplaceError("loisp", "Khong chon duoc Condition = Used - Like New.");
+  }
+
   async function waitForStepOneUpload(page) {
     const attempts = Math.ceil(FOUR_V_UI_WAIT_MS / FOUR_V_UI_POLL_MS);
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
@@ -1103,8 +1192,19 @@ export function createDangBai({
 
   function normalizePackageWeight(value) {
     const allowed = ["Under 0.5 lbs", "0.5-1 lbs", "1-2 lbs", "2-5 lbs", "5-10 lbs", "10-70 lbs"];
-    const wanted = String(value || "").trim().toLowerCase();
-    return allowed.find((item) => item.toLowerCase() === wanted) || "2-5 lbs";
+    const clean = (text) => String(text || "")
+      .replace(/[–—]/g, "-")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+    const wanted = clean(value);
+    return allowed.find((item) => {
+      const candidate = clean(item);
+      if (candidate === "under 0.5 lbs") {
+        return wanted === candidate || (/\bunder\b/.test(wanted) && /0\.5\s*lbs/.test(wanted));
+      }
+      return wanted === candidate || wanted.includes(`(${candidate})`) || wanted.includes(candidate);
+    }) || "2-5 lbs";
   }
 
   function numericListingPrice(value, fallbackMin = 20, fallbackMax = 25) {
@@ -1129,7 +1229,7 @@ export function createDangBai({
           if (!visible(node)) return false;
           const labelledBy = node.getAttribute("aria-labelledby");
           const label = labelledBy ? document.getElementById(labelledBy)?.textContent : "";
-          return /^delivery method$/i.test(clean(label || ""));
+          return /^delivery method\b/i.test(clean(label || node.innerText || node.textContent || ""));
         });
       if (direct) return { text: clean(direct.innerText || direct.textContent || ""), top: Math.round(direct.getBoundingClientRect().top) };
       const labels = Array.from(document.querySelectorAll("div, span, label"))
@@ -1165,7 +1265,7 @@ export function createDangBai({
           if (!visible(node)) return false;
           const labelledBy = node.getAttribute("aria-labelledby");
           const label = labelledBy ? document.getElementById(labelledBy)?.textContent : "";
-          return /^delivery method$/i.test(clean(label || ""));
+          return /^delivery method\b/i.test(clean(label || node.innerText || node.textContent || ""));
         });
       if (direct) {
         direct.scrollIntoView({ block: "center", inline: "nearest" });
@@ -1190,7 +1290,15 @@ export function createDangBai({
       return false;
     }).catch(() => false);
     if (!opened) throw marketplaceError("loisp", "Khong mo duoc Delivery method.");
-    await sleep(700);
+    const menuReady = await page.waitForFunction(() => {
+      const visible = (node) => {
+        const rect = node?.getBoundingClientRect?.();
+        return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
+      };
+      return Array.from(document.querySelectorAll("[role='menuitemcheckbox'], [role='checkbox'], [role='option'], [role='menuitem']"))
+        .some(visible);
+    }, { timeout: FOUR_V_UI_WAIT_MS }).then(() => true).catch(() => false);
+    if (!menuReady) throw marketplaceError("loisp", "Delivery method mo ra nhung menu chua tai xong sau 15 giay.");
   }
 
   async function selectDeliveryMenuOption(page, wanted, wantedChecked = true) {
@@ -1210,12 +1318,13 @@ export function createDangBai({
         }
         return false;
       };
-      const wantedText = String(value).toLowerCase();
+      const key = (text) => clean(text).toLowerCase().replace(/[^a-z0-9]+/g, "");
+      const wantedText = key(value);
       const menuItem = Array.from(document.querySelectorAll("[role='menuitemcheckbox'], [role='checkbox'], [role='option'], [role='menuitem']"))
         .find((node) => {
           if (!visible(node)) return false;
-          const text = clean(node.getAttribute("aria-label") || node.innerText || node.textContent || "").toLowerCase();
-          return text === wantedText || text.startsWith(`${wantedText}.`) || text.startsWith(`${wantedText} `);
+          const text = key(node.getAttribute("aria-label") || node.innerText || node.textContent || "");
+          return text === wantedText || text.startsWith(wantedText);
         });
       if (menuItem) {
         const isDisabled = disabled(menuItem);
@@ -1225,7 +1334,7 @@ export function createDangBai({
         return { found: true, clicked: !isDisabled && needsClick, disabled: isDisabled, checked, needsClick };
       }
       const labels = Array.from(document.querySelectorAll("div, span, label, [role='checkbox'], [role='option']"))
-        .filter((node) => visible(node) && clean(node.textContent || "").toLowerCase() === String(value).toLowerCase());
+        .filter((node) => visible(node) && key(node.textContent || "") === wantedText);
       const label = labels[0];
       if (!label) return { found: false, clicked: false, disabled: false };
       let target = label;
@@ -1243,8 +1352,32 @@ export function createDangBai({
     }, { value: wanted, shouldBeChecked: wantedChecked }).catch(() => ({ found: false, clicked: false, disabled: false }));
   }
 
+  async function ensureDeliveryMenuOptionState(page, option, checked) {
+    for (let attempt = 1; attempt <= Math.ceil(FOUR_V_UI_WAIT_MS / FOUR_V_UI_POLL_MS); attempt += 1) {
+      const result = await selectDeliveryMenuOption(page, option, checked);
+      if (result.found && !result.disabled) {
+        const confirmed = await page.evaluate(({ value, expected }) => {
+          const clean = (text) => String(text || "").replace(/\s+/g, " ").trim().toLowerCase();
+          const key = (text) => clean(text).replace(/[^a-z0-9]+/g, "");
+          const wanted = key(value);
+          const node = Array.from(document.querySelectorAll("[role='menuitemcheckbox'], [role='checkbox'], [role='option'], [role='menuitem']"))
+            .find((item) => {
+              const rect = item.getBoundingClientRect?.();
+              return rect && rect.width > 0 && rect.height > 0 && key(item.getAttribute("aria-label") || item.innerText || item.textContent || "").startsWith(wanted);
+            });
+          if (!node) return false;
+          const isChecked = node.getAttribute("aria-checked") === "true" || node.querySelector?.("input:checked") !== null;
+          return isChecked === expected;
+        }, { value: option, expected: checked }).catch(() => false);
+        if (confirmed) return true;
+      }
+      await sleep(FOUR_V_UI_POLL_MS);
+    }
+    return false;
+  }
+
   async function ensureFourVDeliveryMethod(page, profileId) {
-    for (let attempt = 1; attempt <= 2; attempt += 1) {
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
       const before = await readDeliveryMethod(page);
       const beforeText = String(before?.text || "").toLowerCase();
       if (/^delivery method\s+(shipping|delivery)$/i.test(before?.text || "")) return /shipping/i.test(before.text) ? "Shipping" : "Delivery";
@@ -1253,16 +1386,20 @@ export function createDangBai({
       let selected = "";
       if (shipping.found) {
         if (shipping.disabled) throw marketplaceError("loisp", "Shipping bi mo, khong the bat cho san pham nay.");
-        if (!shipping.checked) await sleep(500);
         selected = "Shipping";
       } else {
         const delivery = await selectDeliveryMenuOption(page, "Delivery");
         if (!delivery.found || delivery.disabled) throw marketplaceError("loisp", "Khong bat duoc Shipping hoac Delivery cho san pham nay.");
-        if (!delivery.checked) await sleep(500);
         selected = "Delivery";
       }
-      const localPickup = await selectDeliveryMenuOption(page, "Local pickup", false);
-      if (localPickup.found && localPickup.clicked) await sleep(500);
+      const selectedReady = await ensureDeliveryMenuOptionState(page, selected, true);
+      const localPickupReady = await ensureDeliveryMenuOptionState(page, "Local pickup", false);
+      if (!selectedReady || !localPickupReady) {
+        await page.keyboard.press("Escape").catch(() => {});
+        await sleep(FOUR_V_UI_POLL_MS);
+        log(profileId, "delivery method", `menu ${selected} chua cap nhat dung, thu lai lan ${attempt}/3`, "warn");
+        continue;
+      }
       await page.keyboard.press("Escape").catch(() => {});
       let after = null;
       for (let waitAttempt = 1; waitAttempt <= Math.ceil(FOUR_V_UI_WAIT_MS / FOUR_V_UI_POLL_MS); waitAttempt += 1) {
@@ -1271,7 +1408,7 @@ export function createDangBai({
         if (afterText === `delivery method ${selected.toLowerCase()}`) return selected;
         await sleep(FOUR_V_UI_POLL_MS);
       }
-      log(profileId, "delivery method", `kiem tra lai lan ${attempt}/2: ${after?.text || beforeText || "khong doc duoc"}`, "warn");
+      log(profileId, "delivery method", `kiem tra lai lan ${attempt}/3: ${after?.text || beforeText || "khong doc duoc"}`, "warn");
     }
     throw marketplaceError("loisp", "Delivery method chua dung Shipping hoac Delivery sau khi da chinh.");
   }
@@ -1356,41 +1493,68 @@ export function createDangBai({
 
   async function isPackageWeightSelected(page, weight) {
     return page.evaluate((value) => {
-      const clean = (text) => String(text || "").replace(/\s+/g, " ").trim().toLowerCase();
+      const clean = (text) => String(text || "")
+        .replace(/[–—]/g, "-")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase();
       const wanted = clean(value);
+      const matches = (text) => {
+        const candidate = clean(text);
+        if (wanted === "under 0.5 lbs") {
+          return candidate === wanted || (/\bunder\b/.test(candidate) && /0\.5\s*lbs/.test(candidate));
+        }
+        return candidate === wanted || candidate.includes(`(${wanted})`) || candidate.includes(wanted);
+      };
       const radio = Array.from(document.querySelectorAll("input[type='radio'][name='package_weight_range']"))
-        .find((input) => clean(input.value) === wanted);
+        .find((input) => matches([input.value, input.getAttribute("aria-label"), input.parentElement?.innerText, input.closest("[role='radio'], label, div")?.innerText].join(" ")));
       if (radio?.checked || radio?.getAttribute("aria-checked") === "true") return true;
       return Array.from(document.querySelectorAll("[role='combobox']")).some((node) => {
         const labelledBy = node.getAttribute("aria-labelledby");
         const label = labelledBy ? document.getElementById(labelledBy)?.textContent : "";
-        return clean(label) === "package weight" && clean(node.innerText || node.textContent || "").includes(wanted);
+        const nodeText = node.innerText || node.textContent || "";
+        return /^package weight\b/i.test(clean(label || nodeText)) && matches(nodeText);
       });
     }, weight).catch(() => false);
   }
 
   async function clickPackageWeightRadio(page, weight) {
     return page.evaluate((value) => {
-      const clean = (text) => String(text || "").replace(/\s+/g, " ").trim().toLowerCase();
+      const clean = (text) => String(text || "")
+        .replace(/[–—]/g, "-")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase();
+      const wanted = clean(value);
+      const matches = (text) => {
+        const candidate = clean(text);
+        if (wanted === "under 0.5 lbs") {
+          return candidate === wanted || (/\bunder\b/.test(candidate) && /0\.5\s*lbs/.test(candidate));
+        }
+        return candidate === wanted || candidate.includes(`(${wanted})`) || candidate.includes(wanted);
+      };
       const visible = (node) => {
         const rect = node?.getBoundingClientRect?.();
         return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
       };
       const radio = Array.from(document.querySelectorAll("input[type='radio'][name='package_weight_range']"))
-        .find((input) => clean(input.value) === clean(value));
-      if (radio && visible(radio)) {
-        radio.scrollIntoView({ block: "center", inline: "nearest" });
-        const rect = radio.getBoundingClientRect();
-        const pointTarget = document.elementFromPoint(rect.left + (rect.width / 2), rect.top + (rect.height / 2));
+        .find((input) => matches([input.value, input.getAttribute("aria-label"), input.parentElement?.innerText, input.closest("[role='radio'], label, div")?.innerText].join(" ")));
+      if (radio) {
         const label = radio.id ? document.querySelector(`label[for="${CSS.escape(radio.id)}"]`) : null;
-        for (const target of [radio, label, pointTarget].filter(Boolean)) {
+        const card = radio.closest("[role='radio'], label") || radio.parentElement || radio;
+        const visibleTarget = [radio, label, card, card?.parentElement].find(visible);
+        if (!visibleTarget) return false;
+        visibleTarget.scrollIntoView({ block: "center", inline: "nearest" });
+        const rect = visibleTarget.getBoundingClientRect();
+        const pointTarget = document.elementFromPoint(rect.left + (rect.width / 2), rect.top + (rect.height / 2));
+        for (const target of [visibleTarget, pointTarget, label, radio].filter(Boolean)) {
           target.click();
           if (radio.checked || radio.getAttribute("aria-checked") === "true") break;
         }
         return true;
       }
       const node = Array.from(document.querySelectorAll("div, span, [role='option'], [role='radio']"))
-        .find((item) => visible(item) && clean(item.textContent || "") === clean(value));
+        .find((item) => visible(item) && matches(item.textContent || item.innerText || ""));
       if (!node) return false;
       let target = node;
       for (let depth = 0; target && depth < 6; depth += 1, target = target.parentElement) {
