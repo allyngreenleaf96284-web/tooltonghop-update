@@ -1237,37 +1237,43 @@ export function createDangBai({
   }
 
   async function choosePackageWeight(page, weight) {
-    const opened = await page.evaluate(() => {
-      const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
-      const visible = (node) => {
-        const rect = node?.getBoundingClientRect?.();
-        return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
-      };
-      const direct = Array.from(document.querySelectorAll("[role='combobox']"))
-        .find((node) => {
-          if (!visible(node)) return false;
-          const labelledBy = node.getAttribute("aria-labelledby");
-          const label = labelledBy ? document.getElementById(labelledBy)?.textContent : "";
-          return /^package weight$/i.test(clean(label || ""));
-        });
-      if (direct) {
-        direct.scrollIntoView({ block: "center", inline: "nearest" });
-        direct.click();
-        return true;
+    let opened = false;
+    for (let attempt = 1; attempt <= 6; attempt += 1) {
+      const state = await page.evaluate(() => {
+        const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
+        const visible = (node) => {
+          const rect = node?.getBoundingClientRect?.();
+          return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
+        };
+        const direct = Array.from(document.querySelectorAll("[role='combobox']"))
+          .find((node) => {
+            if (!visible(node)) return false;
+            const labelledBy = node.getAttribute("aria-labelledby");
+            const label = labelledBy ? document.getElementById(labelledBy)?.textContent : "";
+            return /^package weight$/i.test(clean(label || ""));
+          });
+        if (direct) {
+          if (direct.getAttribute("aria-expanded") === "true") return "open";
+          direct.scrollIntoView({ block: "center", inline: "nearest" });
+          direct.click();
+          return "clicked";
+        }
+        const label = Array.from(document.querySelectorAll("div, span, label"))
+          .find((node) => visible(node) && /^package weight$/i.test(clean(node.textContent || "")));
+        if (!label) return "missing";
+        const target = label.closest?.("[role='combobox'], button, [role='button']") || label.parentElement;
+        if (!target) return "missing";
+        target.scrollIntoView({ block: "center", inline: "nearest" });
+        target.click();
+        return "clicked";
+      }).catch(() => "missing");
+      if (state === "open") {
+        opened = true;
+        break;
       }
-      const label = Array.from(document.querySelectorAll("div, span, label"))
-        .find((node) => visible(node) && /^package weight$/i.test(clean(node.textContent || "")));
-      if (!label) return false;
-      let target = label;
-      for (let depth = 0; target && depth < 6; depth += 1, target = target.parentElement) {
-        const rect = target.getBoundingClientRect?.();
-        if (target.matches?.("button, [role='button'], [role='combobox']") || (rect && rect.width > 250 && rect.height > 42 && rect.height < 120)) break;
-      }
-      (target || label).click();
-      return true;
-    }).catch(() => false);
+      await sleep(500);
+    }
     if (!opened) throw marketplaceError("loisp", "Khong mo duoc Package weight.");
-    await sleep(500);
     const chosen = await page.evaluate((value) => {
       const clean = (text) => String(text || "").replace(/\s+/g, " ").trim();
       const visible = (node) => {
@@ -1275,7 +1281,7 @@ export function createDangBai({
         return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
       };
       const radio = Array.from(document.querySelectorAll("input[type='radio'][name='package_weight_range']"))
-        .find((input) => visible(input) && String(input.value || "").trim().toLowerCase() === String(value).trim().toLowerCase());
+        .find((input) => String(input.value || "").trim().toLowerCase() === String(value).trim().toLowerCase());
       if (radio) {
         radio.click();
         return Boolean(radio.checked || radio.getAttribute("aria-checked") === "true");
