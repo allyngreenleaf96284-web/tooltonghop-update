@@ -106,9 +106,12 @@ function currentMarketplaceSheetLinks() {
 function renderMarketplaceCheckSheetList(values = state.marketplaceCheckSheetLinks) {
   const list = $("marketplaceCheckSheetList");
   if (!list) return;
-  const normalized = normalizeMarketplaceSheetLinks(values);
-  state.marketplaceCheckSheetLinks = normalized;
-  const displayValues = normalized.length ? normalized : [""];
+  // Keep blank rows while the user is entering several Sheet links. The
+  // normalized list is still used only when saving/running the tool.
+  const displayValues = (Array.isArray(values) ? values : [])
+    .map((value) => String(value || "").trim());
+  state.marketplaceCheckSheetLinks = normalizeMarketplaceSheetLinks(displayValues);
+  if (!displayValues.length) displayValues.push("");
   list.replaceChildren();
   displayValues.forEach((value, index) => {
     const row = document.createElement("div");
@@ -149,9 +152,11 @@ function renderMarketplaceCheckSheetList(values = state.marketplaceCheckSheetLin
 }
 
 function addMarketplaceCheckSheet() {
-  const links = currentMarketplaceSheetLinks();
-  state.marketplaceCheckSheetLinks = [...links, ""];
-  renderMarketplaceCheckSheetList(state.marketplaceCheckSheetLinks);
+  const list = $("marketplaceCheckSheetList");
+  const liveValues = list
+    ? [...list.querySelectorAll("input[data-marketplace-sheet]")].map((input) => input.value)
+    : [...state.marketplaceCheckSheetLinks];
+  renderMarketplaceCheckSheetList([...liveValues, ""]);
   const inputs = $("marketplaceCheckSheetList")?.querySelectorAll("input[data-marketplace-sheet]");
   inputs?.[inputs.length - 1]?.focus();
 }
@@ -3424,7 +3429,6 @@ loadConfig()
     scheduleStateProxyRealtime();
   })
   .catch((error) => setStatus(error.message, true));
-
 
 
 
