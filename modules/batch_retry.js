@@ -5,10 +5,10 @@ const KNOWN_FAILURE_PATTERNS = [
   /captcha|recaptcha|not a robot/i,
   /bi out|bị out|logged out|see more on facebook/i,
   /het proxy|hết proxy|proxy.*(sai|loi|lỗi|failed|rejected|not active)/i,
-  /khong tim thay|không tìm thấy|missing|not found|chua nhap|chưa nhập|thieu|thiếu/i,
+  /chua nhap|chưa nhập|thieu cot|thiếu cột|thieu du lieu|thiếu dữ liệu|thieu cau hinh|thiếu cấu hình|khong tim thay description\.txt|không tìm thấy description\.txt|khong tim thay dong du lieu trong sheet|không tìm thấy dòng dữ liệu trong sheet/i,
   /limit reached|daily limit|not able to create new listings/i,
   /4v|workflow.*chua ho tro|workflow.*chưa hỗ trợ|unsupported/i,
-  /seller info|offer shipping|location|loi login|lỗi login|loi bank|lỗi bank|loi ssn|lỗi ssn/i,
+  /seller info|offer shipping|loi login|lỗi login|loi bank|lỗi bank|loi ssn|lỗi ssn/i,
   /phien ban|phiên bản|about:blank|dung han|dừng hẳn|stopped/i
 ];
 
@@ -104,12 +104,12 @@ async function waitForQueueToFinish(runtime, batch) {
   updateBatchCounts(runtime, batch);
 }
 
-function annotateRetryResults(runtime, retryIds, batch) {
+function annotateRetryResults(runtime, retryIds, batch, attempt) {
   for (const id of retryIds) {
     const job = runtime.jobs.get(id);
     if (!job) continue;
     job.phase = "retry";
-    job.attempt = 1;
+    job.attempt = attempt;
     job.phaseState = "finished";
     job.retryFinal = String(job.status || "").toLowerCase() === "error";
   }
@@ -124,7 +124,7 @@ export async function startAutoRetryBatch({
   options = {},
   invoke,
   addRuntimeLog,
-  maxRetries = 1
+  maxRetries = 0
 }) {
   if (runtime.batch?.active) throw new Error("Dang co batch dang chay, vui long doi xong.");
   const ids = uniqueIds(profileIds);
@@ -136,7 +136,7 @@ export async function startAutoRetryBatch({
     active: true,
     phase: "initial",
     attempt: 0,
-    maxRetries: Math.max(0, Math.min(3, Number(maxRetries) || 0)),
+    maxRetries: Math.max(0, Math.min(3, Math.floor(Number(maxRetries) || 0))),
     initialIds: ids,
     currentIds: ids,
     retryIds: [],
@@ -167,6 +167,9 @@ export async function startAutoRetryBatch({
     try {
       await waitForQueueToFinish(runtime, batch);
       if (runtime.stopRequested || batch.stopRequested) return;
+      // Only the tools that explicitly opt in get a retry pass. Other tools
+      // still use this common batch runner for their first pass.
+      if (batch.maxRetries <= 0) return;
 
       let retryIds = ids.filter((id) => isUnknownFailure(runtime.jobs.get(id)));
       batch.retryIds = retryIds;
@@ -202,7 +205,7 @@ export async function startAutoRetryBatch({
         setPhaseForJobs(runtime, retryIds, batch, "retry", attempt);
         updateBatchCounts(runtime, batch);
         await waitForQueueToFinish(runtime, batch);
-        annotateRetryResults(runtime, retryIds, batch);
+        annotateRetryResults(runtime, retryIds, batch, attempt);
         updateBatchCounts(runtime, batch);
         retryIds = retryIds.filter((id) => isUnknownFailure(runtime.jobs.get(id)));
         batch.retryIds = retryIds;

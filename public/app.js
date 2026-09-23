@@ -77,6 +77,10 @@
   hideRefreshTimer: null,
   currentHideAccount: null,
   currentSpreadsheetId: "",
+  runtimeJobsById: new Map(),
+  runtimeScrollPausedUntil: new WeakMap(),
+  runtimeAutoScrollUntil: 0,
+  runtimeLastFollow: { profileId: "", at: 0 },
   isLoading: false,
   isSyncing: false
 };
@@ -259,7 +263,9 @@ async function loadConfig() {
   if ($("marketplaceCheckTabsPerNick")) $("marketplaceCheckTabsPerNick").value = config.marketplaceCheckTabsPerNick || 5;
   if ($("marketplaceCheckTimeoutMs")) $("marketplaceCheckTimeoutMs").value = config.marketplaceCheckTimeoutMs || 90000;
   if ($("fullConcurrency")) $("fullConcurrency").value = config.fullConcurrency || 4;
+  if ($("fullUnknownRetryCount")) $("fullUnknownRetryCount").value = Math.max(0, Math.min(3, Number(config.fullUnknownRetryCount ?? 1)));
   if ($("postConcurrency")) $("postConcurrency").value = config.postConcurrency || 4;
+  if ($("postUnknownRetryCount")) $("postUnknownRetryCount").value = Math.max(0, Math.min(3, Number(config.postUnknownRetryCount ?? 1)));
   if ($("interactionConcurrency")) $("interactionConcurrency").value = config.interactionConcurrency || 4;
   if ($("pageConcurrency")) $("pageConcurrency").value = config.pageConcurrency || 4;
   if ($("avatarConcurrency")) $("avatarConcurrency").value = Math.max(1, Math.min(2, Number(config.avatarConcurrency || 2)));
@@ -349,7 +355,9 @@ async function saveConfig() {
       marketplaceCheckTabsPerNick: Math.max(1, Math.min(20, Number($("marketplaceCheckTabsPerNick")?.value || 5))),
       marketplaceCheckTimeoutMs: Math.max(30000, Math.min(240000, Number($("marketplaceCheckTimeoutMs")?.value || 90000))),
       fullConcurrency: Number($("fullConcurrency")?.value || 4),
+      fullUnknownRetryCount: Math.max(0, Math.min(3, Number($("fullUnknownRetryCount")?.value || 0))),
       postConcurrency: Number($("postConcurrency")?.value || 4),
+      postUnknownRetryCount: Math.max(0, Math.min(3, Number($("postUnknownRetryCount")?.value || 0))),
       interactionConcurrency: Math.max(1, Math.min(4, Number($("interactionConcurrency")?.value || 4))),
       pageConcurrency: Number($("pageConcurrency")?.value || 4),
       avatarConcurrency: Math.max(1, Math.min(2, Number($("avatarConcurrency")?.value || 2))),
@@ -606,6 +614,19 @@ function primeToolProgress(profileIds, liveStatus, batchKey = "generic") {
   });
 }
 
+function orderProfileIdsTopDown(profileIds, rowsId) {
+  const requested = [...new Set((profileIds || []).map((id) => String(id || "").trim()).filter(Boolean))];
+  const wanted = new Set(requested);
+  const rows = $(rowsId);
+  const visibleOrder = rows
+    ? [...rows.querySelectorAll("tr")]
+      .map((row) => row.querySelector("[data-id]")?.dataset.id || "")
+      .filter((id) => wanted.has(id))
+    : [];
+  const seen = new Set(visibleOrder);
+  return [...visibleOrder, ...requested.filter((id) => !seen.has(id))];
+}
+
 function visibleProfiles() {
   let profiles = state.selectedFolderId === "all"
     ? [...state.profiles]
@@ -692,6 +713,7 @@ function renderActiveModule() {
   if (state.activeModule === "avatar") renderAvatarRows();
   if (state.activeModule === "passwords") renderPasswordRows();
   if (state.activeModule === "proxy") renderProxyRows();
+  syncRuntimeProfileRows();
 }
 
 function render() {
@@ -1223,6 +1245,7 @@ function updatePasswordSelectAllState() {
 }
 
 async function startFillPasswords(profileIds) {
+  profileIds = orderProfileIdsTopDown(profileIds, "passwordRows");
   if (!profileIds.length) {
     $("passwordStatusText").textContent = "Bạn cần chọn ít nhất một profile để điền dữ liệu.";
     return;
@@ -1604,6 +1627,7 @@ function updateNotificationSelectAllState() {
 }
 
 async function startCheckNotifications(profileIds) {
+  profileIds = orderProfileIdsTopDown(profileIds, "notificationRows");
   if (!profileIds.length) {
     $("notificationStatusText").textContent = "Bạn cần chọn ít nhất một profile để chạy.";
     return;
@@ -1693,6 +1717,7 @@ function updateCheckOrderSelectAllState() {
 }
 
 async function startCheckOrder(profileIds) {
+  profileIds = orderProfileIdsTopDown(profileIds, "checkOrderRows");
   if (!profileIds.length) {
     $("checkOrderStatusText").textContent = "Bạn cần chọn ít nhất một profile để chạy.";
     return;
@@ -1859,6 +1884,7 @@ function updateFullSelectAllState() {
 }
 
 async function startLamFull(profileIds) {
+  profileIds = orderProfileIdsTopDown(profileIds, "fullRows");
   if (!profileIds.length) {
     $("fullStatusText").textContent = "Bạn cần chọn ít nhất một profile để chạy.";
     return;
@@ -1870,7 +1896,11 @@ async function startLamFull(profileIds) {
     const concurrency = Math.max(1, Math.min(4, Number($("fullConcurrency")?.value || 4)));
     const { data } = await api("/api/tools/lam-full", {
       method: "POST",
-      body: JSON.stringify({ profileIds, concurrency })
+      body: JSON.stringify({
+        profileIds,
+        concurrency,
+        fullUnknownRetryCount: Math.max(0, Math.min(3, Number($("fullUnknownRetryCount")?.value || 0)))
+      })
     });
     primeToolProgress(profileIds, "bắt đầu: lấy seller info", "full");
     $("fullStatusText").textContent = `Đã bắt đầu làm full ${data.started} profile với ${data.concurrency || 1} luồng.`;
@@ -1979,6 +2009,7 @@ function updatePostSelectAllState() {
 }
 
 async function startDangBai(profileIds) {
+  profileIds = orderProfileIdsTopDown(profileIds, "postRows");
   if (!profileIds.length) {
     $("postStatusText").textContent = "Bạn cần chọn ít nhất một profile để chạy.";
     return;
@@ -1990,7 +2021,11 @@ async function startDangBai(profileIds) {
     const concurrency = Math.max(1, Math.min(4, Number($("postConcurrency")?.value || 4)));
     const { data } = await api("/api/tools/dang-bai", {
       method: "POST",
-      body: JSON.stringify({ profileIds, concurrency })
+      body: JSON.stringify({
+        profileIds,
+        concurrency,
+        postUnknownRetryCount: Math.max(0, Math.min(3, Number($("postUnknownRetryCount")?.value || 0)))
+      })
     });
     primeToolProgress(profileIds, "bắt đầu: mở profile đăng bài", "post");
     $("postStatusText").textContent = `Đã bắt đầu đăng bài ${data.started} profile với ${data.concurrency || 1} luồng.`;
@@ -2089,6 +2124,7 @@ async function savePost4VConfig({ quiet = false } = {}) {
 }
 
 async function startDangBai4V(profileIds) {
+  profileIds = orderProfileIdsTopDown(profileIds, "post4vRows");
   if (!profileIds.length) {
     $("post4vStatusText").textContent = "Bạn cần chọn ít nhất một profile để kiểm tra 4v.";
     return;
@@ -2204,6 +2240,7 @@ function updateInteractionSelectAllState() {
 }
 
 async function startInteraction(profileIds) {
+  profileIds = orderProfileIdsTopDown(profileIds, "interactionRows");
   if (!profileIds.length) {
     $("interactionStatusText").textContent = "Bạn cần chọn ít nhất một profile để chạy.";
     return;
@@ -2229,6 +2266,7 @@ async function startInteraction(profileIds) {
   }
 }
 async function startRenewStandalone(profileIds) {
+  profileIds = orderProfileIdsTopDown(profileIds, "renewStandaloneRows");
   if (!profileIds.length) {
     $("interactionStatusText").textContent = "Bạn cần chọn ít nhất một profile để chạy Renew độc lập.";
     return;
@@ -2352,6 +2390,7 @@ function updatePageSelectAllState() {
 }
 
 async function startCreatePage(profileIds) {
+  profileIds = orderProfileIdsTopDown(profileIds, "pageRows");
   if (!profileIds.length) {
     $("pageStatusText").textContent = "Bạn cần chọn ít nhất một profile để chạy.";
     return;
@@ -2468,6 +2507,7 @@ function updateAvatarSelectAllState() {
 }
 
 async function startAvatar(profileIds) {
+  profileIds = orderProfileIdsTopDown(profileIds, "avatarRows");
   if (!profileIds.length) {
     $("avatarStatusText").textContent = "Bạn cần chọn ít nhất một profile để chạy.";
     return;
@@ -2533,6 +2573,7 @@ async function refreshToolStatus() {
 
 function renderToolProgress(data) {
   state.logs = data.logs || [];
+  state.runtimeJobsById = new Map((data.jobs || []).map((job) => [String(job.profileId || ""), job]));
   renderLogs();
   const allJobs = data.jobs || [];
   const doneStatuses = new Set(["done", "success", "completed", "error", "stopped", "cancelled", "skipped"]);
@@ -2648,6 +2689,18 @@ function renderToolProgress(data) {
     percent: postProgress.percent,
     jobs: postProgress.jobs
   });
+  renderRetryErrorPanel({
+    panelId: "fullRetryErrorsPanel",
+    countId: "fullRetryErrorCount",
+    listId: "fullRetryErrorsList",
+    jobs: fullProgress.jobs
+  });
+  renderRetryErrorPanel({
+    panelId: "postRetryErrorsPanel",
+    countId: "postRetryErrorCount",
+    listId: "postRetryErrorsList",
+    jobs: postProgress.jobs
+  });
   renderToolProgressPanel({
     panelId: "post4vToolProgressPanel",
     stateId: "post4vToolProgressState",
@@ -2713,6 +2766,131 @@ function renderToolProgress(data) {
     percent: passwordProgress.percent,
     jobs: passwordProgress.jobs
   });
+  syncRuntimeProfileRows();
+}
+
+const RUNTIME_PROFILE_TABLE_BODIES = [
+  "profileRows",
+  "notificationRows",
+  "checkOrderRows",
+  "fullRows",
+  "postRows",
+  "post4vRows",
+  "interactionRows",
+  "renewStandaloneRows",
+  "pageRows",
+  "avatarRows",
+  "passwordRows"
+];
+
+function runtimeJobPresentation(job) {
+  if (!job) return { label: "-", detail: "", tone: "idle" };
+  const status = String(job.status || "queued").toLowerCase();
+  const phase = String(job.phase || "").toLowerCase();
+  const waiting = job.phaseState === "retry_waiting" || status === "retry_waiting";
+  const retrying = phase === "retry";
+  const label = waiting
+    ? "chờ chạy lại"
+    : status === "running"
+      ? (retrying ? "đang chạy lại" : "đang chạy")
+      : job.phaseState === "retry_failed"
+        ? "retry vẫn lỗi"
+        : retrying && status === "queued"
+          ? "xếp lượt chạy lại"
+          : status === "success" || status === "done" || status === "completed"
+            ? "thành công"
+            : status === "error"
+              ? "lỗi"
+              : status === "stopped"
+                ? "đã dừng"
+                : status === "queued"
+                  ? "đang chờ"
+                  : status;
+  const detail = String(job.liveStatus || job.result?.chiTiet || job.result?.["chi tiết"] || job.result?.detail || "").trim();
+  return { label, detail, tone: status === "running" ? "running" : status === "error" ? "error" : waiting || retrying ? "retry" : status };
+}
+
+function renderRetryErrorPanel({ panelId, countId, listId, jobs }) {
+  const panel = $(panelId);
+  const count = $(countId);
+  const list = $(listId);
+  if (!panel || !count || !list) return;
+  const retryJobs = (jobs || []).filter((job) => {
+    const status = String(job.status || "").toLowerCase();
+    const terminalSuccess = ["success", "done", "completed", "stopped", "cancelled", "skipped"].includes(status);
+    return Boolean(job.retryEligible || job.retryFinal || job.phaseState === "retry_waiting" || job.phaseState === "retry_failed" || (job.phase === "retry" && !terminalSuccess));
+  });
+  count.textContent = String(retryJobs.length);
+  panel.classList.toggle("hidden", !retryJobs.length);
+  list.innerHTML = retryJobs.map((job) => {
+    const presentation = runtimeJobPresentation(job);
+    const reason = String(job.retryReason || job.liveStatus || job.result?.chiTiet || job.result?.detail || "").trim();
+    return `<div class="retry-error-item"><strong>${escapeHtml(job.profileId || "")}</strong><span class="runtime-status runtime-${escapeAttr(presentation.tone)}">${escapeHtml(presentation.label)}</span><span>${escapeHtml(reason || "-")}</span></div>`;
+  }).join("");
+}
+
+function syncRuntimeProfileRows() {
+  const jobs = state.runtimeJobsById || new Map();
+  for (const bodyId of RUNTIME_PROFILE_TABLE_BODIES) {
+    const body = $(bodyId);
+    if (!body) continue;
+    const table = body.closest("table");
+    const headerRow = table?.querySelector("thead tr");
+    if (headerRow && !headerRow.querySelector("[data-runtime-status-column]")) {
+      const header = document.createElement("th");
+      header.dataset.runtimeStatusColumn = "true";
+      header.className = "runtime-status-column";
+      header.textContent = "Trạng thái chạy";
+      headerRow.appendChild(header);
+    }
+    for (const row of body.querySelectorAll("tr")) {
+      const profileId = row.querySelector("[data-id]")?.dataset.id;
+      if (!profileId) {
+        const empty = row.querySelector("td.empty");
+        if (empty && headerRow) empty.colSpan = headerRow.children.length;
+        continue;
+      }
+      row.dataset.profileId = profileId;
+      const presentation = runtimeJobPresentation(jobs.get(profileId));
+      let cell = row.querySelector("td[data-runtime-status]");
+      if (!cell) {
+        cell = document.createElement("td");
+        cell.dataset.runtimeStatus = "true";
+        cell.className = "runtime-status-cell";
+        row.appendChild(cell);
+      }
+      cell.innerHTML = `<span class="runtime-status runtime-${escapeAttr(presentation.tone)}">${escapeHtml(presentation.label)}</span>${presentation.detail ? `<small>${escapeHtml(presentation.detail)}</small>` : ""}`;
+      row.classList.toggle("runtime-running-row", presentation.tone === "running");
+    }
+  }
+  followRunningProfileRow();
+}
+
+function markRuntimeTableUserScroll(target) {
+  const tableWrap = target?.closest?.(".table-wrap");
+  if (!tableWrap || !tableWrap.querySelector("tbody")) return;
+  state.runtimeScrollPausedUntil.set(tableWrap, Date.now() + 10000);
+}
+
+function followRunningProfileRow() {
+  const now = Date.now();
+  const running = [...(state.runtimeJobsById || new Map()).values()]
+    .find((job) => String(job.status || "").toLowerCase() === "running");
+  if (!running) return;
+  const profileId = String(running.profileId || "");
+  const row = RUNTIME_PROFILE_TABLE_BODIES
+    .map((bodyId) => [...($(bodyId)?.querySelectorAll("tr[data-profile-id]") || [])].find((item) => item.dataset.profileId === profileId))
+    .find(Boolean);
+  if (!row || row.closest(".module-view")?.classList.contains("hidden")) return;
+  const tableWrap = row.closest(".table-wrap");
+  if (!tableWrap || (state.runtimeScrollPausedUntil.get(tableWrap) || 0) > now) return;
+  if (state.runtimeLastFollow.profileId === profileId && now - state.runtimeLastFollow.at < 1000) return;
+  const wrapRect = tableWrap.getBoundingClientRect();
+  const rowRect = row.getBoundingClientRect();
+  const nextTop = tableWrap.scrollTop + (rowRect.top - wrapRect.top) - (tableWrap.clientHeight / 2) + (rowRect.height / 2);
+  state.runtimeAutoScrollUntil = now + 400;
+  tableWrap.scrollTo({ top: Math.max(0, nextTop), behavior: "smooth" });
+  state.runtimeLastFollow = { profileId, at: now };
 }
 
 function renderToolProgressPanel({
@@ -3041,6 +3219,14 @@ $("newSpreadsheetId").addEventListener("keydown", (event) => {
   }
 });
 if ($("reloadUiBtn")) $("reloadUiBtn").addEventListener("click", () => window.location.reload());
+document.addEventListener("wheel", (event) => markRuntimeTableUserScroll(event.target), { passive: true, capture: true });
+document.addEventListener("pointerdown", (event) => markRuntimeTableUserScroll(event.target), { passive: true, capture: true });
+document.addEventListener("touchstart", (event) => markRuntimeTableUserScroll(event.target), { passive: true, capture: true });
+document.addEventListener("keydown", (event) => {
+  if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) {
+    markRuntimeTableUserScroll(event.target);
+  }
+}, { capture: true });
 $("refreshBtn").addEventListener("click", refreshHide);
 $("syncBtn").addEventListener("click", syncSheet);
 if ($("reloadSheetCacheBtn")) $("reloadSheetCacheBtn").addEventListener("click", reloadSheetCache);
@@ -3429,11 +3615,6 @@ loadConfig()
     scheduleStateProxyRealtime();
   })
   .catch((error) => setStatus(error.message, true));
-
-
-
-
-
 
 
 

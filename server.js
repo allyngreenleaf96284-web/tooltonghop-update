@@ -121,7 +121,9 @@ const DEFAULT_CONFIG = {
   fourVPostPackageWeight: "2-5 lbs",
   fourVPostSuccessPrefix: "",
   fullConcurrency: 4,
+  fullUnknownRetryCount: 1,
   postConcurrency: 4,
+  postUnknownRetryCount: 1,
   checkConcurrency: 4,
   checkOrderSpreadsheetId: "",
   checkOrderSheetName: "check order",
@@ -1034,7 +1036,9 @@ async function readConfig() {
     loaded.fourVPostPackageWeight = String(loaded.fourVPostPackageWeight || DEFAULT_CONFIG.fourVPostPackageWeight).trim() || DEFAULT_CONFIG.fourVPostPackageWeight;
     loaded.fourVPostSuccessPrefix = String(loaded.fourVPostSuccessPrefix || "");
     loaded.fullConcurrency = clampConcurrency(loaded.fullConcurrency, DEFAULT_CONFIG.fullConcurrency, 4);
+    loaded.fullUnknownRetryCount = Math.max(0, Math.min(3, Math.floor(Number(loaded.fullUnknownRetryCount ?? DEFAULT_CONFIG.fullUnknownRetryCount) || 0)));
     loaded.postConcurrency = clampConcurrency(loaded.postConcurrency, DEFAULT_CONFIG.postConcurrency, 4);
+    loaded.postUnknownRetryCount = Math.max(0, Math.min(3, Math.floor(Number(loaded.postUnknownRetryCount ?? DEFAULT_CONFIG.postUnknownRetryCount) || 0)));
     loaded.checkConcurrency = clampConcurrency(loaded.checkConcurrency, DEFAULT_CONFIG.checkConcurrency, 4);
     loaded.checkOrderSpreadsheetId = String(loaded.checkOrderSpreadsheetId || "").trim();
     loaded.checkOrderSheetName = String(loaded.checkOrderSheetName || DEFAULT_CONFIG.checkOrderSheetName).trim() || DEFAULT_CONFIG.checkOrderSheetName;
@@ -1097,7 +1101,9 @@ async function saveConfig(input) {
     fourVPostPackageWeight: String(input.fourVPostPackageWeight !== undefined ? input.fourVPostPackageWeight : current.fourVPostPackageWeight || DEFAULT_CONFIG.fourVPostPackageWeight).trim() || DEFAULT_CONFIG.fourVPostPackageWeight,
     fourVPostSuccessPrefix: String(input.fourVPostSuccessPrefix !== undefined ? input.fourVPostSuccessPrefix : current.fourVPostSuccessPrefix || ""),
     fullConcurrency: clampConcurrency(input.fullConcurrency, current.fullConcurrency || DEFAULT_CONFIG.fullConcurrency, 4),
+    fullUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.fullUnknownRetryCount ?? current.fullUnknownRetryCount ?? DEFAULT_CONFIG.fullUnknownRetryCount) || 0))),
     postConcurrency: clampConcurrency(input.postConcurrency, current.postConcurrency || DEFAULT_CONFIG.postConcurrency, 4),
+    postUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.postUnknownRetryCount ?? current.postUnknownRetryCount ?? DEFAULT_CONFIG.postUnknownRetryCount) || 0))),
     checkConcurrency: clampConcurrency(input.checkConcurrency, current.checkConcurrency || DEFAULT_CONFIG.checkConcurrency),
     checkOrderSpreadsheetId: String(input.checkOrderSpreadsheetId !== undefined ? input.checkOrderSpreadsheetId : current.checkOrderSpreadsheetId || "").trim(),
     checkOrderSheetName: String(input.checkOrderSheetName !== undefined ? input.checkOrderSheetName : current.checkOrderSheetName || DEFAULT_CONFIG.checkOrderSheetName).trim() || DEFAULT_CONFIG.checkOrderSheetName,
@@ -1243,7 +1249,9 @@ async function saveConfigV2(input) {
     fourVPostPackageWeight: String(input.fourVPostPackageWeight !== undefined ? input.fourVPostPackageWeight : current.fourVPostPackageWeight || DEFAULT_CONFIG.fourVPostPackageWeight).trim() || DEFAULT_CONFIG.fourVPostPackageWeight,
     fourVPostSuccessPrefix: String(input.fourVPostSuccessPrefix !== undefined ? input.fourVPostSuccessPrefix : current.fourVPostSuccessPrefix || ""),
     fullConcurrency: clampConcurrency(input.fullConcurrency, current.fullConcurrency || DEFAULT_CONFIG.fullConcurrency, 4),
+    fullUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.fullUnknownRetryCount ?? current.fullUnknownRetryCount ?? DEFAULT_CONFIG.fullUnknownRetryCount) || 0))),
     postConcurrency: clampConcurrency(input.postConcurrency, current.postConcurrency || DEFAULT_CONFIG.postConcurrency, 4),
+    postUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.postUnknownRetryCount ?? current.postUnknownRetryCount ?? DEFAULT_CONFIG.postUnknownRetryCount) || 0))),
     checkConcurrency: clampConcurrency(input.checkConcurrency, current.checkConcurrency || DEFAULT_CONFIG.checkConcurrency),
     checkOrderSpreadsheetId: String(input.checkOrderSpreadsheetId !== undefined ? input.checkOrderSpreadsheetId : current.checkOrderSpreadsheetId || "").trim(),
     checkOrderSheetName: String(input.checkOrderSheetName !== undefined ? input.checkOrderSheetName : current.checkOrderSheetName || DEFAULT_CONFIG.checkOrderSheetName).trim() || DEFAULT_CONFIG.checkOrderSheetName,
@@ -3451,6 +3459,7 @@ async function handleApi(req, res) {
       const body = await parseBody(req);
       const config = forceSingleThreadForProxyPanel(await resolveAccountSheetConfig(await readConfig()));
       if (body.concurrency !== undefined) config.fullConcurrency = clampConcurrency(body.concurrency, config.fullConcurrency || DEFAULT_CONFIG.fullConcurrency, 4);
+      if (body.fullUnknownRetryCount !== undefined) config.fullUnknownRetryCount = Math.max(0, Math.min(3, Math.floor(Number(body.fullUnknownRetryCount) || 0)));
       if (stateProxyUsesProxyPanel(config)) config.fullConcurrency = 1;
       const data = await startAutoRetryBatch({
         runtime: toolRuntime,
@@ -3459,7 +3468,8 @@ async function handleApi(req, res) {
         profileIds: body.profileIds || [],
         config,
         options: {},
-        addRuntimeLog
+        addRuntimeLog,
+        maxRetries: config.fullUnknownRetryCount
       });
       return jsonResponse(res, 200, { ok: true, data });
     }
@@ -3481,6 +3491,7 @@ async function handleApi(req, res) {
       const body = await parseBody(req);
       const config = forceSingleThreadForProxyPanel(await resolveAccountSheetConfig(await readConfig()));
       if (body.concurrency !== undefined) config.postConcurrency = clampConcurrency(body.concurrency, config.postConcurrency || DEFAULT_CONFIG.postConcurrency, 4);
+      if (body.postUnknownRetryCount !== undefined) config.postUnknownRetryCount = Math.max(0, Math.min(3, Math.floor(Number(body.postUnknownRetryCount) || 0)));
       if (stateProxyUsesProxyPanel(config)) config.postConcurrency = 1;
       const data = await startAutoRetryBatch({
         runtime: toolRuntime,
@@ -3489,7 +3500,8 @@ async function handleApi(req, res) {
         profileIds: body.profileIds || [],
         config,
         options: {},
-        addRuntimeLog
+        addRuntimeLog,
+        maxRetries: config.postUnknownRetryCount
       });
       return jsonResponse(res, 200, { ok: true, data });
     }
@@ -3775,8 +3787,6 @@ server.listen(5177, "127.0.0.1", () => {
   startBackgroundHideSheetSync();
   startProxyMonitor();
 });
-
-
 
 
 

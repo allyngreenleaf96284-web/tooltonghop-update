@@ -786,6 +786,14 @@
                 Số luồng
                 <input id="fullConcurrency" type="number" min="1" max="4" step="1" />
               </label>
+              <label>
+                Chạy lại lỗi chưa xác định
+                <input id="fullUnknownRetryCount" type="number" min="0" max="3" step="1" />
+              </label>
+              <details class="retry-policy">
+                <summary>Lỗi không chạy lại</summary>
+                <span>CP282, CP956, checkpoint, captcha, bị out, hết proxy, lỗi profile browser, Seller Info, SSN, bank, login, Offer shipping, die chợ, thiếu cấu hình hoặc dừng thủ công.</span>
+              </details>
               <button id="saveFullConfig" class="primary action-wide" type="button">
                 <span>Lưu cấu hình full</span>
               </button>
@@ -831,6 +839,10 @@
             </div>
             <div id="fullToolProgressList" class="tool-progress-list"></div>
           </section>
+          <details id="fullRetryErrorsPanel" class="retry-error-panel hidden">
+            <summary>Danh sách lỗi chưa xác định <span id="fullRetryErrorCount" class="chip">0</span></summary>
+            <div id="fullRetryErrorsList" class="retry-error-list"></div>
+          </details>
 
           <section class="control-deck notification-controls">
             <label class="search-panel">
@@ -948,6 +960,14 @@
                 Số luồng
                 <input id="postConcurrency" type="number" min="1" max="4" step="1" />
               </label>
+              <label>
+                Chạy lại lỗi chưa xác định
+                <input id="postUnknownRetryCount" type="number" min="0" max="3" step="1" />
+              </label>
+              <details class="retry-policy">
+                <summary>Lỗi không chạy lại</summary>
+                <span>Lỗi sản phẩm/link sản phẩm, limit đăng bài, CP282, CP956, captcha, bị out, hết proxy, location, publish, login, thiếu dữ liệu hoặc dừng thủ công.</span>
+              </details>
               <button id="savePostConfig" class="primary action-wide" type="button">
                 <span>Lưu cấu hình đăng bài</span>
               </button>
@@ -993,6 +1013,10 @@
             </div>
             <div id="postToolProgressList" class="tool-progress-list"></div>
           </section>
+          <details id="postRetryErrorsPanel" class="retry-error-panel hidden">
+            <summary>Danh sách lỗi chưa xác định <span id="postRetryErrorCount" class="chip">0</span></summary>
+            <div id="postRetryErrorsList" class="retry-error-list"></div>
+          </details>
 
           <section class="control-deck notification-controls">
             <label class="search-panel">
@@ -2104,7 +2128,6 @@
     <script src="/app.js?v=online-update-20260831-1"></script>
   </body>
 </html>
-
 
 
 
