@@ -38,6 +38,9 @@ const DEFAULT_CONFIG = {
   stateProxyStates: DEFAULT_STATES
 };
 
+const CLIP_PROXY_EMPTY_RESPONSE_RETRIES = 3;
+const CLIP_PROXY_EMPTY_RESPONSE_RETRY_DELAY_MS = 1200;
+
 function clampNumber(value, fallback, min, max) {
   const parsed = Math.floor(Number(value));
   if (!Number.isFinite(parsed)) return fallback;
@@ -286,6 +289,36 @@ async function fetchWithTimeout(url, timeoutMs) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function fetchClipProxyText(url, timeoutMs) {
+  let lastText = "";
+  let lastError = null;
+  for (let attempt = 1; attempt <= CLIP_PROXY_EMPTY_RESPONSE_RETRIES; attempt += 1) {
+    try {
+      lastText = await fetchWithTimeout(url, timeoutMs);
+      if (String(lastText || "").trim()) return lastText;
+    } catch (error) {
+      lastError = error;
+    }
+    if (attempt < CLIP_PROXY_EMPTY_RESPONSE_RETRIES) {
+      await wait(CLIP_PROXY_EMPTY_RESPONSE_RETRY_DELAY_MS * attempt);
+    }
+  }
+  if (lastError) throw lastError;
+  return lastText;
+}
+
+function clipProxyRequestCounts(config) {
+  const requested = Math.max(1, Math.min(10, config.clipProxyPoolSize || 1));
+  // ClipProxy can temporarily have fewer ports than requested for a state/ASN.
+  // Preserve the configured batch first, then gracefully back off before failing.
+  const fallbackCounts = [3, 2, 1].filter((count) => count < requested);
+  return [...new Set([requested, ...fallbackCounts])];
 }
 
 function buildClipProxyUrl(config, stateName, num = 1, asnOverride = undefined) {
@@ -753,49 +786,59 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog }) {
   async function getNewProxy(config, stateName) {
     const proxyConfig = normalizeClipProxyConfig(config);
     if (!proxyConfig.clipProxyKey) throw new Error("Chua cau hinh ClipProxy key.");
-    const requestCount = Math.max(1, Math.min(10, proxyConfig.clipProxyPoolSize || 1));
     let lastSlot = null;
     let lastError = null;
     for (const asn of clipProxyAsnCandidates(proxyConfig)) {
-      const url = buildClipProxyUrl(proxyConfig, stateName, requestCount, asn);
-      const text = await fetchWithTimeout(url, proxyConfig.clipProxyRequestTimeoutMs);
-      const proxies = parseClipProxyTextAll(text);
-      if (!proxies.length) {
-        lastError = new Error(`ClipProxy khong tra proxy hop le${asn ? ` voi ${asn}` : " khi bo qua ASN"}: ${describeClipProxyResponse(text)}`);
-        continue;
-      }
-      for (const proxy of proxies) {
-        const checked = await measureTcp(proxy, proxyConfig.clipProxyPingLimitMs);
-        const info = checked.alive ? await fetchIpInfoViaProxy(proxy, proxyConfig.clipProxyInfoTimeoutMs) : null;
-        const health = healthFromChecks({ ...proxyConfig, clipProxyAsn: asn || "" }, stateName, checked, info);
-        const slot = {
-          id: `${proxy.raw}|${Date.now()}|${Math.random().toString(36).slice(2, 8)}`,
-          state: stateName,
-          asn: asn || "",
-          proxy,
-          raw: proxy.raw,
-          alive: health.alive,
-          pingMs: checked.pingMs,
-          ipinfoPingMs: info?.pingMs ?? null,
-          exitIp: info?.ip || "",
-          city: info?.city || "",
-          region: info?.region || "",
-          country: info?.country || "",
-          org: info?.org || "",
-          timezone: info?.timezone || "",
-          ipinfoSource: info?.source || "",
-          lastError: health.error,
-          createdAt: Date.now(),
-          lastCheckedAt: Date.now(),
-          lastAssignedAt: 0,
-          usageCount: 0,
-          coldUntil: 0,
-          coldReason: "",
-          inUse: false,
-          assignedProfileId: ""
-        };
-        lastSlot = slot;
-        if (slot.alive && !isTooSlow(slot, proxyConfig)) return slot;
+      for (const requestCount of clipProxyRequestCounts(proxyConfig)) {
+        const url = buildClipProxyUrl(proxyConfig, stateName, requestCount, asn);
+        let text = "";
+        try {
+          text = await fetchClipProxyText(url, proxyConfig.clipProxyRequestTimeoutMs);
+        } catch (error) {
+          lastError = error;
+          continue;
+        }
+        const proxies = parseClipProxyTextAll(text);
+        if (!proxies.length) {
+          lastError = new Error(`ClipProxy khong tra proxy hop le${asn ? ` voi ${asn}` : " khi bo qua ASN"}: ${describeClipProxyResponse(text)}`);
+          continue;
+        }
+        for (const proxy of proxies) {
+          const checked = await measureTcp(proxy, proxyConfig.clipProxyPingLimitMs);
+          const info = checked.alive ? await fetchIpInfoViaProxy(proxy, proxyConfig.clipProxyInfoTimeoutMs) : null;
+          const health = healthFromChecks({ ...proxyConfig, clipProxyAsn: asn || "" }, stateName, checked, info);
+          const slot = {
+            id: `${proxy.raw}|${Date.now()}|${Math.random().toString(36).slice(2, 8)}`,
+            state: stateName,
+            asn: asn || "",
+            proxy,
+            raw: proxy.raw,
+            alive: health.alive,
+            pingMs: checked.pingMs,
+            ipinfoPingMs: info?.pingMs ?? null,
+            exitIp: info?.ip || "",
+            city: info?.city || "",
+            region: info?.region || "",
+            country: info?.country || "",
+            org: info?.org || "",
+            timezone: info?.timezone || "",
+            ipinfoSource: info?.source || "",
+            lastError: health.error,
+            createdAt: Date.now(),
+            lastCheckedAt: Date.now(),
+            lastAssignedAt: 0,
+            usageCount: 0,
+            coldUntil: 0,
+            coldReason: "",
+            inUse: false,
+            assignedProfileId: ""
+          };
+          lastSlot = slot;
+          if (slot.alive && !isTooSlow(slot, proxyConfig)) return slot;
+        }
+        // The API did return a valid list. Trying a smaller batch would only
+        // request another allocation, so move on to the next ASN instead.
+        break;
       }
     }
     if (lastSlot) return lastSlot;
@@ -1105,7 +1148,6 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog }) {
     checkAll
   };
 }
-
 
 
 
