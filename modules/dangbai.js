@@ -121,7 +121,11 @@ function buildStatusProfileName(status, value) {
 
 function buildSuccessPrefixProfileName(prefix, value) {
   const label = String(prefix || "").trim();
-  const base = stripRuntimeNamePrefixes(value) || "profile-tool";
+  const cleanedName = stripRuntimeNamePrefixes(value);
+  // A successful 4v post replaces any temporary label before the canonical
+  // "full ..." profile segment, for example "vip full ..." -> "ok-full ...".
+  const fullIndex = cleanedName.search(/\bfull\b/i);
+  const base = (fullIndex >= 0 ? cleanedName.slice(fullIndex) : cleanedName) || "profile-tool";
   if (!label) return base;
   return normalizeVietnameseText(base).startsWith(normalizeVietnameseText(label)) ? base : `${label}${base}`;
 }
