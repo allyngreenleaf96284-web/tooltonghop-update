@@ -40,6 +40,9 @@ const DEFAULT_CONFIG = {
 
 const CLIP_PROXY_EMPTY_RESPONSE_RETRIES = 3;
 const CLIP_PROXY_EMPTY_RESPONSE_RETRY_DELAY_MS = 1200;
+// A recently verified pool entry is safe to reuse immediately. Rechecking it
+// through ipinfo for every profile made one state wait behind repeated API calls.
+const CLIP_PROXY_FAST_REUSE_MS = 2 * 60 * 1000;
 
 function clampNumber(value, fallback, min, max) {
   const parsed = Math.floor(Number(value));
@@ -894,53 +897,42 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog }) {
     return candidates[0] || null;
   }
 
+  function hasRecentHealthyCheck(slot, config) {
+    const checkedAt = Number(slot?.lastCheckedAt || 0);
+    return Boolean(
+      slot?.alive
+      && slot?.exitIp
+      && checkedAt > 0
+      && Date.now() - checkedAt <= CLIP_PROXY_FAST_REUSE_MS
+      && isAssignable(slot, config)
+    );
+  }
+
+  function claimSlot(slot, profileId) {
+    slot.inUse = true;
+    slot.assignedProfileId = profileId;
+    slot.lastAssignedAt = Date.now();
+    savePool();
+    return slot;
+  }
+
   async function acquire(config, stateName, profileId) {
     const proxyConfig = normalizeClipProxyConfig(config);
     const normalizedState = normalizeStateName(stateName);
     return withStateLock(normalizedState, async () => {
       const items = statePool(normalizedState);
       let lastError = null;
-      const targetActive = proxyConfig.clipProxyPoolSize;
       const maxRetained = proxyConfig.clipProxyPoolSize + proxyConfig.clipProxyReserveSize;
 
-      if (goodSlotCount(items, proxyConfig) < targetActive && retainedSlotCount(items, proxyConfig) < maxRetained) {
-        for (let attempt = 1; attempt <= 4; attempt += 1) {
-          try {
-            const slot = await getNewProxy(proxyConfig, normalizedState);
-            if (!slot.alive) {
-              lastError = new Error(slot.lastError || "proxy moi ping loi");
-              continue;
-            }
-            if (isTooSlow(slot, proxyConfig)) {
-              markCold(slot, proxyConfig, `ping cao ${slotPingMs(slot)}ms > ${proxyConfig.clipProxyPingLimitMs}ms`);
-              items.push(slot);
-              savePool();
-              lastError = new Error(slot.lastError || "proxy moi ping cao");
-              continue;
-            }
-            if (!isGoodPing(slot, proxyConfig) && retainedSlotCount(items, proxyConfig) < maxRetained - 1) {
-              items.push(slot);
-              savePool();
-              lastError = new Error(`proxy moi ping am ${slotPingMs(slot)}ms, thu lay con tot hon`);
-              continue;
-            }
-            items.push(slot);
-            slot.inUse = true;
-            slot.assignedProfileId = profileId;
-            slot.lastAssignedAt = Date.now();
-            savePool();
-            return slot;
-          } catch (error) {
-            lastError = error;
-          }
-        }
-      }
-
+      // Always consume a healthy existing proxy first. The previous order tried
+      // to fill the whole pool before this scan, even when an idle live proxy
+      // was already available for the requested state.
       for (let scan = 0; scan < Math.max(items.length, 1); scan += 1) {
         const picked = selectAssignableSlot(items, proxyConfig, normalizedState);
         if (!picked) break;
-        let { slot, index } = picked;
-        await checkSlot(proxyConfig, slot);
+        const { slot } = picked;
+        const canReuseImmediately = hasRecentHealthyCheck(slot, proxyConfig);
+        if (!canReuseImmediately) await checkSlot(proxyConfig, slot);
         if (shouldReplace(slot)) {
           dropSlot(normalizedState, slot.id);
           savePool();
@@ -952,13 +944,14 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog }) {
           continue;
         }
         if (isUsageExhausted(slot, proxyConfig)) continue;
-        slot.inUse = true;
-        slot.assignedProfileId = profileId;
-        slot.lastAssignedAt = Date.now();
-        savePool();
-        return slot;
+        if (canReuseImmediately) {
+          log(`[clipproxy] dung ngay proxy pool con song cho bang ${normalizedState}: ${slot.proxy.host}:${slot.proxy.port}`, "info", profileId, normalizedState);
+        }
+        return claimSlot(slot, profileId);
       }
 
+      // Only request a new proxy after every reusable entry has been exhausted,
+      // removed, or failed its health check.
       for (let attempt = 1; attempt <= 4; attempt += 1) {
         try {
           const currentItems = statePool(normalizedState);
@@ -985,11 +978,7 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog }) {
           }
           if (replaceIndex >= 0) currentItems[replaceIndex] = slot;
           else currentItems.push(slot);
-          slot.inUse = true;
-          slot.assignedProfileId = profileId;
-          slot.lastAssignedAt = Date.now();
-          savePool();
-          return slot;
+          return claimSlot(slot, profileId);
         } catch (error) {
           lastError = error;
         }
@@ -1148,7 +1137,6 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog }) {
     checkAll
   };
 }
-
 
 
 
