@@ -244,6 +244,7 @@ async function loadConfig() {
   if ($("postDataRoot")) $("postDataRoot").value = config.fullDataRoot || "E:\\dangbai";
   if ($("postPriceMin")) $("postPriceMin").value = config.fullPriceMin || "";
   if ($("postPriceMax")) $("postPriceMax").value = config.fullPriceMax || "";
+  if ($("postSuccessPrefix")) $("postSuccessPrefix").value = config.postSuccessPrefix || "";
   if ($("fourVPostDataRoot")) $("fourVPostDataRoot").value = config.fourVPostDataRoot || config.fullDataRoot || "E:\\dangbai";
   if ($("fourVPostSpreadsheetId")) $("fourVPostSpreadsheetId").value = config.fourVPostSpreadsheetId || "";
   if ($("fourVPostPriceMin")) $("fourVPostPriceMin").value = config.fourVPostPriceMin || 20;
@@ -343,6 +344,7 @@ async function saveConfig() {
       fourVPostPriceMax: Math.max(1, Number($("fourVPostPriceMax")?.value || 25)),
       fourVPostPackageWeight: $("fourVPostPackageWeight")?.value || "2-5 lbs",
       fourVPostSuccessPrefix: $("fourVPostSuccessPrefix")?.value || "",
+      postSuccessPrefix: $("postSuccessPrefix")?.value || "",
       checkConcurrency: Number($("checkConcurrency")?.value || 4),
       checkOrderSpreadsheetId: $("checkOrderSpreadsheetId")?.value || "",
       checkOrderSheetName: $("checkOrderSheetName")?.value || "check order",
@@ -3615,7 +3617,6 @@ loadConfig()
     scheduleStateProxyRealtime();
   })
   .catch((error) => setStatus(error.message, true));
-
 
 
 

@@ -2062,14 +2062,8 @@ export function createDangBai({
       const postResult = await step(profileId, job, `dang bai ${detectedBar}`, async () =>
         runPostListing(manager, page, payload, row, profileId, detectedBar, () => { noRollback = true; })
       , { timeoutMs: 480000 });
-      const dbToken = nextDbToken(currentName, sheetRow);
-      const tenChuan = buildStandardName({
-        currentName,
-        sheetRow,
-        uid,
-        soVach: detectedBar,
-        dbToken
-      });
+      const tenChuan = buildSuccessPrefixProfileName(config.postSuccessPrefix, currentName);
+      nameAfterPublishedPost = tenChuan;
       await rename(manager, profileId, tenChuan);
       const update = {
         Tool: "đã đăng bài",
@@ -2094,16 +2088,13 @@ export function createDangBai({
         job.result = null;
         return { stopped: true };
       }
-      const tenChuan = buildStandardName({
-        currentName,
-        sheetRow,
-        uid
-      });
+      let tenChuan = nameAfterPublishedPost || currentName;
       if (!nameAfterPublishedPost) {
-        const errorName = mapped.status === "lỗi sp" || mapped.status === "lỗi link sp"
-          ? buildStatusProfileName(mapped.status, currentName)
-          : buildRuntimeProfileName({ status: mapped.status, tenChuan });
+        // Keep the existing profile-name structure. Errors only replace the
+        // leading runtime label, exactly like the 4v posting workflow.
+        const errorName = buildStatusProfileName(mapped.status, currentName);
         await rename(manager, profileId, errorName);
+        tenChuan = errorName;
       }
       const update = {
         Tool: sheetValue(sheetRow, "Tool") || "",

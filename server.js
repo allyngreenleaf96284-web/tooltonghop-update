@@ -120,6 +120,7 @@ const DEFAULT_CONFIG = {
   fourVPostPriceMax: 25,
   fourVPostPackageWeight: "2-5 lbs",
   fourVPostSuccessPrefix: "",
+  postSuccessPrefix: "",
   fullConcurrency: 4,
   fullUnknownRetryCount: 1,
   postConcurrency: 4,
@@ -1035,6 +1036,7 @@ async function readConfig() {
     loaded.fourVPostPriceMax = Math.max(loaded.fourVPostPriceMin, Math.floor(Number(loaded.fourVPostPriceMax || DEFAULT_CONFIG.fourVPostPriceMax)) || DEFAULT_CONFIG.fourVPostPriceMax);
     loaded.fourVPostPackageWeight = String(loaded.fourVPostPackageWeight || DEFAULT_CONFIG.fourVPostPackageWeight).trim() || DEFAULT_CONFIG.fourVPostPackageWeight;
     loaded.fourVPostSuccessPrefix = String(loaded.fourVPostSuccessPrefix || "");
+    loaded.postSuccessPrefix = String(loaded.postSuccessPrefix || "");
     loaded.fullConcurrency = clampConcurrency(loaded.fullConcurrency, DEFAULT_CONFIG.fullConcurrency, 4);
     loaded.fullUnknownRetryCount = Math.max(0, Math.min(3, Math.floor(Number(loaded.fullUnknownRetryCount ?? DEFAULT_CONFIG.fullUnknownRetryCount) || 0)));
     loaded.postConcurrency = clampConcurrency(loaded.postConcurrency, DEFAULT_CONFIG.postConcurrency, 4);
@@ -1100,6 +1102,7 @@ async function saveConfig(input) {
     fourVPostPriceMax: Math.max(1, Math.floor(Number(input.fourVPostPriceMax ?? current.fourVPostPriceMax ?? DEFAULT_CONFIG.fourVPostPriceMax)) || DEFAULT_CONFIG.fourVPostPriceMax),
     fourVPostPackageWeight: String(input.fourVPostPackageWeight !== undefined ? input.fourVPostPackageWeight : current.fourVPostPackageWeight || DEFAULT_CONFIG.fourVPostPackageWeight).trim() || DEFAULT_CONFIG.fourVPostPackageWeight,
     fourVPostSuccessPrefix: String(input.fourVPostSuccessPrefix !== undefined ? input.fourVPostSuccessPrefix : current.fourVPostSuccessPrefix || ""),
+    postSuccessPrefix: String(input.postSuccessPrefix !== undefined ? input.postSuccessPrefix : current.postSuccessPrefix || ""),
     fullConcurrency: clampConcurrency(input.fullConcurrency, current.fullConcurrency || DEFAULT_CONFIG.fullConcurrency, 4),
     fullUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.fullUnknownRetryCount ?? current.fullUnknownRetryCount ?? DEFAULT_CONFIG.fullUnknownRetryCount) || 0))),
     postConcurrency: clampConcurrency(input.postConcurrency, current.postConcurrency || DEFAULT_CONFIG.postConcurrency, 4),
@@ -1248,6 +1251,7 @@ async function saveConfigV2(input) {
     fourVPostPriceMax: Math.max(1, Math.floor(Number(input.fourVPostPriceMax ?? current.fourVPostPriceMax ?? DEFAULT_CONFIG.fourVPostPriceMax)) || DEFAULT_CONFIG.fourVPostPriceMax),
     fourVPostPackageWeight: String(input.fourVPostPackageWeight !== undefined ? input.fourVPostPackageWeight : current.fourVPostPackageWeight || DEFAULT_CONFIG.fourVPostPackageWeight).trim() || DEFAULT_CONFIG.fourVPostPackageWeight,
     fourVPostSuccessPrefix: String(input.fourVPostSuccessPrefix !== undefined ? input.fourVPostSuccessPrefix : current.fourVPostSuccessPrefix || ""),
+    postSuccessPrefix: String(input.postSuccessPrefix !== undefined ? input.postSuccessPrefix : current.postSuccessPrefix || ""),
     fullConcurrency: clampConcurrency(input.fullConcurrency, current.fullConcurrency || DEFAULT_CONFIG.fullConcurrency, 4),
     fullUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.fullUnknownRetryCount ?? current.fullUnknownRetryCount ?? DEFAULT_CONFIG.fullUnknownRetryCount) || 0))),
     postConcurrency: clampConcurrency(input.postConcurrency, current.postConcurrency || DEFAULT_CONFIG.postConcurrency, 4),
@@ -3787,7 +3791,6 @@ server.listen(5177, "127.0.0.1", () => {
   startBackgroundHideSheetSync();
   startProxyMonitor();
 });
-
 
 
 
