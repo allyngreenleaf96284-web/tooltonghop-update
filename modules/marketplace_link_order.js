@@ -1,6 +1,7 @@
 import { withFacebookLocale } from "./facebook_locale.js";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const LINK_ORDER_RESTART_DELAY_MS = 60 * 1000;
 
 function normalizeHeader(value) {
   return String(value || "")
@@ -431,6 +432,7 @@ export function createMarketplaceLinkOrderTool({
     let browser = null;
     let loginPage = null;
     let checked = 0;
+    let retryable = 0;
     let totalTasks = 0;
     try {
       if (!(runtime.activeManagers instanceof Map)) runtime.activeManagers = new Map();
@@ -469,6 +471,7 @@ export function createMarketplaceLinkOrderTool({
               page = checkedTask.page;
               await writeStatus(plan.client, plan.title, plan.nick1Index, task, status);
               checked += 1;
+              if (shouldRetryStatus(status)) retryable += 1;
               log(profileId, "ghi Sheet", `${label} => ${status}`, status === "lỗi check" ? "warn" : "success");
             }
           } finally {
@@ -481,9 +484,9 @@ export function createMarketplaceLinkOrderTool({
       if (job) {
         job.status = "success";
         job.liveStatus = `${nickLabel}: xong ${checked}/${totalTasks}`;
-        job.result = { checked, total: totalTasks, sheets: plans.length };
+        job.result = { checked, total: totalTasks, retryable, sheets: plans.length };
       }
-      return { profileId, checked, total: totalTasks, sheets: plans.length };
+      return { profileId, checked, total: totalTasks, retryable, sheets: plans.length };
     } catch (error) {
       abortSharedQueues(plans, error.message || String(error));
       if (String(error?.status || "").toLowerCase() === "stopped") {
@@ -514,25 +517,31 @@ export function createMarketplaceLinkOrderTool({
     const nick2 = String(config.marketplaceCheckNick2Id || "").trim();
     if (!nick1 && !nick2) throw new Error("Chua nhap ID Hide nick 1 hoac nick 2.");
     const tabCount = clampNumber(config.marketplaceCheckTabsPerNick, 5, 1, 20);
-    const sheetInputs = Array.isArray(config.marketplaceCheckSpreadsheetIds) && config.marketplaceCheckSpreadsheetIds.length
-      ? config.marketplaceCheckSpreadsheetIds
-      : [config.marketplaceCheckSpreadsheetId || config.checkOrderSpreadsheetId || ""];
-    const plans = [];
-    const seenSheets = new Set();
-    for (const sheetInput of sheetInputs) {
-      const plan = await readPlan(config, sheetInput);
-      const key = `${plan.spreadsheetId || sheetInput}|${plan.title}`;
-      if (!seenSheets.has(key)) {
-        seenSheets.add(key);
-        plans.push(plan);
-      }
-    }
-    if (!plans.length) throw new Error("Chua nhap link/ID Sheet check link order.");
     const profiles = [
       nick1 ? { profileId: nick1, nickLabel: "nick 1", direction: "asc" } : null,
       nick2 ? { profileId: nick2, nickLabel: "nick 2", direction: "desc" } : null
     ].filter(Boolean);
-    for (const plan of plans) plan.sharedQueue = createSharedQueue(plan, profiles.length);
+
+    const loadPlans = async () => {
+      const sheetInputs = Array.isArray(config.marketplaceCheckSpreadsheetIds) && config.marketplaceCheckSpreadsheetIds.length
+        ? config.marketplaceCheckSpreadsheetIds
+        : [config.marketplaceCheckSpreadsheetId || config.checkOrderSpreadsheetId || ""];
+      const plans = [];
+      const seenSheets = new Set();
+      for (const sheetInput of sheetInputs) {
+        const plan = await readPlan(config, sheetInput);
+        const key = `${plan.spreadsheetId || sheetInput}|${plan.title}`;
+        if (!seenSheets.has(key)) {
+          seenSheets.add(key);
+          plans.push(plan);
+        }
+      }
+      if (!plans.length) throw new Error("Chua nhap link/ID Sheet check link order.");
+      for (const plan of plans) plan.sharedQueue = createSharedQueue(plan, profiles.length);
+      return plans;
+    };
+
+    const plans = await loadPlans();
     let sheetRows = typeof getRowsByProfileIds === "function"
       ? await getRowsByProfileIds(config, profiles.map((item) => item.profileId))
       : new Map();
@@ -571,16 +580,77 @@ export function createMarketplaceLinkOrderTool({
     runtime.stopRequested = false;
     runtime.currentTool = "check link order";
     setImmediate(async () => {
+      let pass = 0;
       try {
-        await Promise.all(profiles.map((item, index) => runNick({
-          ...item,
-          config,
-          plans,
-          tabCount,
-          direction: item.direction,
-          workerSlot: index,
-          workerTotal: profiles.length
-        })));
+        while (!runtime.stopRequested) {
+          pass += 1;
+          let currentPlans = plans;
+          try {
+            if (pass > 1) currentPlans = await loadPlans();
+            const pendingLinks = currentPlans.reduce((total, plan) => total + Number(plan.sharedQueue?.total || 0), 0);
+            if (!pendingLinks) break;
+            if (pass > 1) {
+              for (const item of profiles) {
+                const job = runtime.jobs.get(item.profileId);
+                if (!job) continue;
+                job.status = "running";
+                job.liveStatus = `${item.nickLabel}: tu dong mo lai luot ${pass}, con ${pendingLinks} link can check`;
+              }
+              log("", "tu dong chay lai", `bat dau luot ${pass}, con ${pendingLinks} link loi check/khong ro can xu ly`, "warn");
+            }
+            const results = await Promise.all(profiles.map((item, index) => runNick({
+              ...item,
+              config,
+              plans: currentPlans,
+              tabCount,
+              direction: item.direction,
+              workerSlot: index,
+              workerTotal: profiles.length
+            })));
+            if (runtime.stopRequested) break;
+            const retryable = results.reduce((total, result) => total + Number(result?.retryable || 0), 0);
+            const errors = results.filter((result) => result?.error);
+            if (!retryable && !errors.length) break;
+            const reason = errors.length
+              ? `${errors.length} nick/browser loi`
+              : `${retryable} link van la khong ro/loi check sau 3 lan`;
+            for (const item of profiles) {
+              const job = runtime.jobs.get(item.profileId);
+              if (!job) continue;
+              job.status = "running";
+              job.liveStatus = `${item.nickLabel}: ${reason}, cho 60 giay de tu mo lai`;
+            }
+            log("", "tu dong chay lai", `${reason}; cho 60 giay roi tu dong mo lai luot ${pass + 1}.`, "warn");
+          } catch (error) {
+            if (runtime.stopRequested) break;
+            const reason = error?.message || String(error);
+            for (const item of profiles) {
+              const job = runtime.jobs.get(item.profileId);
+              if (!job) continue;
+              job.status = "running";
+              job.liveStatus = `${item.nickLabel}: loi ${reason}, cho 60 giay de tu mo lai`;
+            }
+            log("", "tu dong chay lai", `luot ${pass} loi: ${reason}; cho 60 giay roi tu dong mo lai.`, "warn");
+          }
+
+          const restartAt = Date.now() + LINK_ORDER_RESTART_DELAY_MS;
+          while (!runtime.stopRequested && Date.now() < restartAt) {
+            const seconds = Math.max(1, Math.ceil((restartAt - Date.now()) / 1000));
+            for (const item of profiles) {
+              const job = runtime.jobs.get(item.profileId);
+              if (job) job.liveStatus = `${item.nickLabel}: cho ${seconds}s de tu mo lai check link`;
+            }
+            await sleep(Math.min(1000, restartAt - Date.now()));
+          }
+        }
+        if (runtime.stopRequested) {
+          for (const item of profiles) {
+            const job = runtime.jobs.get(item.profileId);
+            if (!job) continue;
+            job.status = "stopped";
+            job.liveStatus = `${item.nickLabel}: da dung han theo yeu cau`;
+          }
+        }
       } finally {
         runtime.running = false;
         runtime.currentTool = "";

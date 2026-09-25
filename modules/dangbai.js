@@ -130,6 +130,18 @@ function buildSuccessPrefixProfileName(prefix, value) {
   return normalizeVietnameseText(base).startsWith(normalizeVietnameseText(label)) ? base : `${label}${base}`;
 }
 
+function buildStandardPostSuccessProfileName(prefix, value) {
+  const label = String(prefix || "").trim();
+  const cleanedName = stripRuntimeNamePrefixes(value);
+  // For 2v/3v posting, the v-marker is the canonical beginning of the name.
+  // Drop every temporary segment before it, just as 4v drops everything before
+  // the "full" segment.
+  const markerIndex = cleanedName.search(/\b\d+\s*v\b/i);
+  const base = (markerIndex >= 0 ? cleanedName.slice(markerIndex) : cleanedName) || "profile-tool";
+  if (!label) return base;
+  return normalizeVietnameseText(base).startsWith(normalizeVietnameseText(label)) ? base : `${label}${base}`;
+}
+
 function buildRuntimeProfileName({ status = "", tenChuan = "" }) {
   const normalizedStatus = String(status || "").trim().toLowerCase();
   const base = stripRuntimeNamePrefixes(tenChuan) || "profile-tool";
@@ -2062,7 +2074,7 @@ export function createDangBai({
       const postResult = await step(profileId, job, `dang bai ${detectedBar}`, async () =>
         runPostListing(manager, page, payload, row, profileId, detectedBar, () => { noRollback = true; })
       , { timeoutMs: 480000 });
-      const tenChuan = buildSuccessPrefixProfileName(config.postSuccessPrefix, currentName);
+      const tenChuan = buildStandardPostSuccessProfileName(config.postSuccessPrefix, currentName);
       nameAfterPublishedPost = tenChuan;
       await rename(manager, profileId, tenChuan);
       const update = {
