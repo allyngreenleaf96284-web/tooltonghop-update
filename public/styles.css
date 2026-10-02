@@ -620,6 +620,16 @@ label {
   align-items: end;
 }
 
+.login-config-grid {
+  width: max-content;
+  max-width: 100%;
+  grid-template-columns: 180px auto;
+}
+
+.login-config-grid .action-wide {
+  width: auto;
+}
+
 .post4v-config-grid {
   grid-template-columns: minmax(180px, 0.85fr) minmax(280px, 1.45fr) repeat(3, minmax(130px, 0.55fr)) auto;
 }
@@ -1375,6 +1385,15 @@ tr.duplicate-row {
 
   .tool-config-grid {
     grid-template-columns: 1fr;
+  }
+
+  .login-config-grid {
+    width: 100%;
+    grid-template-columns: 1fr;
+  }
+
+  .login-config-grid .action-wide {
+    width: 100%;
   }
 
   .work-grid {
