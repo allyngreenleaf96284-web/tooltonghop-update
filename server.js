@@ -123,6 +123,7 @@ const DEFAULT_CONFIG = {
   fourVPostSuccessPrefix: "",
   postSuccessPrefix: "",
   loginConcurrency: 4,
+  loginUnknownRetryCount: 1,
   fullConcurrency: 4,
   fullUnknownRetryCount: 1,
   postConcurrency: 4,
@@ -1040,6 +1041,7 @@ async function readConfig() {
     loaded.fourVPostSuccessPrefix = String(loaded.fourVPostSuccessPrefix || "");
     loaded.postSuccessPrefix = String(loaded.postSuccessPrefix || "");
     loaded.loginConcurrency = clampConcurrency(loaded.loginConcurrency, DEFAULT_CONFIG.loginConcurrency, 4);
+    loaded.loginUnknownRetryCount = Math.max(0, Math.min(3, Math.floor(Number(loaded.loginUnknownRetryCount ?? DEFAULT_CONFIG.loginUnknownRetryCount) || 0)));
     loaded.fullConcurrency = clampConcurrency(loaded.fullConcurrency, DEFAULT_CONFIG.fullConcurrency, 4);
     loaded.fullUnknownRetryCount = Math.max(0, Math.min(3, Math.floor(Number(loaded.fullUnknownRetryCount ?? DEFAULT_CONFIG.fullUnknownRetryCount) || 0)));
     loaded.postConcurrency = clampConcurrency(loaded.postConcurrency, DEFAULT_CONFIG.postConcurrency, 4);
@@ -1107,6 +1109,7 @@ async function saveConfig(input) {
     fourVPostSuccessPrefix: String(input.fourVPostSuccessPrefix !== undefined ? input.fourVPostSuccessPrefix : current.fourVPostSuccessPrefix || ""),
     postSuccessPrefix: String(input.postSuccessPrefix !== undefined ? input.postSuccessPrefix : current.postSuccessPrefix || ""),
     loginConcurrency: clampConcurrency(input.loginConcurrency, current.loginConcurrency || DEFAULT_CONFIG.loginConcurrency, 4),
+    loginUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.loginUnknownRetryCount ?? current.loginUnknownRetryCount ?? DEFAULT_CONFIG.loginUnknownRetryCount) || 0))),
     fullConcurrency: clampConcurrency(input.fullConcurrency, current.fullConcurrency || DEFAULT_CONFIG.fullConcurrency, 4),
     fullUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.fullUnknownRetryCount ?? current.fullUnknownRetryCount ?? DEFAULT_CONFIG.fullUnknownRetryCount) || 0))),
     postConcurrency: clampConcurrency(input.postConcurrency, current.postConcurrency || DEFAULT_CONFIG.postConcurrency, 4),
@@ -1258,6 +1261,7 @@ async function saveConfigV2(input) {
     fourVPostSuccessPrefix: String(input.fourVPostSuccessPrefix !== undefined ? input.fourVPostSuccessPrefix : current.fourVPostSuccessPrefix || ""),
     postSuccessPrefix: String(input.postSuccessPrefix !== undefined ? input.postSuccessPrefix : current.postSuccessPrefix || ""),
     loginConcurrency: clampConcurrency(input.loginConcurrency, current.loginConcurrency || DEFAULT_CONFIG.loginConcurrency, 4),
+    loginUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.loginUnknownRetryCount ?? current.loginUnknownRetryCount ?? DEFAULT_CONFIG.loginUnknownRetryCount) || 0))),
     fullConcurrency: clampConcurrency(input.fullConcurrency, current.fullConcurrency || DEFAULT_CONFIG.fullConcurrency, 4),
     fullUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.fullUnknownRetryCount ?? current.fullUnknownRetryCount ?? DEFAULT_CONFIG.fullUnknownRetryCount) || 0))),
     postConcurrency: clampConcurrency(input.postConcurrency, current.postConcurrency || DEFAULT_CONFIG.postConcurrency, 4),
@@ -3497,6 +3501,7 @@ async function handleApi(req, res) {
       const body = await parseBody(req);
       const config = forceSingleThreadForProxyPanel(await resolveAccountSheetConfig(await readConfig()));
       if (body.concurrency !== undefined) config.loginConcurrency = clampConcurrency(body.concurrency, config.loginConcurrency || DEFAULT_CONFIG.loginConcurrency, 4);
+      if (body.loginUnknownRetryCount !== undefined) config.loginUnknownRetryCount = Math.max(0, Math.min(3, Math.floor(Number(body.loginUnknownRetryCount) || 0)));
       if (stateProxyUsesProxyPanel(config)) config.loginConcurrency = 1;
       const data = await startAutoRetryBatch({
         runtime: toolRuntime,
@@ -3505,7 +3510,8 @@ async function handleApi(req, res) {
         profileIds: body.profileIds || [],
         config,
         options: {},
-        addRuntimeLog
+        addRuntimeLog,
+        maxRetries: config.loginUnknownRetryCount
       });
       return jsonResponse(res, 200, { ok: true, data });
     }
@@ -3823,7 +3829,6 @@ server.listen(5177, "127.0.0.1", () => {
   startBackgroundHideSheetSync();
   startProxyMonitor();
 });
-
 
 
 
