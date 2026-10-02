@@ -3,7 +3,7 @@ import { withFacebookLocale } from "./facebook_locale.js";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // Proxy connections often render Facebook's 2FA screen noticeably later than the password form.
-const TWOFA_SCREEN_WAIT_MS = 60000;
+const TWOFA_SCREEN_WAIT_MS = 120000;
 const TWOFA_SETTLE_WAIT_MS = 45000;
 
 function normalizeKey(value) {
