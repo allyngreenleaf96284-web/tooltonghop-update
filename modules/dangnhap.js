@@ -1407,19 +1407,15 @@ export function createDangNhap({ addRuntimeLog }) {
     if (!secret) return false;
     let input = null;
     const started = Date.now();
-    while (Date.now() - started < TWOFA_SCREEN_WAIT_MS) {
+    const minimumWaitUntil = started + TWOFA_SCREEN_WAIT_MS;
+    const deadline = started + TWOFA_SCREEN_WAIT_MS + 120000;
+    while (Date.now() < deadline) {
       input = await findVisibleTwofaInput(page);
-      if (input) break;
-      const switched = await chooseAuthenticationAppTwofa(page).catch(() => false);
-      if (switched) {
-        await page.waitForSelector("body", { timeout: 15000 }).catch(() => {});
-        await sleep(2500);
-      } else {
-        await sleep(1200);
-      }
+      if (input && Date.now() >= minimumWaitUntil) break;
+      await sleep(Math.min(1000, Math.max(1, deadline - Date.now())));
     }
     if (!input) {
-      throw new Error(`Da cho ${Math.round(TWOFA_SCREEN_WAIT_MS / 1000)}s nhung khong tim thay o nhap ma 2FA.`);
+      return false;
     }
 
     const otp = generateTotp(secret);
@@ -1699,14 +1695,16 @@ export function createDangNhap({ addRuntimeLog }) {
       await passwordInput?.press("Enter").catch(() => {});
     }
     await sleep(3200);
+    let stepResult = await waitForCredentialStepResult(manager, page, TWOFA_SCREEN_WAIT_MS);
+    if (stepResult !== "logged_in" && getTwofaValue(row)) {
+      const submittedTwofa = await completeTwofaIfNeeded(manager, page, row);
+      if (submittedTwofa) {
+        await sleep(3200);
+        stepResult = await waitForCredentialStepResult(manager, page, TWOFA_SETTLE_WAIT_MS);
+      }
+    }
     await throwIfCaptchaChallenge(page, "login: tai khoan mat khau");
     await throwIfCheckpointDetected(page);
-    let stepResult = await waitForCredentialStepResult(manager, page, TWOFA_SCREEN_WAIT_MS);
-    if (stepResult === "twofa" || stepResult === "checkpoint") {
-      await completeTwofaIfNeeded(manager, page, row);
-      await sleep(3200);
-      stepResult = await waitForCredentialStepResult(manager, page, TWOFA_SETTLE_WAIT_MS);
-    }
     if (stepResult === "cp956" || stepResult === "cp282") {
       const error = new Error(stepResult === "cp956" ? "Nick bi checkpoint cp956." : "Nick bi checkpoint cp282.");
       error.status = stepResult;
