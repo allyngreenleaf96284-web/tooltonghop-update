@@ -754,7 +754,50 @@ export function createDangNhap({ addRuntimeLog }) {
     }).catch(() => "");
   }
 
+  async function dismissAutomatedBehaviorCheckpoint(page) {
+    const target = await page.evaluate(() => {
+      const normalize = (value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+      const isVisible = (element) => {
+        if (!(element instanceof HTMLElement)) return false;
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+      };
+      const url = String(window.location.href || "").toLowerCase();
+      const body = normalize(document.body?.innerText || "");
+      if (!url.includes("/checkpoint/") || !/suspect automated behavior|automated behavior on your account/.test(body)) return null;
+      const button = Array.from(document.querySelectorAll("button, input[type='submit'], [role='button']"))
+        .find((element) => isVisible(element) && /^(dismiss|close|continue)$/i.test(normalize(element.getAttribute("aria-label") || element.innerText || element.value || element.textContent || "")));
+      if (!(button instanceof HTMLElement)) return null;
+      return { label: normalize(button.getAttribute("aria-label") || button.innerText || button.value || button.textContent || "") };
+    }).catch(() => null);
+    if (!target) return false;
+    const clicked = await page.evaluate(() => {
+      const normalize = (value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+      const isVisible = (element) => {
+        if (!(element instanceof HTMLElement)) return false;
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+      };
+      const button = Array.from(document.querySelectorAll("button, input[type='submit'], [role='button']"))
+        .find((element) => isVisible(element) && /^(dismiss|close|continue)$/i.test(normalize(element.getAttribute("aria-label") || element.innerText || element.value || element.textContent || "")));
+      if (!(button instanceof HTMLElement)) return false;
+      button.click();
+      return true;
+    }).catch(() => false);
+    if (!clicked) return false;
+    const deadline = Date.now() + 12000;
+    while (Date.now() < deadline) {
+      await sleep(700);
+      const stillCheckpoint = String(page.url() || "").toLowerCase().includes("/checkpoint/");
+      if (!stillCheckpoint) break;
+    }
+    return true;
+  }
+
   async function throwIfCheckpointDetected(page) {
+    if (await dismissAutomatedBehaviorCheckpoint(page)) return;
     const checkpointStatus = await getCheckpointStatus(page);
     if (!checkpointStatus) return;
     const error = new Error(
@@ -1442,7 +1485,7 @@ export function createDangNhap({ addRuntimeLog }) {
     while (Date.now() < deadline) {
       const now = Date.now();
       input = await findVisibleTwofaInput(page).catch(() => null);
-      if (input && now >= minimumWaitUntil) break;
+      if (input) break;
       const remaining = now < minimumWaitUntil ? minimumWaitUntil - now : deadline - now;
       const status = now < minimumWaitUntil
         ? `2FA: đang chờ đủ 02:00, còn ${formatRemaining(remaining)}; chưa thao tác`
@@ -1539,6 +1582,7 @@ export function createDangNhap({ addRuntimeLog }) {
         const hasTwofa = await findVisibleTwofaInput(page);
         if (hasTwofa) return "twofa";
         if (url.includes("checkpoint")) {
+          if (await dismissAutomatedBehaviorCheckpoint(page)) continue;
           const checkpointStatus = await getCheckpointStatus(page);
           if (checkpointStatus) return checkpointStatus;
           return "checkpoint";
@@ -1588,6 +1632,7 @@ export function createDangNhap({ addRuntimeLog }) {
               await sleep(2200);
               continue;
             }
+            if (followStep === "checkpoint" && await dismissAutomatedBehaviorCheckpoint(page)) continue;
             if (followStep === "logged_in") return page;
             if (followStep === "continue" || await isProfileChooserState(page)) {
               waitingForPasswordAfterContinue = false;
@@ -1615,6 +1660,7 @@ export function createDangNhap({ addRuntimeLog }) {
             await sleep(2200);
             continue;
           }
+          if (postPasswordStep === "checkpoint" && await dismissAutomatedBehaviorCheckpoint(page)) continue;
           if (postPasswordStep === "logged_in") return page;
           page = await openFreshFacebookTabForRelogin(page);
           continue;
@@ -1630,6 +1676,7 @@ export function createDangNhap({ addRuntimeLog }) {
             await sleep(2200);
             continue;
           }
+          if (nextStep === "checkpoint" && await dismissAutomatedBehaviorCheckpoint(page)) continue;
           if (nextStep === "logged_in") return page;
           if (nextStep === "invalid_request") {
             page = await openFreshFacebookTabForRelogin(page);
@@ -1643,11 +1690,12 @@ export function createDangNhap({ addRuntimeLog }) {
           continue;
         }
         const stepResult = await waitForCredentialStepResult(manager, page, TWOFA_SCREEN_WAIT_MS).catch(() => "timeout");
-        if (stepResult === "twofa" || stepResult === "checkpoint") {
+        if (stepResult === "twofa") {
           await completeTwofaIfNeeded(manager, page, row, updateLiveStatus);
           await sleep(2200);
           continue;
         }
+        if (stepResult === "checkpoint" && await dismissAutomatedBehaviorCheckpoint(page)) continue;
         await handlePostLoginDismiss(manager, page);
         if (await waitForLoginSuccess(manager, page, 6000).catch(() => false)) return page;
         await sleep(900);
@@ -1980,25 +2028,14 @@ export function createDangNhap({ addRuntimeLog }) {
 
   async function detectCurrentState(manager, page) {
     await throwIfCaptchaChallenge(page, "login: doc trang thai hien tai");
+    await dismissAutomatedBehaviorCheckpoint(page);
     return {
-      hasSession: typeof manager?.hasActiveFacebookSession === "function"
-        ? await manager.hasActiveFacebookSession(page).catch(() => false)
-        : await hasActiveFacebookSession(page).catch(() => false),
-      onLoginForm: typeof manager?.isStandardLoginFormVisible === "function"
-        ? await manager.isStandardLoginFormVisible(page).catch(() => false)
-        : await isStandardLoginFormVisible(page).catch(() => false),
-      onContinue: typeof manager?.isProfileChooserState === "function"
-        ? await manager.isProfileChooserState(page).catch(() => false)
-        : await isProfileChooserState(page).catch(() => false),
-      onPasswordModal: typeof manager?.isPasswordConfirmModalVisible === "function"
-        ? await manager.isPasswordConfirmModalVisible(page).catch(() => false)
-        : await isPasswordConfirmModalVisible(page).catch(() => false),
-      credentialStep: typeof manager?.waitForCredentialStepResult === "function"
-        ? await manager.waitForCredentialStepResult(page, 2000).catch(() => "timeout")
-        : await waitForCredentialStepResult(manager, page, 2000).catch(() => "timeout"),
-      checkpointStatus: typeof manager?.getCheckpointStatus === "function"
-        ? await manager.getCheckpointStatus(page).catch(() => "")
-        : await getCheckpointStatus(page).catch(() => "")
+      hasSession: await hasActiveFacebookSession(page).catch(() => false),
+      onLoginForm: await isStandardLoginFormVisible(page).catch(() => false),
+      onContinue: await isProfileChooserState(page).catch(() => false),
+      onPasswordModal: await isPasswordConfirmModalVisible(page).catch(() => false),
+      credentialStep: await waitForCredentialStepResult(manager, page, 2000).catch(() => "timeout"),
+      checkpointStatus: await getCheckpointStatus(page).catch(() => "")
     };
   }
 
