@@ -78,6 +78,7 @@
   lastSignature: "",
   lastAutoSyncAt: 0,
   toolStatusTimer: null,
+  loginTwofaTimer: null,
   hideRefreshTimer: null,
   currentHideAccount: null,
   currentSpreadsheetId: "",
@@ -90,6 +91,29 @@
 };
 
 const $ = (id) => document.getElementById(id);
+
+function formatLoginTwofaCountdown(endsAt) {
+  const remainingSeconds = Math.max(0, Math.ceil((Number(endsAt || 0) - Date.now()) / 1000));
+  const minutes = Math.floor(remainingSeconds / 60);
+  const seconds = remainingSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function refreshLoginTwofaCountdowns() {
+  const timers = [...document.querySelectorAll("[data-login-twofa-ends-at]")];
+  if (!timers.length) {
+    if (state.loginTwofaTimer) window.clearInterval(state.loginTwofaTimer);
+    state.loginTwofaTimer = null;
+    return;
+  }
+  for (const timer of timers) {
+    const endsAt = Number(timer.dataset.loginTwofaEndsAt || 0);
+    timer.textContent = endsAt ? formatLoginTwofaCountdown(endsAt) : "";
+  }
+  if (!state.loginTwofaTimer) {
+    state.loginTwofaTimer = window.setInterval(refreshLoginTwofaCountdowns, 1000);
+  }
+}
 
 function normalizeMarketplaceSheetLinks(values) {
   const seen = new Set();
@@ -2792,7 +2816,8 @@ function renderToolProgress(data) {
     countLabel: `${loginProgress.completed} / ${loginProgress.total}`,
     textLabel: loginProgress.summaryText,
     percent: loginProgress.percent,
-    jobs: loginProgress.jobs
+    jobs: loginProgress.jobs,
+    showTimeColumn: true
   });
   renderToolProgressPanel({
     panelId: "postToolProgressPanel",
@@ -3023,7 +3048,8 @@ function renderToolProgressPanel({
   countLabel,
   textLabel,
   percent,
-  jobs
+  jobs,
+  showTimeColumn = false
 }) {
   const panel = $(panelId);
   const list = $(listId);
@@ -3039,6 +3065,7 @@ function renderToolProgressPanel({
     countNode.textContent = "0 / 0";
     textNode.textContent = "Chưa có batch đang chạy.";
     stateNode.textContent = "idle";
+    if (showTimeColumn) refreshLoginTwofaCountdowns();
     return;
   }
   panel.classList.remove("hidden");
@@ -3058,7 +3085,11 @@ function renderToolProgressPanel({
     };
     return rank(a) - rank(b) || Number(a.batchOrder ?? 0) - Number(b.batchOrder ?? 0);
   });
-  list.innerHTML = orderedJobs.slice(0, 80).map((job) => {
+  const timeColumnHead = showTimeColumn ? `
+    <div class="tool-progress-item tool-progress-column-head has-time-column">
+      <span>Profile</span><span>Trạng thái</span><span>Time</span><span>Tiến độ</span>
+    </div>` : "";
+  list.innerHTML = timeColumnHead + orderedJobs.slice(0, 80).map((job) => {
     const rawStatus = String(job.status || "queued").toLowerCase();
     const displayStatus = job.phaseState === "retry_waiting" || rawStatus === "retry_waiting"
       ? "chờ chạy lại"
@@ -3072,13 +3103,19 @@ function renderToolProgressPanel({
             ? "đang chạy"
             : rawStatus;
     const phaseText = job.phase === "retry" ? "lượt chạy lại" : "lượt đầu";
+    const timerEndsAt = showTimeColumn ? Number(job.twofaCountdownEndsAt || 0) : 0;
+    const timeCell = showTimeColumn
+      ? `<span class="tool-progress-time"${timerEndsAt ? ` data-login-twofa-ends-at="${escapeAttr(String(timerEndsAt))}"` : ""}>${timerEndsAt ? formatLoginTwofaCountdown(timerEndsAt) : ""}</span>`
+      : "";
     return `
-    <div class="tool-progress-item">
+    <div class="tool-progress-item${showTimeColumn ? " has-time-column" : ""}">
       <span>${escapeHtml(job.profileId || "")}</span>
       <span class="job-status ${escapeAttr(rawStatus)}">${escapeHtml(displayStatus)}</span>
+      ${timeCell}
       <span>${escapeHtml(`${phaseText}: ${job.liveStatus || ""}`)}</span>
     </div>
   `; }).join("");
+  if (showTimeColumn) refreshLoginTwofaCountdowns();
 }
 
 function visibleLogs() {

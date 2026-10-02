@@ -1422,16 +1422,31 @@ export function createDangNhap({ addRuntimeLog }) {
       const status = now < minimumWaitUntil
         ? `2FA: đang chờ đủ 02:00, còn ${formatRemaining(remaining)}; chưa thao tác`
         : `2FA: đã chờ đủ 02:00, đang đợi ô nhập mã; còn ${formatRemaining(remaining)}`;
-      updateLiveStatus(status);
+      updateLiveStatus(status, {
+        twofaActive: true,
+        twofaCountdownStartedAt: started,
+        twofaCountdownEndsAt: minimumWaitUntil,
+        twofaWaitingForInput: now >= minimumWaitUntil
+      });
       await input?.dispose?.().catch(() => {});
       input = null;
       await sleep(Math.min(1000, Math.max(1, remaining)));
     }
     if (!input) {
-      updateLiveStatus("2FA: hết thời gian dò mà chưa thấy ô nhập mã");
+      updateLiveStatus("2FA: hết thời gian dò mà chưa thấy ô nhập mã", {
+        twofaActive: true,
+        twofaCountdownStartedAt: started,
+        twofaCountdownEndsAt: minimumWaitUntil,
+        twofaWaitingForInput: true
+      });
       throw new Error(`Da doi 2FA du 02:00 va tiep tuc do them ${Math.round(TWOFA_INPUT_EXTRA_WAIT_MS / 60000)} phut nhung van khong thay o nhap ma.`);
     }
-    updateLiveStatus("2FA: da thay o nhap ma, dang nhap ma");
+    updateLiveStatus("2FA: da thay o nhap ma, dang nhap ma", {
+      twofaActive: true,
+      twofaCountdownStartedAt: started,
+      twofaCountdownEndsAt: minimumWaitUntil,
+      twofaWaitingForInput: true
+    });
 
     const otp = generateTotp(secret);
     await page.evaluate((otpValue) => {
