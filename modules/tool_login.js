@@ -62,17 +62,48 @@ function detectBar(state) {
   return `${total}v`;
 }
 
-function tileBounds(workerSlot, workerTotal) {
+function tileBounds(workerSlot, workerTotal, screenWidth, screenHeight, screenLeft = 0, screenTop = 0) {
   const total = Math.max(1, Number(workerTotal || 1));
-  if (total <= 1) return { left: 0, top: 0, width: 1280, height: 980 };
-  if (total === 2) return { left: workerSlot % 2 === 0 ? 0 : 960, top: 0, width: 960, height: 980 };
-  if (total === 3) return { left: workerSlot * 640, top: 0, width: 640, height: 980 };
-  return { left: (workerSlot % 2) * 960, top: Math.floor(workerSlot / 2) * 520, width: 960, height: 520 };
+  const columns = total <= 2 ? total : Math.ceil(Math.sqrt(total));
+  const rows = Math.ceil(total / columns);
+  const column = workerSlot % columns;
+  const row = Math.floor(workerSlot / columns);
+  const cellWidth = Math.floor(screenWidth / columns);
+  const cellHeight = Math.floor(screenHeight / rows);
+  return {
+    left: screenLeft + column * cellWidth,
+    top: screenTop + row * cellHeight,
+    width: column === columns - 1 ? screenWidth - column * cellWidth : cellWidth,
+    height: row === rows - 1 ? screenHeight - row * cellHeight : cellHeight
+  };
 }
 
-async function applyViewport(page, workerSlot, workerTotal) {
-  const bounds = tileBounds(workerSlot, workerTotal);
-  await page.setViewport?.({ width: Math.max(900, bounds.width - 24), height: Math.max(640, bounds.height - 110), deviceScaleFactor: 1 }).catch(() => {});
+async function applyViewport(browser, page, workerSlot, workerTotal) {
+  const screen = await page.evaluate(() => ({
+    width: window.screen.availWidth || window.screen.width,
+    height: window.screen.availHeight || window.screen.height,
+    left: window.screen.availLeft || 0,
+    top: window.screen.availTop || 0
+  })).catch(() => ({ width: 1920, height: 1080, left: 0, top: 0 }));
+  const bounds = tileBounds(workerSlot, workerTotal, screen.width, screen.height, screen.left, screen.top);
+  let session;
+  try {
+    session = await page.createCDPSession();
+    const windowInfo = await session.send("Browser.getWindowForTarget");
+    await session.send("Browser.setWindowBounds", {
+      windowId: windowInfo.windowId,
+      bounds: { windowState: "normal", left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height }
+    });
+  } catch {
+    try { await browser?.window?.setBounds?.(bounds); } catch {}
+  } finally {
+    await session?.detach?.().catch(() => {});
+  }
+  await page.setViewport?.({
+    width: Math.max(320, bounds.width - 20),
+    height: Math.max(240, bounds.height - 100),
+    deviceScaleFactor: 1
+  }).catch(() => {});
   return bounds;
 }
 
@@ -190,7 +221,7 @@ export function createToolLogin({
         page = await browser.newPage();
         await page.bringToFront().catch(() => {});
         if (typeof manager.maximizeBrowserWindow === "function") await manager.maximizeBrowserWindow(browser, page).catch(() => {});
-        await applyViewport(page, workerSlot, workerTotal);
+        await applyViewport(browser, page, workerSlot, workerTotal);
       }, 120000);
 
       await step(profileId, job, "dang nhap Facebook", () => dangNhap.ensureFacebookLogin(manager, page, row, profileId, (status) => {
