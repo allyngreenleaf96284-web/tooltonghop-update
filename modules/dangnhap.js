@@ -2022,9 +2022,7 @@ export function createDangNhap({ addRuntimeLog }) {
 
         if (needsContinue) {
           page = await loginStep(profileId, updateLiveStatus, "login: xu ly continue sau cookie", "dang xu ly Continue/2FA sau cookie", async () => {
-            const nextPage = typeof manager?.continueFromProfileChooser === "function"
-              ? await manager.continueFromProfileChooser(page, row, updateLiveStatus)
-              : await continueFromProfileChooser(manager, page, row, updateLiveStatus);
+            const nextPage = await continueFromProfileChooser(manager, page, row, updateLiveStatus);
             await handlePostLoginDismiss(manager, nextPage);
             await throwIfCaptchaChallenge(nextPage, "login: xu ly continue sau cookie");
             return nextPage;
@@ -2038,9 +2036,7 @@ export function createDangNhap({ addRuntimeLog }) {
         if (["cp282", "cp956", "loicapcha"].includes(String(cookieError?.status || "").trim())) throw cookieError;
         logLogin(profileId, "login: cookie", `login cookie loi: ${cookieError.message}. Chuyen sang tai khoan/mat khau.`, "warn", cookieError.message);
         await loginStep(profileId, updateLiveStatus, "login: tai khoan mat khau", "dang login bang tai khoan/mat khau", async () => {
-          const result = typeof manager?.loginWithAccount === "function"
-            ? await manager.loginWithAccount(page, row, updateLiveStatus)
-            : await loginWithAccount(manager, page, row, updateLiveStatus);
+          const result = await loginWithAccount(manager, page, row, updateLiveStatus);
           page = result.page || page;
           await handlePostLoginDismiss(manager, page);
           await throwIfCaptchaChallenge(page, "login: tai khoan mat khau");

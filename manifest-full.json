@@ -1,7 +1,7 @@
 {
   "name": "Tool Tong Hop Full",
   "channel": "full",
-  "version": "2026.10.02.08",
+  "version": "2026.10.02.09",
   "rawBase": "https://raw.githubusercontent.com/allyngreenleaf96284-web/tooltonghop-update/main",
   "createdAt": "2026-09-17T00:00:00.000Z",
   "files": [
@@ -42,8 +42,8 @@
     },
     {
       "path": "modules/dangnhap.js",
-      "sha256": "26703524bc578816a3c3748a385d97e2c71fd2e02690e2e77513e4333d25a712",
-      "size": 102352
+      "sha256": "f302d149445d927957a0010e1e5911371e4ab287141dbd1a620331cfb8928c0b",
+      "size": 102056
     },
     {
       "path": "modules/dienmatkhau.js",
