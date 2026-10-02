@@ -2,6 +2,9 @@ import crypto from "node:crypto";
 import { withFacebookLocale } from "./facebook_locale.js";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// Proxy connections often render Facebook's 2FA screen noticeably later than the password form.
+const TWOFA_SCREEN_WAIT_MS = 60000;
+const TWOFA_SETTLE_WAIT_MS = 45000;
 
 function normalizeKey(value) {
   return String(value || "")
@@ -1402,18 +1405,21 @@ export function createDangNhap({ addRuntimeLog }) {
   async function completeTwofaIfNeeded(manager, page, row) {
     const secret = getTwofaValue(row);
     if (!secret) return false;
-    await sleep(2000);
-    let input = await findVisibleTwofaInput(page);
-    if (!input) {
+    let input = null;
+    const started = Date.now();
+    while (Date.now() - started < TWOFA_SCREEN_WAIT_MS) {
+      input = await findVisibleTwofaInput(page);
+      if (input) break;
       const switched = await chooseAuthenticationAppTwofa(page).catch(() => false);
       if (switched) {
-        await page.waitForSelector("body", { timeout: 12000 }).catch(() => {});
-        await sleep(1500);
-        input = await findVisibleTwofaInput(page);
+        await page.waitForSelector("body", { timeout: 15000 }).catch(() => {});
+        await sleep(2500);
+      } else {
+        await sleep(1200);
       }
     }
     if (!input) {
-      throw new Error("Da vao man 2FA nhung khong tim thay o nhap ma.");
+      throw new Error(`Da cho ${Math.round(TWOFA_SCREEN_WAIT_MS / 1000)}s nhung khong tim thay o nhap ma 2FA.`);
     }
 
     const otp = generateTotp(secret);
@@ -1467,7 +1473,7 @@ export function createDangNhap({ addRuntimeLog }) {
     await sleep(3000);
     await clickFirstSelector(page, ["#checkpointSubmitButton", "button[type='submit']", "input[type='submit']"]).catch(() => false);
     await sleep(2500);
-    await waitForLoginSettled(manager, page, 15000).catch(() => {});
+    await waitForLoginSettled(manager, page, TWOFA_SETTLE_WAIT_MS).catch(() => {});
     await handlePostLoginDismiss(manager, page);
     return true;
   }
@@ -1521,7 +1527,7 @@ export function createDangNhap({ addRuntimeLog }) {
         if (waitingForPasswordAfterContinue || await isPasswordConfirmModalVisible(page) || await passwordStepReady(page)) {
           const typedPass = await fillPasswordConfirmModal(page, password);
           if (!typedPass) {
-            const followStep = await waitAfterContinueForNextStep(manager, page, 3500).catch(() => "timeout");
+            const followStep = await waitAfterContinueForNextStep(manager, page, 15000).catch(() => "timeout");
             if (followStep === "password_modal") {
               await sleep(700);
               continue;
@@ -1548,7 +1554,7 @@ export function createDangNhap({ addRuntimeLog }) {
           }
           await sleep(850);
           await waitForLoginSettled(manager, page, 12000).catch(() => {});
-          const postPasswordStep = await waitAfterContinueForNextStep(manager, page, 9000);
+          const postPasswordStep = await waitAfterContinueForNextStep(manager, page, TWOFA_SCREEN_WAIT_MS);
           if (postPasswordStep === "invalid_request") {
             page = await openFreshFacebookTabForRelogin(page);
             continue;
@@ -1566,7 +1572,7 @@ export function createDangNhap({ addRuntimeLog }) {
           const clickedContinue = await clickProfileChooserContinue(page);
           if (!clickedContinue) throw new Error("Khong bam duoc nut Continue tren facebook.com.");
           waitingForPasswordAfterContinue = true;
-          const nextStep = await waitForPasswordModalAfterContinue(manager, page, 5000);
+          const nextStep = await waitForPasswordModalAfterContinue(manager, page, 15000);
           if (nextStep === "password_modal") continue;
           if (nextStep === "twofa") {
             await completeTwofaIfNeeded(manager, page, row);
@@ -1585,7 +1591,7 @@ export function createDangNhap({ addRuntimeLog }) {
           waitingForPasswordAfterContinue = true;
           continue;
         }
-        const stepResult = await waitForCredentialStepResult(manager, page, 12000).catch(() => "timeout");
+        const stepResult = await waitForCredentialStepResult(manager, page, TWOFA_SCREEN_WAIT_MS).catch(() => "timeout");
         if (stepResult === "twofa" || stepResult === "checkpoint") {
           await completeTwofaIfNeeded(manager, page, row);
           await sleep(2200);
@@ -1695,11 +1701,11 @@ export function createDangNhap({ addRuntimeLog }) {
     await sleep(3200);
     await throwIfCaptchaChallenge(page, "login: tai khoan mat khau");
     await throwIfCheckpointDetected(page);
-    let stepResult = await waitForCredentialStepResult(manager, page, 12000);
+    let stepResult = await waitForCredentialStepResult(manager, page, TWOFA_SCREEN_WAIT_MS);
     if (stepResult === "twofa" || stepResult === "checkpoint") {
       await completeTwofaIfNeeded(manager, page, row);
       await sleep(3200);
-      stepResult = await waitForCredentialStepResult(manager, page, 12000);
+      stepResult = await waitForCredentialStepResult(manager, page, TWOFA_SETTLE_WAIT_MS);
     }
     if (stepResult === "cp956" || stepResult === "cp282") {
       const error = new Error(stepResult === "cp956" ? "Nick bi checkpoint cp956." : "Nick bi checkpoint cp282.");
