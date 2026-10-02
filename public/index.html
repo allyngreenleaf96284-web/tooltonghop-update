@@ -945,6 +945,14 @@
                 Số luồng
                 <input id="loginConcurrency" type="number" min="1" max="4" step="1" />
               </label>
+              <label>
+                Chạy lại lỗi chưa xác định
+                <input id="loginUnknownRetryCount" type="number" min="0" max="3" step="1" />
+              </label>
+              <details class="retry-policy">
+                <summary>Lỗi không chạy lại</summary>
+                <span>CP282, CP956, checkpoint, captcha, bị out, hết proxy, lỗi profile browser, login, thiếu cấu hình hoặc dừng thủ công.</span>
+              </details>
               <button id="saveLoginConfig" class="primary action-wide" type="button"><span>Lưu cấu hình Tool Login</span></button>
             </div>
           </section>
@@ -964,6 +972,10 @@
             </div>
             <div id="loginToolProgressList" class="tool-progress-list"></div>
           </section>
+          <details id="loginRetryErrorsPanel" class="retry-error-panel hidden">
+            <summary>Danh sách lỗi chưa xác định <span id="loginRetryErrorCount" class="chip">0</span></summary>
+            <div id="loginRetryErrorsList" class="retry-error-list"></div>
+          </details>
 
           <section class="control-deck notification-controls">
             <label class="search-panel">
