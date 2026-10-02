@@ -293,6 +293,7 @@ async function loadConfig() {
   if ($("marketplaceCheckTimeoutMs")) $("marketplaceCheckTimeoutMs").value = config.marketplaceCheckTimeoutMs || 90000;
   if ($("fullConcurrency")) $("fullConcurrency").value = config.fullConcurrency || 4;
   if ($("loginConcurrency")) $("loginConcurrency").value = config.loginConcurrency || 4;
+  if ($("loginUnknownRetryCount")) $("loginUnknownRetryCount").value = Math.max(0, Math.min(3, Number(config.loginUnknownRetryCount ?? 1)));
   if ($("fullUnknownRetryCount")) $("fullUnknownRetryCount").value = Math.max(0, Math.min(3, Number(config.fullUnknownRetryCount ?? 1)));
   if ($("postConcurrency")) $("postConcurrency").value = config.postConcurrency || 4;
   if ($("postUnknownRetryCount")) $("postUnknownRetryCount").value = Math.max(0, Math.min(3, Number(config.postUnknownRetryCount ?? 1)));
@@ -386,6 +387,7 @@ async function saveConfig() {
       marketplaceCheckTabsPerNick: Math.max(1, Math.min(20, Number($("marketplaceCheckTabsPerNick")?.value || 5))),
       marketplaceCheckTimeoutMs: Math.max(30000, Math.min(240000, Number($("marketplaceCheckTimeoutMs")?.value || 90000))),
       loginConcurrency: Number($("loginConcurrency")?.value || 4),
+      loginUnknownRetryCount: Math.max(0, Math.min(3, Number($("loginUnknownRetryCount")?.value || 0))),
       fullConcurrency: Number($("fullConcurrency")?.value || 4),
       fullUnknownRetryCount: Math.max(0, Math.min(3, Number($("fullUnknownRetryCount")?.value || 0))),
       postConcurrency: Number($("postConcurrency")?.value || 4),
@@ -2023,7 +2025,14 @@ async function startToolLogin(profileIds) {
     $("runLoginAllBtn").disabled = true;
     await saveConfig();
     const concurrency = Math.max(1, Math.min(4, Number($("loginConcurrency")?.value || 4)));
-    const { data } = await api("/api/tools/login", { method: "POST", body: JSON.stringify({ profileIds, concurrency }) });
+    const { data } = await api("/api/tools/login", {
+      method: "POST",
+      body: JSON.stringify({
+        profileIds,
+        concurrency,
+        loginUnknownRetryCount: Math.max(0, Math.min(3, Number($("loginUnknownRetryCount")?.value || 0)))
+      })
+    });
     primeToolProgress(profileIds, "bắt đầu: đăng nhập Facebook", "login");
     $("loginStatusText").textContent = `Đã bắt đầu Tool Login ${data.started} profile với ${data.concurrency || 1} luồng.`;
     await refreshToolStatus();
@@ -2812,7 +2821,7 @@ function renderToolProgress(data) {
     textId: "loginToolProgressText",
     barId: "loginToolProgressBar",
     listId: "loginToolProgressList",
-    stateLabel: loginProgress.total ? (loginProgress.batch?.active ? "đang chạy" : "xong") : "idle",
+    stateLabel: loginProgress.total ? (loginProgress.batch?.active ? (loginProgress.batch.phase === "retry" ? "đang retry" : "đang chạy") : "xong") : "idle",
     countLabel: `${loginProgress.completed} / ${loginProgress.total}`,
     textLabel: loginProgress.summaryText,
     percent: loginProgress.percent,
@@ -2837,6 +2846,12 @@ function renderToolProgress(data) {
     countId: "fullRetryErrorCount",
     listId: "fullRetryErrorsList",
     jobs: fullProgress.jobs
+  });
+  renderRetryErrorPanel({
+    panelId: "loginRetryErrorsPanel",
+    countId: "loginRetryErrorCount",
+    listId: "loginRetryErrorsList",
+    jobs: loginProgress.jobs
   });
   renderRetryErrorPanel({
     panelId: "postRetryErrorsPanel",
