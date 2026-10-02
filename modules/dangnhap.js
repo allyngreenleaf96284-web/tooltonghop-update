@@ -143,6 +143,31 @@ export function createDangNhap({ addRuntimeLog }) {
     throw lastError || new Error(`Khong mo duoc ${targetUrl}`);
   }
 
+  function isFacebookLiteUrl(page) {
+    try {
+      return new URL(String(page?.url?.() || "")).pathname.toLowerCase().startsWith("/lite");
+    } catch {
+      return /facebook\.com\/lite(?:\/|$)/i.test(String(page?.url?.() || ""));
+    }
+  }
+
+  async function openStandardFacebookLogin(page) {
+    const targetUrl = withFacebookLocale("https://www.facebook.com/");
+    let lastError = null;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
+        await page.waitForSelector("body", { timeout: 12000 }).catch(() => {});
+        if (!isFacebookLiteUrl(page)) return;
+        lastError = new Error("Facebook redirect sang /lite/ khi dang mo form dang nhap.");
+      } catch (error) {
+        lastError = error;
+      }
+      await sleep(1200 * attempt);
+    }
+    throw lastError || new Error("Khong mo duoc facebook.com dang nhap tieu chuan.");
+  }
+
   function mainProfileUid(row, profileId) {
     return String(row?.uid || row?.raw?.uid || row?.raw?.UID || profileId || "").replace(/[^\d]/g, "").trim();
   }
@@ -1538,7 +1563,7 @@ export function createDangNhap({ addRuntimeLog }) {
     try {
       const password = getPasswordValue(row);
       if (!password) throw new Error(`Nick ${row.uid} thieu mat khau de vuot man Continue.`);
-      await gotoWithFallback(manager, page, "https://www.facebook.com/", row, 2);
+      await openStandardFacebookLogin(page);
       await page.waitForSelector("body", { timeout: 10000 }).catch(() => {});
       await sleep(1100);
       let waitingForPasswordAfterContinue = false;
@@ -1644,12 +1669,12 @@ export function createDangNhap({ addRuntimeLog }) {
   async function loginWithCookie(manager, page, row) {
     const cookieHeader = getCookieValue(row);
     if (!cookieHeader) throw new Error(`Nick ${row.uid} khong co cookie de fallback.`);
-    await gotoWithFallback(manager, page, "https://www.facebook.com/", row, 2);
+    await openStandardFacebookLogin(page);
     await clearFacebookCookiesOnly(page).catch(() => {});
     const cookies = parseCookieHeader(cookieHeader).map((cookie) => ({ ...cookie, domain: ".facebook.com", path: "/" }));
     if (!cookies.length) throw new Error("Cookie fallback sai dinh dang.");
     await page.setCookie(...cookies);
-    await gotoWithFallback(manager, page, "https://www.facebook.com/", row, 2);
+    await openStandardFacebookLogin(page);
     await sleep(2200);
     await throwIfCheckpointDetected(page);
     await throwIfCaptchaChallenge(page, "login: cookie");
@@ -1667,7 +1692,7 @@ export function createDangNhap({ addRuntimeLog }) {
     const account = getAccountValue(row);
     const password = getPasswordValue(row);
     if (!account || !password) throw new Error(`Nick ${row.uid} thieu tai khoan hoac mat khau de dang nhap.`);
-    await gotoWithFallback(manager, page, "https://www.facebook.com/", row, 2);
+    await openStandardFacebookLogin(page);
     await page.waitForSelector("body", { timeout: 10000 }).catch(() => {});
     await sleep(1500);
     if (await isProfileChooserState(page)) {
@@ -2009,9 +2034,7 @@ export function createDangNhap({ addRuntimeLog }) {
     } else {
       try {
         await loginStep(profileId, updateLiveStatus, "login: cookie", "dang login bang cookie", async () => {
-          const result = typeof manager?.loginWithCookie === "function"
-            ? await manager.loginWithCookie(page, row)
-            : await loginWithCookie(manager, page, row);
+          const result = await loginWithCookie(manager, page, row);
           page = result.page || page;
         });
 
