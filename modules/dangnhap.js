@@ -743,11 +743,12 @@ export function createDangNhap({ addRuntimeLog }) {
         const parts = url.pathname.split("/").filter(Boolean);
         const checkpointIndex = parts.findIndex((part) => String(part).toLowerCase() === "checkpoint");
         if (checkpointIndex < 0) return "";
-        const ids = parts.slice(checkpointIndex + 1).filter(Boolean);
-        const tail = String(ids[ids.length - 1] || "");
-        if (/956$/.test(tail)) return "cp956";
-        if (/282$/.test(tail)) return "cp282";
-        return "checkpoint";
+      const ids = parts.slice(checkpointIndex + 1).filter(Boolean);
+      const tail = String(ids[ids.length - 1] || "");
+      if (/049$/.test(tail)) return "cp049";
+      if (/956$/.test(tail)) return "cp956";
+      if (/282$/.test(tail)) return "cp282";
+      return "checkpoint";
       } catch {
         return "";
       }
@@ -796,12 +797,28 @@ export function createDangNhap({ addRuntimeLog }) {
     return true;
   }
 
+  async function waitForDismissableCp049(page, timeoutMs = 60000) {
+    if (await getCheckpointStatus(page) !== "cp049") return false;
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const checkpointStatus = await getCheckpointStatus(page);
+      if (!checkpointStatus) return true;
+      if (checkpointStatus !== "cp049") return false;
+      if (await dismissAutomatedBehaviorCheckpoint(page)) return true;
+      await sleep(1000);
+    }
+    return false;
+  }
+
   async function throwIfCheckpointDetected(page) {
+    if (await waitForDismissableCp049(page)) return;
     if (await dismissAutomatedBehaviorCheckpoint(page)) return;
     const checkpointStatus = await getCheckpointStatus(page);
     if (!checkpointStatus) return;
     const error = new Error(
-      checkpointStatus === "cp956"
+      checkpointStatus === "cp049"
+        ? "Checkpoint cp049 da cho trang tai 60 giay nhung khong thay nut Dismiss."
+        : checkpointStatus === "cp956"
         ? "Nick bi checkpoint cp956."
         : checkpointStatus === "cp282"
           ? "Nick bi checkpoint cp282."
@@ -1582,6 +1599,7 @@ export function createDangNhap({ addRuntimeLog }) {
         const hasTwofa = await findVisibleTwofaInput(page);
         if (hasTwofa) return "twofa";
         if (url.includes("checkpoint")) {
+          if (await waitForDismissableCp049(page)) continue;
           if (await dismissAutomatedBehaviorCheckpoint(page)) continue;
           const checkpointStatus = await getCheckpointStatus(page);
           if (checkpointStatus) return checkpointStatus;
@@ -1632,7 +1650,7 @@ export function createDangNhap({ addRuntimeLog }) {
               await sleep(2200);
               continue;
             }
-            if (followStep === "checkpoint" && await dismissAutomatedBehaviorCheckpoint(page)) continue;
+            if (followStep === "checkpoint" && (await waitForDismissableCp049(page) || await dismissAutomatedBehaviorCheckpoint(page))) continue;
             if (followStep === "logged_in") return page;
             if (followStep === "continue" || await isProfileChooserState(page)) {
               waitingForPasswordAfterContinue = false;
@@ -1660,7 +1678,7 @@ export function createDangNhap({ addRuntimeLog }) {
             await sleep(2200);
             continue;
           }
-          if (postPasswordStep === "checkpoint" && await dismissAutomatedBehaviorCheckpoint(page)) continue;
+          if (postPasswordStep === "checkpoint" && (await waitForDismissableCp049(page) || await dismissAutomatedBehaviorCheckpoint(page))) continue;
           if (postPasswordStep === "logged_in") return page;
           page = await openFreshFacebookTabForRelogin(page);
           continue;
@@ -1676,7 +1694,7 @@ export function createDangNhap({ addRuntimeLog }) {
             await sleep(2200);
             continue;
           }
-          if (nextStep === "checkpoint" && await dismissAutomatedBehaviorCheckpoint(page)) continue;
+          if (nextStep === "checkpoint" && (await waitForDismissableCp049(page) || await dismissAutomatedBehaviorCheckpoint(page))) continue;
           if (nextStep === "logged_in") return page;
           if (nextStep === "invalid_request") {
             page = await openFreshFacebookTabForRelogin(page);
@@ -1695,7 +1713,7 @@ export function createDangNhap({ addRuntimeLog }) {
           await sleep(2200);
           continue;
         }
-        if (stepResult === "checkpoint" && await dismissAutomatedBehaviorCheckpoint(page)) continue;
+        if (stepResult === "checkpoint" && (await waitForDismissableCp049(page) || await dismissAutomatedBehaviorCheckpoint(page))) continue;
         await handlePostLoginDismiss(manager, page);
         if (await waitForLoginSuccess(manager, page, 6000).catch(() => false)) return page;
         await sleep(900);
@@ -2028,6 +2046,7 @@ export function createDangNhap({ addRuntimeLog }) {
 
   async function detectCurrentState(manager, page) {
     await throwIfCaptchaChallenge(page, "login: doc trang thai hien tai");
+    await waitForDismissableCp049(page);
     await dismissAutomatedBehaviorCheckpoint(page);
     return {
       hasSession: await hasActiveFacebookSession(page).catch(() => false),
