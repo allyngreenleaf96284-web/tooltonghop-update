@@ -766,7 +766,7 @@ export function createDangNhap({ addRuntimeLog }) {
       };
       const url = String(window.location.href || "").toLowerCase();
       const body = normalize(document.body?.innerText || "");
-      if (!url.includes("/checkpoint/") || !/suspect automated behavior|automated behavior on your account/.test(body)) return null;
+      if (!url.includes("/checkpoint/") || !/suspect automated behaviou?r|automated behaviou?r on your account/.test(body)) return null;
       const button = Array.from(document.querySelectorAll("button, input[type='submit'], [role='button']"))
         .find((element) => isVisible(element) && /^(dismiss|close|continue)$/i.test(normalize(element.getAttribute("aria-label") || element.innerText || element.value || element.textContent || "")));
       if (!(button instanceof HTMLElement)) return null;
@@ -788,13 +788,17 @@ export function createDangNhap({ addRuntimeLog }) {
       return true;
     }).catch(() => false);
     if (!clicked) return false;
+    let leftCheckpoint = false;
     const deadline = Date.now() + 12000;
     while (Date.now() < deadline) {
       await sleep(700);
       const stillCheckpoint = String(page.url() || "").toLowerCase().includes("/checkpoint/");
-      if (!stillCheckpoint) break;
+      if (!stillCheckpoint) {
+        leftCheckpoint = true;
+        break;
+      }
     }
-    return true;
+    return leftCheckpoint;
   }
 
   async function waitForDismissableCp049(page, timeoutMs = 60000) {
