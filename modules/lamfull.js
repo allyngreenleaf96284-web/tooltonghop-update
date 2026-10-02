@@ -61,7 +61,7 @@ function randomItem(items) {
   return items[Math.floor(Math.random() * items.length)];
 }
 
-function profileUid(row, profileId) {
+export function profileUid(row, profileId) {
   return String(row.uid || row.raw?.uid || profileId || "").trim();
 }
 
@@ -77,7 +77,7 @@ function isUsLocation(locationText) {
   return false;
 }
 
-function stableBarValue(currentName, sheetRow, nextBar = "") {
+export function stableBarValue(currentName, sheetRow, nextBar = "") {
   const direct = String(nextBar || "").trim().toLowerCase();
   if (direct === "2v" || direct === "3v" || direct === "4v") return direct;
   const fromSheet = String(
@@ -150,7 +150,7 @@ function cleanProfileBase(name) {
   return base.endsWith("-tool") ? base : `${base}-tool`;
 }
 
-function stripResolvedNamePrefixes(name) {
+export function stripResolvedNamePrefixes(name) {
   let next = String(name || "").trim();
   const prefixes = [
     /^loilogin-/i,
@@ -187,7 +187,7 @@ function stripResolvedNamePrefixes(name) {
   return next || String(name || "").trim();
 }
 
-function mapFullError(error) {
+export function mapFullError(error) {
   const status = String(error?.status || "").trim();
   const message = String(error?.message || error || "loi khong ro");
   if (status === "stopped") return { status: "stopped", detail: "Da dung han theo yeu cau." };
@@ -220,7 +220,7 @@ function mapFullError(error) {
   return { status: "loi", detail: message };
 }
 
-function buildRuntimeProfileName({ status = "", tenChuan = "" }) {
+export function buildRuntimeProfileName({ status = "", tenChuan = "" }) {
   const normalizedStatus = String(status || "").trim().toLowerCase();
   const base = String(tenChuan || "").trim() || "profile-tool";
   if (!normalizedStatus || normalizedStatus === "thanh cong" || normalizedStatus === "thành công") return base;
@@ -457,7 +457,7 @@ function isMarketplaceCreateStuck(snapshot) {
   return /Preview/i.test(text) && !/Next|Publish|Continue|Delivery method|Title|Price/i.test(text);
 }
 
-async function ensureMarketplaceCreatePageReady(manager, page, row) {
+export async function ensureMarketplaceCreatePageReady(manager, page, row) {
   let lastSnapshot = null;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     await manager.gotoWithRetry(page, withFacebookLocale("https://www.facebook.com/marketplace/create/item"), row, 3);
@@ -656,7 +656,7 @@ async function typeDialogLocationAndPickFirstSuggestion(page, target) {
   return String(await readLocationFromDialog(page).catch(() => "") || "").trim() || String(firstSuggestion?.text || "").trim();
 }
 
-async function ensureUsMarketplaceLocation(manager, page, row) {
+export async function ensureUsMarketplaceLocation(manager, page, row) {
   let lastError = null;
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
@@ -1445,7 +1445,6 @@ export function createLamFull({
 
   return { runQueue, pauseCurrent, resumeCurrent };
 }
-
 
 
 

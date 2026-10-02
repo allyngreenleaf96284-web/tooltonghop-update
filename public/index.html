@@ -67,6 +67,13 @@
               <small>Tối đa 4 luồng</small>
                     </span>
           </button>
+          <button class="module-item" data-module="login">
+            <span class="module-icon">◌</span>
+            <span>
+              <strong>Tool Login</strong>
+              <small>Đăng nhập, đổi bang Mỹ, check vạch</small>
+            </span>
+          </button>
           <button class="module-item" data-module="post">
             <span class="module-icon">⬢</span>
             <span>
@@ -910,6 +917,79 @@
                 <button id="openLogsFromFullBtn" class="ghost-btn small-btn">Chi tiết</button>
               </div>
               <div id="fullActivityLog" class="activity-log"></div>
+            </section>
+          </section>
+        </section>
+
+        <section id="loginModule" class="module-view hidden">
+          <header class="hero">
+            <div>
+              <div class="eyebrow">Facebook Login</div>
+              <h2>Tool Login</h2>
+              <p id="loginStatusText">Đăng nhập Facebook, giữ hoặc đổi bang Mỹ, sau đó check số vạch và dừng.</p>
+            </div>
+            <div class="actions">
+              <button id="stopLoginBtn" class="ghost-btn danger-btn" type="button"><span>Dừng hẳn</span></button>
+              <button id="runLoginSelectedBtn" class="primary alt-primary" type="button"><span>Chạy đã chọn</span></button>
+              <button id="runLoginAllBtn" class="primary" type="button"><span>Chạy tất cả</span></button>
+            </div>
+          </header>
+
+          <section class="tool-config-card">
+            <div class="table-title">
+              <span>Cấu hình Tool Login</span>
+              <span>Tool dừng ngay sau khi đã nhận diện 2v, 3v hoặc 4v.</span>
+            </div>
+            <div class="tool-config-grid">
+              <label>
+                Số luồng
+                <input id="loginConcurrency" type="number" min="1" max="4" step="1" />
+              </label>
+              <button id="saveLoginConfig" class="primary action-wide" type="button"><span>Lưu cấu hình Tool Login</span></button>
+            </div>
+          </section>
+
+          <section class="stats">
+            <div class="stat-card"><span>Tổng profile</span><strong id="loginTotal">0</strong></div>
+            <div class="stat-card"><span>Đã check</span><strong id="loginDone">0</strong></div>
+            <div class="stat-card warning"><span>Lỗi</span><strong id="loginError">0</strong></div>
+            <div class="stat-card"><span>Đang xem</span><strong id="loginVisible">0</strong></div>
+          </section>
+
+          <section id="loginToolProgressPanel" class="tool-progress hidden">
+            <div class="tool-progress-title"><span>Tiến độ Tool Login</span><span id="loginToolProgressState" class="chip">idle</span></div>
+            <div class="tool-progress-summary">
+              <div class="tool-progress-meta"><strong id="loginToolProgressCount">0 / 0</strong><span id="loginToolProgressText">Chưa có batch đang chạy.</span></div>
+              <div class="tool-progress-bar-track"><div id="loginToolProgressBar" class="tool-progress-bar-fill"></div></div>
+            </div>
+            <div id="loginToolProgressList" class="tool-progress-list"></div>
+          </section>
+
+          <section class="control-deck notification-controls">
+            <label class="search-panel">
+              <span>Tìm kiếm / lọc hàng loạt</span>
+              <textarea id="loginSearchInput" rows="3" placeholder="Dán UID / id Hide / tên / trạng thái, mỗi dòng một giá trị..."></textarea>
+              <small>Tìm theo tên, UID, id Hide, folder hoặc trạng thái.</small>
+            </label>
+            <button id="clearLoginSelectionBtn" class="ghost-btn" type="button">Bỏ chọn</button>
+          </section>
+          <div class="filter-meta-row"><span id="loginSelectionSummary" class="bulk-filter-summary">Đang chọn 0 con.</span></div>
+
+          <section class="work-grid">
+            <section class="table-panel">
+              <div class="table-title"><span>Danh sách Tool Login</span><span>Chạy từ trên xuống dưới theo số luồng đã chọn.</span></div>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr>
+                    <th><input id="selectAllLoginRows" type="checkbox" /></th><th>Tên profile hiện tại</th><th>ID profile</th><th>UID</th><th>Tool</th><th>Trạng thái</th><th>Số vạch</th><th>Chi tiết</th><th>Folder</th>
+                  </tr></thead>
+                  <tbody id="loginRows"><tr><td colspan="9" class="empty">Chưa có dữ liệu.</td></tr></tbody>
+                </table>
+              </div>
+            </section>
+            <section class="activity-panel">
+              <div class="activity-title"><span>Nhật ký</span><button id="openLogsFromLoginBtn" class="ghost-btn small-btn" type="button">Chi tiết</button></div>
+              <div id="loginActivityLog" class="activity-log"></div>
             </section>
           </section>
         </section>
@@ -2132,6 +2212,4 @@
     <script src="/app.js?v=online-update-20260831-1"></script>
   </body>
 </html>
-
-
 

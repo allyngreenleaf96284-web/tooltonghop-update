@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { createDangNhap } from "./modules/dangnhap.js";
 import { createCheckTb } from "./modules/checktb.js";
 import { createLamFull } from "./modules/lamfull.js";
+import { createToolLogin } from "./modules/tool_login.js";
 import { createDienMatKhau } from "./modules/dienmatkhau.js";
 import { createDangBai } from "./modules/dangbai.js";
 import { createTuongTac } from "./modules/tuongtac.js";
@@ -121,6 +122,7 @@ const DEFAULT_CONFIG = {
   fourVPostPackageWeight: "2-5 lbs",
   fourVPostSuccessPrefix: "",
   postSuccessPrefix: "",
+  loginConcurrency: 4,
   fullConcurrency: 4,
   fullUnknownRetryCount: 1,
   postConcurrency: 4,
@@ -1037,6 +1039,7 @@ async function readConfig() {
     loaded.fourVPostPackageWeight = String(loaded.fourVPostPackageWeight || DEFAULT_CONFIG.fourVPostPackageWeight).trim() || DEFAULT_CONFIG.fourVPostPackageWeight;
     loaded.fourVPostSuccessPrefix = String(loaded.fourVPostSuccessPrefix || "");
     loaded.postSuccessPrefix = String(loaded.postSuccessPrefix || "");
+    loaded.loginConcurrency = clampConcurrency(loaded.loginConcurrency, DEFAULT_CONFIG.loginConcurrency, 4);
     loaded.fullConcurrency = clampConcurrency(loaded.fullConcurrency, DEFAULT_CONFIG.fullConcurrency, 4);
     loaded.fullUnknownRetryCount = Math.max(0, Math.min(3, Math.floor(Number(loaded.fullUnknownRetryCount ?? DEFAULT_CONFIG.fullUnknownRetryCount) || 0)));
     loaded.postConcurrency = clampConcurrency(loaded.postConcurrency, DEFAULT_CONFIG.postConcurrency, 4);
@@ -1103,6 +1106,7 @@ async function saveConfig(input) {
     fourVPostPackageWeight: String(input.fourVPostPackageWeight !== undefined ? input.fourVPostPackageWeight : current.fourVPostPackageWeight || DEFAULT_CONFIG.fourVPostPackageWeight).trim() || DEFAULT_CONFIG.fourVPostPackageWeight,
     fourVPostSuccessPrefix: String(input.fourVPostSuccessPrefix !== undefined ? input.fourVPostSuccessPrefix : current.fourVPostSuccessPrefix || ""),
     postSuccessPrefix: String(input.postSuccessPrefix !== undefined ? input.postSuccessPrefix : current.postSuccessPrefix || ""),
+    loginConcurrency: clampConcurrency(input.loginConcurrency, current.loginConcurrency || DEFAULT_CONFIG.loginConcurrency, 4),
     fullConcurrency: clampConcurrency(input.fullConcurrency, current.fullConcurrency || DEFAULT_CONFIG.fullConcurrency, 4),
     fullUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.fullUnknownRetryCount ?? current.fullUnknownRetryCount ?? DEFAULT_CONFIG.fullUnknownRetryCount) || 0))),
     postConcurrency: clampConcurrency(input.postConcurrency, current.postConcurrency || DEFAULT_CONFIG.postConcurrency, 4),
@@ -1204,6 +1208,7 @@ function forceSingleThreadForProxyPanel(config = {}) {
   if (!stateProxyUsesProxyPanel(config)) return config;
   return {
     ...config,
+    loginConcurrency: 1,
     fullConcurrency: 1,
     postConcurrency: 1,
     checkConcurrency: 1,
@@ -1252,6 +1257,7 @@ async function saveConfigV2(input) {
     fourVPostPackageWeight: String(input.fourVPostPackageWeight !== undefined ? input.fourVPostPackageWeight : current.fourVPostPackageWeight || DEFAULT_CONFIG.fourVPostPackageWeight).trim() || DEFAULT_CONFIG.fourVPostPackageWeight,
     fourVPostSuccessPrefix: String(input.fourVPostSuccessPrefix !== undefined ? input.fourVPostSuccessPrefix : current.fourVPostSuccessPrefix || ""),
     postSuccessPrefix: String(input.postSuccessPrefix !== undefined ? input.postSuccessPrefix : current.postSuccessPrefix || ""),
+    loginConcurrency: clampConcurrency(input.loginConcurrency, current.loginConcurrency || DEFAULT_CONFIG.loginConcurrency, 4),
     fullConcurrency: clampConcurrency(input.fullConcurrency, current.fullConcurrency || DEFAULT_CONFIG.fullConcurrency, 4),
     fullUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.fullUnknownRetryCount ?? current.fullUnknownRetryCount ?? DEFAULT_CONFIG.fullUnknownRetryCount) || 0))),
     postConcurrency: clampConcurrency(input.postConcurrency, current.postConcurrency || DEFAULT_CONFIG.postConcurrency, 4),
@@ -3051,6 +3057,16 @@ const lamFullModule = createLamFull({
   runtime: toolRuntime
 });
 
+const toolLoginModule = createToolLogin({
+  getManager: getShippingFullManager,
+  dangNhap: dangNhapModule,
+  addRuntimeLog,
+  buildToolRow,
+  createSheetRowSession,
+  stateProxy: stateProxyTool,
+  runtime: toolRuntime
+});
+
 const dienMatKhauModule = createDienMatKhau({
   addRuntimeLog,
   createSheetRowSession,
@@ -3477,6 +3493,22 @@ async function handleApi(req, res) {
       });
       return jsonResponse(res, 200, { ok: true, data });
     }
+    if (req.method === "POST" && url.pathname === "/api/tools/login") {
+      const body = await parseBody(req);
+      const config = forceSingleThreadForProxyPanel(await resolveAccountSheetConfig(await readConfig()));
+      if (body.concurrency !== undefined) config.loginConcurrency = clampConcurrency(body.concurrency, config.loginConcurrency || DEFAULT_CONFIG.loginConcurrency, 4);
+      if (stateProxyUsesProxyPanel(config)) config.loginConcurrency = 1;
+      const data = await startAutoRetryBatch({
+        runtime: toolRuntime,
+        module: toolLoginModule,
+        tool: "tool login",
+        profileIds: body.profileIds || [],
+        config,
+        options: {},
+        addRuntimeLog
+      });
+      return jsonResponse(res, 200, { ok: true, data });
+    }
     if (req.method === "POST" && url.pathname === "/api/tools/dien-mat-khau") {
       const body = await parseBody(req);
       const passwordConfig = await resolveAccountSheetConfig(await readConfig());
@@ -3791,10 +3823,6 @@ server.listen(5177, "127.0.0.1", () => {
   startBackgroundHideSheetSync();
   startProxyMonitor();
 });
-
-
-
-
 
 
 

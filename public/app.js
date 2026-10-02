@@ -7,6 +7,7 @@
   selectedNotificationIds: new Set(),
   selectedCheckOrderIds: new Set(),
   selectedFullIds: new Set(),
+  selectedLoginIds: new Set(),
   selectedPostIds: new Set(),
   selectedPost4VIds: new Set(),
   selectedInteractionIds: new Set(),
@@ -18,6 +19,7 @@
   checkOrderBatchIds: [],
   linkOrderBatchIds: [],
   fullBatchIds: [],
+  loginBatchIds: [],
   postBatchIds: [],
   post4VBatchIds: [],
   interactionBatchIds: [],
@@ -39,6 +41,8 @@
   checkOrderBulkSearchQuery: "",
   fullSearchQuery: "",
   fullBulkSearchQuery: "",
+  loginSearchQuery: "",
+  loginBulkSearchQuery: "",
   fullProgressFilter: "all",
   fullResultFilter: "all",
   postSearchQuery: "",
@@ -264,6 +268,7 @@ async function loadConfig() {
   if ($("marketplaceCheckTabsPerNick")) $("marketplaceCheckTabsPerNick").value = config.marketplaceCheckTabsPerNick || 5;
   if ($("marketplaceCheckTimeoutMs")) $("marketplaceCheckTimeoutMs").value = config.marketplaceCheckTimeoutMs || 90000;
   if ($("fullConcurrency")) $("fullConcurrency").value = config.fullConcurrency || 4;
+  if ($("loginConcurrency")) $("loginConcurrency").value = config.loginConcurrency || 4;
   if ($("fullUnknownRetryCount")) $("fullUnknownRetryCount").value = Math.max(0, Math.min(3, Number(config.fullUnknownRetryCount ?? 1)));
   if ($("postConcurrency")) $("postConcurrency").value = config.postConcurrency || 4;
   if ($("postUnknownRetryCount")) $("postUnknownRetryCount").value = Math.max(0, Math.min(3, Number(config.postUnknownRetryCount ?? 1)));
@@ -356,6 +361,7 @@ async function saveConfig() {
       marketplaceCheckNick2Id: $("marketplaceCheckNick2Id")?.value || "",
       marketplaceCheckTabsPerNick: Math.max(1, Math.min(20, Number($("marketplaceCheckTabsPerNick")?.value || 5))),
       marketplaceCheckTimeoutMs: Math.max(30000, Math.min(240000, Number($("marketplaceCheckTimeoutMs")?.value || 90000))),
+      loginConcurrency: Number($("loginConcurrency")?.value || 4),
       fullConcurrency: Number($("fullConcurrency")?.value || 4),
       fullUnknownRetryCount: Math.max(0, Math.min(3, Number($("fullUnknownRetryCount")?.value || 0))),
       postConcurrency: Number($("postConcurrency")?.value || 4),
@@ -599,6 +605,7 @@ function updateSelectionSummary(summaryId, buttonId, selectedCount) {
 function primeToolProgress(profileIds, liveStatus, batchKey = "generic") {
   if (batchKey === "notifications") state.notificationBatchIds = [...(profileIds || [])];
   if (batchKey === "full") state.fullBatchIds = [...(profileIds || [])];
+  if (batchKey === "login") state.loginBatchIds = [...(profileIds || [])];
   if (batchKey === "post") state.postBatchIds = [...(profileIds || [])];
   if (batchKey === "interaction") state.interactionBatchIds = [...(profileIds || [])];
   if (batchKey === "pages") state.pageBatchIds = [...(profileIds || [])];
@@ -708,6 +715,7 @@ function renderActiveModule() {
   if (state.activeModule === "notifications") renderNotificationRows();
   if (state.activeModule === "checkorder") renderCheckOrderRows();
   if (state.activeModule === "full") renderFullRows();
+  if (state.activeModule === "login") renderLoginRows();
   if (state.activeModule === "post") renderPostRows();
   if (state.activeModule === "post4v") renderPost4VRows();
   if (state.activeModule === "interaction") renderInteractionRows();
@@ -1287,6 +1295,7 @@ function setActiveModule(moduleName) {
   $("checkOrderModule").classList.toggle("hidden", moduleName !== "checkorder");
   $("linkOrderModule")?.classList.toggle("hidden", moduleName !== "linkorder");
   $("fullModule").classList.toggle("hidden", moduleName !== "full");
+  $("loginModule")?.classList.toggle("hidden", moduleName !== "login");
   $("postModule").classList.toggle("hidden", moduleName !== "post");
   $("post4vModule")?.classList.toggle("hidden", moduleName !== "post4v");
   $("interactionModule").classList.toggle("hidden", moduleName !== "interaction");
@@ -1300,6 +1309,7 @@ function setActiveModule(moduleName) {
   $("checkOrderModule").classList.toggle("active", moduleName === "checkorder");
   $("linkOrderModule")?.classList.toggle("active", moduleName === "linkorder");
   $("fullModule").classList.toggle("active", moduleName === "full");
+  $("loginModule")?.classList.toggle("active", moduleName === "login");
   $("postModule").classList.toggle("active", moduleName === "post");
   $("post4vModule")?.classList.toggle("active", moduleName === "post4v");
   $("interactionModule").classList.toggle("active", moduleName === "interaction");
@@ -1913,6 +1923,92 @@ async function startLamFull(profileIds) {
   } finally {
     $("runFullSelectedBtn").disabled = false;
     $("runFullTodoBtn").disabled = false;
+  }
+}
+
+function isLoginDone(profile) {
+  return String(profile.sheetData?.Tool || "").trim().toLowerCase().includes("tool login");
+}
+
+function loginProfiles() {
+  let profiles = state.selectedFolderId === "all"
+    ? [...state.profiles]
+    : state.profiles.filter((profile) => profile.folderId === state.selectedFolderId);
+  profiles = profiles.filter((profile) => matchesProfileFilters(profile, state.loginSearchQuery, state.loginBulkSearchQuery));
+  profiles.sort((a, b) => (a.folderName || "").localeCompare(b.folderName || "", "vi", { sensitivity: "base" })
+    || (a.name || "").localeCompare(b.name || "", "vi", { numeric: true, sensitivity: "base" }));
+  return profiles;
+}
+
+function renderLoginRows() {
+  if (!$("loginRows")) return;
+  const all = state.selectedFolderId === "all"
+    ? [...state.profiles]
+    : state.profiles.filter((profile) => profile.folderId === state.selectedFolderId);
+  if (!toolRuntimeIsVisible()) $("loginStatusText").textContent = "Chọn profile rồi chạy Tool Login.";
+  $("loginTotal").textContent = all.length;
+  $("loginDone").textContent = all.filter((profile) => isLoginDone(profile)).length;
+  $("loginError").textContent = all.filter((profile) => String(sheetValue(profile, "trạng thái", "trang thai")).trim().toLowerCase() === "loi").length;
+  const profiles = loginProfiles();
+  $("loginVisible").textContent = profiles.length;
+  updateSelectionSummary("loginSelectionSummary", "clearLoginSelectionBtn", state.selectedLoginIds.size);
+  const rows = $("loginRows");
+  if (!profiles.length) {
+    rows.innerHTML = `<tr><td colspan="9" class="empty">Không có profile phù hợp.</td></tr>`;
+    updateLoginSelectAllState();
+    return;
+  }
+  rows.innerHTML = "";
+  for (const profile of profiles) {
+    const status = String(sheetValue(profile, "trạng thái", "trang thai")).trim();
+    const tr = document.createElement("tr");
+    if (status.toLowerCase() === "loi") tr.classList.add("duplicate-row");
+    tr.innerHTML = `
+      <td><input class="login-check" type="checkbox" data-id="${escapeAttr(profile.id)}" ${state.selectedLoginIds.has(profile.id) ? "checked" : ""} /></td>
+      <td>${escapeHtml(profile.name)}</td><td>${escapeHtml(profile.id)}</td><td class="uid">${escapeHtml(profile.uid || "")}</td>
+      <td>${escapeHtml(profile.sheetData?.Tool || "")}</td><td>${escapeHtml(status)}</td>
+      <td>${escapeHtml(sheetValue(profile, "số vạch", "so vach"))}</td><td>${escapeHtml(sheetValue(profile, "chi tiết", "chi tiet"))}</td><td>${escapeHtml(profile.folderName)}</td>
+    `;
+    rows.appendChild(tr);
+  }
+  rows.querySelectorAll(".login-check").forEach((checkbox) => checkbox.addEventListener("change", () => {
+    if (checkbox.checked) state.selectedLoginIds.add(checkbox.dataset.id);
+    else state.selectedLoginIds.delete(checkbox.dataset.id);
+    updateLoginSelectAllState();
+  }));
+  updateLoginSelectAllState();
+}
+
+function updateLoginSelectAllState() {
+  const selectAll = $("selectAllLoginRows");
+  if (!selectAll) return;
+  const profiles = loginProfiles();
+  const selected = profiles.filter((profile) => state.selectedLoginIds.has(profile.id)).length;
+  selectAll.checked = profiles.length > 0 && selected === profiles.length;
+  selectAll.indeterminate = selected > 0 && selected < profiles.length;
+}
+
+async function startToolLogin(profileIds) {
+  profileIds = orderProfileIdsTopDown(profileIds, "loginRows");
+  if (!profileIds.length) {
+    $("loginStatusText").textContent = "Bạn cần chọn ít nhất một profile để chạy.";
+    return;
+  }
+  try {
+    $("runLoginSelectedBtn").disabled = true;
+    $("runLoginAllBtn").disabled = true;
+    await saveConfig();
+    const concurrency = Math.max(1, Math.min(4, Number($("loginConcurrency")?.value || 4)));
+    const { data } = await api("/api/tools/login", { method: "POST", body: JSON.stringify({ profileIds, concurrency }) });
+    primeToolProgress(profileIds, "bắt đầu: đăng nhập Facebook", "login");
+    $("loginStatusText").textContent = `Đã bắt đầu Tool Login ${data.started} profile với ${data.concurrency || 1} luồng.`;
+    await refreshToolStatus();
+    startToolStatusPolling();
+  } catch (error) {
+    $("loginStatusText").textContent = error.message;
+  } finally {
+    $("runLoginSelectedBtn").disabled = false;
+    $("runLoginAllBtn").disabled = false;
   }
 }
 
@@ -2559,6 +2655,7 @@ async function refreshToolStatus() {
       stopToolStatusPolling();
       await refreshHide({ silent: true });
       if ($("fullStatusText")) $("fullStatusText").textContent = "Tool làm full đã chạy xong.";
+      if ($("loginStatusText")) $("loginStatusText").textContent = "Tool Login đã chạy xong.";
       if ($("postStatusText")) $("postStatusText").textContent = "Tool đăng bài đã chạy xong.";
       if ($("post4vStatusText")) $("post4vStatusText").textContent = "Tool đăng bài 4v đã chạy xong.";
       if ($("interactionStatusText")) $("interactionStatusText").textContent = "Tool tương tác đã chạy xong.";
@@ -2646,6 +2743,7 @@ function renderToolProgress(data) {
     jobs: linkOrderProgress.jobs
   });
   const fullProgress = buildProgress(state.fullBatchIds, "lam full");
+  const loginProgress = buildProgress(state.loginBatchIds, "tool login");
   const postProgress = buildProgress(state.postBatchIds, "dang bai");
   const post4VProgress = buildProgress(state.post4VBatchIds, "dang bai 4v");
   const interactionProgress = buildProgress(state.interactionBatchIds, "tuong tac");
@@ -2677,6 +2775,19 @@ function renderToolProgress(data) {
     textLabel: fullProgress.summaryText,
     percent: fullProgress.percent,
     jobs: fullProgress.jobs
+  });
+  renderToolProgressPanel({
+    panelId: "loginToolProgressPanel",
+    stateId: "loginToolProgressState",
+    countId: "loginToolProgressCount",
+    textId: "loginToolProgressText",
+    barId: "loginToolProgressBar",
+    listId: "loginToolProgressList",
+    stateLabel: loginProgress.total ? (loginProgress.batch?.active ? "đang chạy" : "xong") : "idle",
+    countLabel: `${loginProgress.completed} / ${loginProgress.total}`,
+    textLabel: loginProgress.summaryText,
+    percent: loginProgress.percent,
+    jobs: loginProgress.jobs
   });
   renderToolProgressPanel({
     panelId: "postToolProgressPanel",
@@ -2776,6 +2887,7 @@ const RUNTIME_PROFILE_TABLE_BODIES = [
   "notificationRows",
   "checkOrderRows",
   "fullRows",
+  "loginRows",
   "postRows",
   "post4vRows",
   "interactionRows",
@@ -3002,6 +3114,7 @@ function renderActivityLogs() {
   renderActivityLogBox("checkOrderActivityLog", logs);
   renderActivityLogBox("linkOrderActivityLog", logs);
   renderActivityLogBox("fullActivityLog", logs);
+  renderActivityLogBox("loginActivityLog", logs);
   renderActivityLogBox("postActivityLog", logs);
   renderActivityLogBox("post4vActivityLog", logs);
   renderActivityLogBox("interactionActivityLog", logs);
@@ -3322,6 +3435,38 @@ $("selectAllNotificationRows").addEventListener("change", (event) => {
 $("runFullSelectedBtn").addEventListener("click", () => {
   startLamFull([...state.selectedFullIds]);
 });
+if ($("runLoginSelectedBtn")) $("runLoginSelectedBtn").addEventListener("click", () => {
+  startToolLogin([...state.selectedLoginIds]);
+});
+if ($("runLoginAllBtn")) $("runLoginAllBtn").addEventListener("click", () => {
+  startToolLogin(loginProfiles().map((profile) => profile.id));
+});
+if ($("stopLoginBtn")) $("stopLoginBtn").addEventListener("click", stopCurrentTool);
+if ($("saveLoginConfig")) $("saveLoginConfig").addEventListener("click", async () => {
+  try {
+    await saveConfig();
+    $("loginStatusText").textContent = "Đã lưu cấu hình Tool Login.";
+  } catch (error) {
+    $("loginStatusText").textContent = error.message;
+  }
+});
+if ($("loginSearchInput")) $("loginSearchInput").addEventListener("input", (event) => {
+  state.loginSearchQuery = event.target.value;
+  state.loginBulkSearchQuery = event.target.value;
+  renderLoginRows();
+});
+if ($("clearLoginSelectionBtn")) $("clearLoginSelectionBtn").addEventListener("click", () => {
+  state.selectedLoginIds.clear();
+  renderLoginRows();
+});
+if ($("selectAllLoginRows")) $("selectAllLoginRows").addEventListener("change", (event) => {
+  for (const profile of loginProfiles()) {
+    if (event.target.checked) state.selectedLoginIds.add(profile.id);
+    else state.selectedLoginIds.delete(profile.id);
+  }
+  renderLoginRows();
+});
+if ($("openLogsFromLoginBtn")) $("openLogsFromLoginBtn").addEventListener("click", () => setActiveModule("logs"));
 if ($("stopFullBtn")) $("stopFullBtn").addEventListener("click", stopCurrentTool);
 $("runFullTodoBtn").addEventListener("click", () => {
   const ids = fullProfiles().filter((profile) => !isFullDone(profile)).map((profile) => profile.id);
@@ -3617,11 +3762,3 @@ loadConfig()
     scheduleStateProxyRealtime();
   })
   .catch((error) => setStatus(error.message, true));
-
-
-
-
-
-
-
-
