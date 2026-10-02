@@ -226,8 +226,10 @@ export function createToolLogin({
 
       await step(profileId, job, "dang nhap Facebook", () => dangNhap.ensureFacebookLogin(manager, page, row, profileId, (status) => {
         if (job) job.liveStatus = status;
-        log(profileId, "dang nhap Facebook", status);
-      }), 300000);
+        if (!String(status || "").startsWith("2FA: đang chờ") && !String(status || "").startsWith("2FA: đã chờ")) {
+          log(profileId, "dang nhap Facebook", status);
+        }
+      }), 900000);
 
       currentName = await step(profileId, job, "quet ten profile", () => readProfileName(manager, profileId, currentName), 30000);
       const cleanedName = stripResolvedNamePrefixes(currentName);

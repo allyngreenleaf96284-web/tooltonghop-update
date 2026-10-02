@@ -4,6 +4,7 @@ import { withFacebookLocale } from "./facebook_locale.js";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // Proxy connections often render Facebook's 2FA screen noticeably later than the password form.
 const TWOFA_SCREEN_WAIT_MS = 120000;
+const TWOFA_INPUT_EXTRA_WAIT_MS = 180000;
 const TWOFA_SETTLE_WAIT_MS = 45000;
 
 function normalizeKey(value) {
@@ -1402,21 +1403,35 @@ export function createDangNhap({ addRuntimeLog }) {
     return true;
   }
 
-  async function completeTwofaIfNeeded(manager, page, row) {
+  async function completeTwofaIfNeeded(manager, page, row, updateLiveStatus = () => {}) {
     const secret = getTwofaValue(row);
     if (!secret) return false;
     let input = null;
     const started = Date.now();
     const minimumWaitUntil = started + TWOFA_SCREEN_WAIT_MS;
-    const deadline = started + TWOFA_SCREEN_WAIT_MS + 120000;
+    const deadline = minimumWaitUntil + TWOFA_INPUT_EXTRA_WAIT_MS;
+    const formatRemaining = (milliseconds) => {
+      const seconds = Math.max(0, Math.ceil(milliseconds / 1000));
+      return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+    };
     while (Date.now() < deadline) {
-      input = await findVisibleTwofaInput(page);
-      if (input && Date.now() >= minimumWaitUntil) break;
-      await sleep(Math.min(1000, Math.max(1, deadline - Date.now())));
+      const now = Date.now();
+      input = await findVisibleTwofaInput(page).catch(() => null);
+      if (input && now >= minimumWaitUntil) break;
+      const remaining = now < minimumWaitUntil ? minimumWaitUntil - now : deadline - now;
+      const status = now < minimumWaitUntil
+        ? `2FA: đang chờ đủ 02:00, còn ${formatRemaining(remaining)}; chưa thao tác`
+        : `2FA: đã chờ đủ 02:00, đang đợi ô nhập mã; còn ${formatRemaining(remaining)}`;
+      updateLiveStatus(status);
+      await input?.dispose?.().catch(() => {});
+      input = null;
+      await sleep(Math.min(1000, Math.max(1, remaining)));
     }
     if (!input) {
-      return false;
+      updateLiveStatus("2FA: hết thời gian dò mà chưa thấy ô nhập mã");
+      throw new Error(`Da doi 2FA du 02:00 va tiep tuc do them ${Math.round(TWOFA_INPUT_EXTRA_WAIT_MS / 60000)} phut nhung van khong thay o nhap ma.`);
     }
+    updateLiveStatus("2FA: da thay o nhap ma, dang nhap ma");
 
     const otp = generateTotp(secret);
     await page.evaluate((otpValue) => {
@@ -1504,7 +1519,7 @@ export function createDangNhap({ addRuntimeLog }) {
     return "timeout";
   }
 
-  async function continueFromProfileChooser(manager, page, row) {
+  async function continueFromProfileChooser(manager, page, row, updateLiveStatus = () => {}) {
     try {
       const password = getPasswordValue(row);
       if (!password) throw new Error(`Nick ${row.uid} thieu mat khau de vuot man Continue.`);
@@ -1529,7 +1544,7 @@ export function createDangNhap({ addRuntimeLog }) {
               continue;
             }
             if (followStep === "twofa") {
-              await completeTwofaIfNeeded(manager, page, row);
+              await completeTwofaIfNeeded(manager, page, row, updateLiveStatus);
               await sleep(2200);
               continue;
             }
@@ -1556,7 +1571,7 @@ export function createDangNhap({ addRuntimeLog }) {
             continue;
           }
           if (postPasswordStep === "twofa") {
-            await completeTwofaIfNeeded(manager, page, row);
+            await completeTwofaIfNeeded(manager, page, row, updateLiveStatus);
             await sleep(2200);
             continue;
           }
@@ -1571,7 +1586,7 @@ export function createDangNhap({ addRuntimeLog }) {
           const nextStep = await waitForPasswordModalAfterContinue(manager, page, 15000);
           if (nextStep === "password_modal") continue;
           if (nextStep === "twofa") {
-            await completeTwofaIfNeeded(manager, page, row);
+            await completeTwofaIfNeeded(manager, page, row, updateLiveStatus);
             await sleep(2200);
             continue;
           }
@@ -1589,7 +1604,7 @@ export function createDangNhap({ addRuntimeLog }) {
         }
         const stepResult = await waitForCredentialStepResult(manager, page, TWOFA_SCREEN_WAIT_MS).catch(() => "timeout");
         if (stepResult === "twofa" || stepResult === "checkpoint") {
-          await completeTwofaIfNeeded(manager, page, row);
+          await completeTwofaIfNeeded(manager, page, row, updateLiveStatus);
           await sleep(2200);
           continue;
         }
@@ -1633,7 +1648,7 @@ export function createDangNhap({ addRuntimeLog }) {
     throw new Error("Login bang cookie khong thanh cong tren facebook.com.");
   }
 
-  async function loginWithAccount(manager, page, row) {
+  async function loginWithAccount(manager, page, row, updateLiveStatus = () => {}) {
     const account = getAccountValue(row);
     const password = getPasswordValue(row);
     if (!account || !password) throw new Error(`Nick ${row.uid} thieu tai khoan hoac mat khau de dang nhap.`);
@@ -1642,7 +1657,7 @@ export function createDangNhap({ addRuntimeLog }) {
     await sleep(1500);
     if (await isProfileChooserState(page)) {
       try {
-        page = await continueFromProfileChooser(manager, page, row);
+        page = await continueFromProfileChooser(manager, page, row, updateLiveStatus);
       } catch (error) {
         if (String(error?.message || "") !== "STANDARD_LOGIN_FORM_VISIBLE") throw error;
       }
@@ -1697,7 +1712,7 @@ export function createDangNhap({ addRuntimeLog }) {
     await sleep(3200);
     let stepResult = await waitForCredentialStepResult(manager, page, TWOFA_SCREEN_WAIT_MS);
     if (stepResult !== "logged_in" && getTwofaValue(row)) {
-      const submittedTwofa = await completeTwofaIfNeeded(manager, page, row);
+      const submittedTwofa = await completeTwofaIfNeeded(manager, page, row, updateLiveStatus);
       if (submittedTwofa) {
         await sleep(3200);
         stepResult = await waitForCredentialStepResult(manager, page, TWOFA_SETTLE_WAIT_MS);
@@ -1993,8 +2008,8 @@ export function createDangNhap({ addRuntimeLog }) {
         if (needsContinue) {
           page = await loginStep(profileId, updateLiveStatus, "login: xu ly continue sau cookie", "dang xu ly Continue/2FA sau cookie", async () => {
             const nextPage = typeof manager?.continueFromProfileChooser === "function"
-              ? await manager.continueFromProfileChooser(page, row)
-              : await continueFromProfileChooser(manager, page, row);
+              ? await manager.continueFromProfileChooser(page, row, updateLiveStatus)
+              : await continueFromProfileChooser(manager, page, row, updateLiveStatus);
             await handlePostLoginDismiss(manager, nextPage);
             await throwIfCaptchaChallenge(nextPage, "login: xu ly continue sau cookie");
             return nextPage;
@@ -2009,8 +2024,8 @@ export function createDangNhap({ addRuntimeLog }) {
         logLogin(profileId, "login: cookie", `login cookie loi: ${cookieError.message}. Chuyen sang tai khoan/mat khau.`, "warn", cookieError.message);
         await loginStep(profileId, updateLiveStatus, "login: tai khoan mat khau", "dang login bang tai khoan/mat khau", async () => {
           const result = typeof manager?.loginWithAccount === "function"
-            ? await manager.loginWithAccount(page, row)
-            : await loginWithAccount(manager, page, row);
+            ? await manager.loginWithAccount(page, row, updateLiveStatus)
+            : await loginWithAccount(manager, page, row, updateLiveStatus);
           page = result.page || page;
           await handlePostLoginDismiss(manager, page);
           await throwIfCaptchaChallenge(page, "login: tai khoan mat khau");

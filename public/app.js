@@ -2711,6 +2711,11 @@ function renderToolProgress(data) {
     } else if (runningNames.length) {
       summaryText += ` Đang xử lý: ${runningNames.join(", ")}${runningNames.length >= 4 ? "..." : ""}.`;
     }
+    if (toolName === "tool login") {
+      const twofaWaitJob = jobs.find((job) => String(job.status || "").toLowerCase() === "running"
+        && String(job.liveStatus || "").startsWith("2FA:"));
+      if (twofaWaitJob) summaryText = `${twofaWaitJob.profileId}: ${twofaWaitJob.liveStatus}`;
+    }
     return { jobs, total, completed, active, percent, summaryText, batch, retryWaiting, retryRunning };
   };
   const notificationProgress = buildProgress(state.notificationBatchIds, "xem thong bao");
