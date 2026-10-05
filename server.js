@@ -3214,7 +3214,7 @@ async function fetchUpdateJson(url) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), UPDATE_DOWNLOAD_TIMEOUT_MS);
   try {
-    const response = await fetch(url, { signal: controller.signal, headers: { "cache-control": "no-cache" } });
+    const response = await fetch(cacheBustedUpdateUrl(url), { signal: controller.signal, headers: { "cache-control": "no-cache", pragma: "no-cache" } });
     if (!response.ok) throw new Error(`Khong tai duoc manifest cap nhat: HTTP ${response.status}`);
     return response.json();
   } finally {
@@ -3226,11 +3226,21 @@ async function fetchUpdateBuffer(url) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), UPDATE_DOWNLOAD_TIMEOUT_MS);
   try {
-    const response = await fetch(url, { signal: controller.signal, headers: { "cache-control": "no-cache" } });
+    const response = await fetch(cacheBustedUpdateUrl(url), { signal: controller.signal, headers: { "cache-control": "no-cache", pragma: "no-cache" } });
     if (!response.ok) throw new Error(`Khong tai duoc file cap nhat: HTTP ${response.status}`);
     return Buffer.from(await response.arrayBuffer());
   } finally {
     clearTimeout(timer);
+  }
+}
+
+function cacheBustedUpdateUrl(value) {
+  try {
+    const url = new URL(String(value || ""));
+    url.searchParams.set("tool_update", `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
+    return url.toString();
+  } catch {
+    return String(value || "");
   }
 }
 
