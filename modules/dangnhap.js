@@ -2062,7 +2062,8 @@ export function createDangNhap({ addRuntimeLog }) {
     };
   }
 
-  async function ensureFacebookLogin(manager, page, row, profileId, updateLiveStatus) {
+  async function ensureFacebookLogin(manager, page, row, profileId, updateLiveStatus, options = {}) {
+    const forceAccountLogin = Boolean(options?.forceAccountLogin);
     await loginStep(profileId, updateLiveStatus, "login: block Notifications chrome", "dang block Notifications cho facebook.com", async () => {
       await blockFacebookNotificationsInChrome(page);
     });
@@ -2076,6 +2077,15 @@ export function createDangNhap({ addRuntimeLog }) {
       await handlePostLoginDismiss(manager, page);
     });
 
+    if (forceAccountLogin) {
+      await loginStep(profileId, updateLiveStatus, "login: xoa session cu", "Tool Login dang xoa session cu va mo form tai khoan/mat khau", async () => {
+        await clearFacebookCookiesOnly(page);
+        await openStandardFacebookLogin(page);
+        await page.waitForSelector("body", { timeout: 10000 }).catch(() => {});
+        await throwIfCaptchaChallenge(page, "login: mo form tai khoan mat khau");
+      });
+    }
+
     const currentState = await loginStep(profileId, updateLiveStatus, "login: doc trang thai hien tai", "dang doc trang thai dang nhap", async () => {
       const state = await detectCurrentState(manager, page);
       if (state.checkpointStatus) {
@@ -2087,7 +2097,15 @@ export function createDangNhap({ addRuntimeLog }) {
     });
 
     let loginSource = "login";
-    if (currentState.hasSession && !currentState.onLoginForm && !currentState.onContinue && !currentState.onPasswordModal && currentState.credentialStep !== "twofa") {
+    if (forceAccountLogin) {
+      await loginStep(profileId, updateLiveStatus, "login: tai khoan mat khau", "Tool Login dang login bang tai khoan/mat khau", async () => {
+        const result = await loginWithAccount(manager, page, row, updateLiveStatus);
+        page = result.page || page;
+        await handlePostLoginDismiss(manager, page);
+        await throwIfCaptchaChallenge(page, "login: tai khoan mat khau");
+      });
+      loginSource = "account";
+    } else if (currentState.hasSession && !currentState.onLoginForm && !currentState.onContinue && !currentState.onPasswordModal && currentState.credentialStep !== "twofa") {
       updateLiveStatus("dang nhap Facebook da co san");
       logLogin(profileId, "login: session co san", "dang nhap Facebook da co san", "success");
       loginSource = "session";
