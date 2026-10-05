@@ -273,7 +273,7 @@ export function createToolLogin({
         if (!String(status || "").startsWith("2FA: đang chờ") && !String(status || "").startsWith("2FA: đã chờ")) {
           log(profileId, "dang nhap Facebook", status);
         }
-      }), 900000);
+      }, { forceAccountLogin: true }), 900000);
 
       currentName = await step(profileId, job, "quet ten profile", () => readProfileName(manager, profileId, currentName), 30000);
       const cleanedName = stripResolvedNamePrefixes(currentName);
