@@ -151,8 +151,10 @@ export function createDangNhap({ addRuntimeLog }) {
     }
   }
 
-  async function openStandardFacebookLogin(page) {
-    const targetUrl = withFacebookLocale("https://www.facebook.com/");
+  async function openStandardFacebookLogin(page, { forceLoginForm = false } = {}) {
+    const targetUrl = withFacebookLocale(forceLoginForm
+      ? "https://www.facebook.com/login/"
+      : "https://www.facebook.com/");
     let lastError = null;
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       try {
@@ -1593,10 +1595,11 @@ export function createDangNhap({ addRuntimeLog }) {
     return true;
   }
 
-  async function waitForCredentialStepResult(manager, page, timeoutMs = 10000) {
+  async function waitForCredentialStepResult(manager, page, timeoutMs = 10000, { detectLiteRedirect = false } = {}) {
     const started = Date.now();
     while (Date.now() - started < timeoutMs) {
       try {
+        if (detectLiteRedirect && isFacebookLiteUrl(page)) return "lite";
         if (await hasActiveFacebookSession(page)) return "logged_in";
         const url = String(page.url() || "").toLowerCase();
         if (url.includes("two_step_verification") || url.includes("two-factor")) return "twofa";
@@ -1758,11 +1761,14 @@ export function createDangNhap({ addRuntimeLog }) {
     throw new Error("Login bang cookie khong thanh cong tren facebook.com.");
   }
 
-  async function loginWithAccount(manager, page, row, updateLiveStatus = () => {}) {
+  async function loginWithAccount(manager, page, row, updateLiveStatus = () => {}, options = {}) {
     const account = getAccountValue(row);
     const password = getPasswordValue(row);
+    const preventLiteRedirect = Boolean(options?.preventLiteRedirect);
+    const forceLoginForm = Boolean(options?.forceLoginForm);
+    const accountAttempt = Math.max(1, Number(options?.accountAttempt || 1));
     if (!account || !password) throw new Error(`Nick ${row.uid} thieu tai khoan hoac mat khau de dang nhap.`);
-    await openStandardFacebookLogin(page);
+    await openStandardFacebookLogin(page, { forceLoginForm });
     await page.waitForSelector("body", { timeout: 10000 }).catch(() => {});
     await sleep(1500);
     if (await isProfileChooserState(page)) {
@@ -1820,12 +1826,42 @@ export function createDangNhap({ addRuntimeLog }) {
       await passwordInput?.press("Enter").catch(() => {});
     }
     await sleep(3200);
-    let stepResult = await waitForCredentialStepResult(manager, page, TWOFA_SCREEN_WAIT_MS);
+    let stepResult = await waitForCredentialStepResult(manager, page, TWOFA_SCREEN_WAIT_MS, { detectLiteRedirect: preventLiteRedirect });
+    if (stepResult === "lite") {
+      if (accountAttempt < 3) {
+        updateLiveStatus(`Tool Login phat hien /lite/, mo lai form desktop lan ${accountAttempt + 1}/3`);
+        await openStandardFacebookLogin(page, { forceLoginForm: true });
+        return loginWithAccount(manager, page, row, updateLiveStatus, {
+          ...options,
+          preventLiteRedirect: true,
+          forceLoginForm: true,
+          accountAttempt: accountAttempt + 1
+        });
+      }
+      const error = new Error("Facebook da redirect sang /lite/ sau khi bam Login 3 lan.");
+      error.status = "loi login";
+      throw error;
+    }
     if (stepResult !== "logged_in" && getTwofaValue(row)) {
       const submittedTwofa = await completeTwofaIfNeeded(manager, page, row, updateLiveStatus);
       if (submittedTwofa) {
         await sleep(3200);
-        stepResult = await waitForCredentialStepResult(manager, page, TWOFA_SETTLE_WAIT_MS);
+        stepResult = await waitForCredentialStepResult(manager, page, TWOFA_SETTLE_WAIT_MS, { detectLiteRedirect: preventLiteRedirect });
+        if (stepResult === "lite") {
+          if (accountAttempt < 3) {
+            updateLiveStatus(`Tool Login phat hien /lite/ sau 2FA, mo lai form desktop lan ${accountAttempt + 1}/3`);
+            await openStandardFacebookLogin(page, { forceLoginForm: true });
+            return loginWithAccount(manager, page, row, updateLiveStatus, {
+              ...options,
+              preventLiteRedirect: true,
+              forceLoginForm: true,
+              accountAttempt: accountAttempt + 1
+            });
+          }
+          const error = new Error("Facebook da redirect sang /lite/ sau khi nhap 2FA 3 lan.");
+          error.status = "loi login";
+          throw error;
+        }
       }
     }
     await throwIfCaptchaChallenge(page, "login: tai khoan mat khau");
@@ -2080,7 +2116,7 @@ export function createDangNhap({ addRuntimeLog }) {
     if (forceAccountLogin) {
       await loginStep(profileId, updateLiveStatus, "login: xoa session cu", "Tool Login dang xoa session cu va mo form tai khoan/mat khau", async () => {
         await clearFacebookCookiesOnly(page);
-        await openStandardFacebookLogin(page);
+        await openStandardFacebookLogin(page, { forceLoginForm: true });
         await page.waitForSelector("body", { timeout: 10000 }).catch(() => {});
         await throwIfCaptchaChallenge(page, "login: mo form tai khoan mat khau");
       });
@@ -2099,7 +2135,10 @@ export function createDangNhap({ addRuntimeLog }) {
     let loginSource = "login";
     if (forceAccountLogin) {
       await loginStep(profileId, updateLiveStatus, "login: tai khoan mat khau", "Tool Login dang login bang tai khoan/mat khau", async () => {
-        const result = await loginWithAccount(manager, page, row, updateLiveStatus);
+        const result = await loginWithAccount(manager, page, row, updateLiveStatus, {
+          forceLoginForm: true,
+          preventLiteRedirect: true
+        });
         page = result.page || page;
         await handlePostLoginDismiss(manager, page);
         await throwIfCaptchaChallenge(page, "login: tai khoan mat khau");
