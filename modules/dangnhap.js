@@ -7,6 +7,30 @@ const TWOFA_SCREEN_WAIT_MS = 120000;
 const TWOFA_INPUT_EXTRA_WAIT_MS = 180000;
 const TWOFA_SETTLE_WAIT_MS = 45000;
 
+export function clickLoginDismissControl() {
+  const isVisible = (element) => {
+    if (!(element instanceof HTMLElement)) return false;
+    const rect = element.getBoundingClientRect();
+    const style = window.getComputedStyle(element);
+    return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+  };
+  const nodes = Array.from(document.querySelectorAll("button, input[type='button'], [role='button'], div[tabindex='0']"));
+  const target = nodes.find((element) => {
+    if (!isVisible(element) || element.matches(":disabled, [aria-disabled='true']")) return false;
+    // Footer links such as Facebook Lite must never be treated as popup actions.
+    const link = element.closest("a[href]");
+    if (link && !/^(?:#|javascript:)/i.test(link.getAttribute("href") || "")) return false;
+    const label = String(element.getAttribute("aria-label") || element.innerText || element.textContent || element.value || "")
+      .replace(/\s+/g, " ").trim();
+    if (/^(?:not now|dismiss|allow essential and optional cookies|allow all cookies|don'?t allow|khong bay gio|bo qua)$/i.test(label)) return true;
+    return /^(?:ok|skip|close|cancel|block|dong)$/i.test(label)
+      && Boolean(element.closest("[role='dialog'], [aria-modal='true']"));
+  });
+  if (!target) return false;
+  target.click();
+  return true;
+}
+
 function normalizeKey(value) {
   return String(value || "")
     .normalize("NFD")
@@ -615,40 +639,8 @@ export function createDangNhap({ addRuntimeLog }) {
       } catch {}
     }).catch(() => {});
 
-    const labelPatterns = [
-      /not now/i,
-      /dismiss/i,
-      /skip/i,
-      /close/i,
-      /cancel/i,
-      /ok/i,
-      /allow essential and optional cookies/i,
-      /allow all cookies/i,
-      /block/i,
-      /don'?t allow/i,
-      /khong bay gio/i,
-      /bo qua/i,
-      /dong/i
-    ];
     for (let round = 0; round < 4; round += 1) {
-      const clicked = await page.evaluate((patterns) => {
-        const isVisible = (element) => {
-          if (!(element instanceof HTMLElement)) return false;
-          const rect = element.getBoundingClientRect();
-          const style = window.getComputedStyle(element);
-          return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
-        };
-        const nodes = Array.from(document.querySelectorAll("button, [role='button'], a, div[tabindex='0']"));
-        const target = nodes.find((node) => {
-          const element = node instanceof HTMLElement ? node : node?.parentElement;
-          if (!(element instanceof HTMLElement) || !isVisible(element)) return false;
-          const text = String(element.innerText || element.textContent || element.getAttribute("aria-label") || "").replace(/\s+/g, " ").trim();
-          return patterns.some((pattern) => new RegExp(pattern, "i").test(text));
-        });
-        if (!(target instanceof HTMLElement)) return false;
-        target.click();
-        return true;
-      }, labelPatterns.map((pattern) => pattern.source)).catch(() => false);
+      const clicked = await page.evaluate(clickLoginDismissControl).catch(() => false);
       if (!clicked) break;
       await sleep(900);
     }
