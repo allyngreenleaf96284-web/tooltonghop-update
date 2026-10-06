@@ -31,6 +31,193 @@ export function clickLoginDismissControl() {
   return true;
 }
 
+export function passwordManagerControl(action = "inspect") {
+  if (location.protocol !== "chrome:" || location.hostname !== "password-manager") return { ready: false };
+  const path = decodeURIComponent(location.pathname).replace(/\/$/, "");
+  const collect = (root) => {
+    const queue = [root];
+    const nodes = [];
+    while (queue.length) {
+      for (const node of queue.shift().querySelectorAll("*")) {
+        nodes.push(node);
+        if (node.shadowRoot) queue.push(node.shadowRoot);
+      }
+    }
+    return nodes;
+  };
+  const visible = (element) => {
+    const rect = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+  };
+  const all = collect(document);
+  if (path === "/passwords/facebook.com") {
+    const section = all.find((node) => node.localName === "password-details-section" && visible(node));
+    if (!section?.shadowRoot) return { ready: false, view: "detail" };
+    const cards = collect(section.shadowRoot).filter((node) => node.localName === "password-details-card" && visible(node));
+    if (!cards.length) return { ready: false, view: "detail" };
+    const safeCards = cards.filter((card) => {
+      const sites = collect(card.shadowRoot || card).filter((node) => node.matches("a[href]") && /^https?:/i.test(node.href));
+      // Do not delete credentials shared with a non-Facebook site.
+      return sites.length > 0 && sites.every((node) => {
+        const host = new URL(node.href).hostname.toLowerCase();
+        return host === "facebook.com" || host.endsWith(".facebook.com");
+      });
+    });
+    const result = { ready: true, view: "detail", count: cards.length, safeCount: safeCards.length };
+    if (action === "delete") {
+      const card = safeCards[0];
+      const button = card && collect(card.shadowRoot || card).find((node) => node.id === "deleteButton" && visible(node) && !node.disabled);
+      if (!button) return { ...result, clicked: false };
+      button.click();
+      return { ...result, clicked: true };
+    }
+    return result;
+  }
+  if (path === "/passwords") {
+    const section = all.find((node) => node.localName === "passwords-section" && visible(node));
+    return { ready: Boolean(section?.shadowRoot?.querySelector("#passwordsList, #passwords")), view: "list", count: 0 };
+  }
+  if (path === "/settings") {
+    const section = all.find((node) => node.localName === "settings-section" && visible(node));
+    const controls = section?.shadowRoot ? collect(section.shadowRoot) : [];
+    const host = controls.find((node) => node.id === "passwordToggle");
+    const toggle = host?.shadowRoot?.querySelector("cr-toggle") || host;
+    if (!toggle || !visible(toggle) || typeof toggle.checked !== "boolean") return { ready: false, view: "settings" };
+    const checked = toggle.checked;
+    if (action === "disable-saving" && checked && !toggle.disabled) toggle.click();
+    return { ready: true, view: "settings", checked };
+  }
+  return { ready: false };
+}
+
+export async function prepareFacebookPasswordManager(page, updateStatus = () => {}, { timeoutMs = 15000, pollMs = 300 } = {}) {
+  const waitFor = async (predicate, message) => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const state = await page.evaluate(passwordManagerControl).catch(() => ({ ready: false }));
+      if (state.ready && predicate(state)) return state;
+      await sleep(pollMs);
+    }
+    throw new Error(message);
+  };
+  updateStatus("dang kiem tra mat khau Facebook da luu trong Chrome");
+  await page.goto("chrome://password-manager/passwords/facebook.com", { waitUntil: "domcontentloaded", timeout: 45000 });
+  let state = await waitFor((value) => ["detail", "list"].includes(value.view), "Khong tai duoc danh sach mat khau Facebook trong Chrome.");
+  let deleted = 0;
+  const cleanupDeadline = Date.now() + 120000;
+  while (state.view === "detail") {
+    if (Date.now() >= cleanupDeadline) throw new Error("Chua xoa het mat khau Facebook sau 120 giay.");
+    if (state.safeCount !== state.count) throw new Error("Chrome co credential dung chung Facebook va website khac; khong tu dong xoa de tranh mat du lieu website khac.");
+    updateStatus(`dang xoa mat khau Facebook cu trong Chrome; con ${state.count} tai khoan`);
+    const beforeCount = state.count;
+    const result = await page.evaluate(passwordManagerControl, "delete");
+    if (!result.clicked) throw new Error("Khong bam duoc Delete cua tai khoan Facebook da luu trong Chrome.");
+    state = await waitFor((value) => value.view === "list" || (value.view === "detail" && value.count < beforeCount), "Da bam Delete nhung Chrome chua xoa tai khoan Facebook.");
+    deleted += beforeCount - state.count;
+    await sleep(600);
+  }
+  updateStatus(`da xoa ${deleted} tai khoan Facebook da luu; dang tat de nghi luu mat khau`);
+  await page.goto("chrome://password-manager/settings", { waitUntil: "domcontentloaded", timeout: 45000 });
+  await waitFor((value) => value.view === "settings", "Khong tim thay Offer to save passwords and passkeys trong Chrome.");
+  await page.evaluate(passwordManagerControl, "disable-saving");
+  await waitFor((value) => value.view === "settings" && !value.checked, "Khong tat duoc Offer to save passwords and passkeys trong Chrome.");
+  await page.reload({ waitUntil: "domcontentloaded", timeout: 45000 });
+  await waitFor((value) => value.view === "settings" && !value.checked, "Chrome chua luu cau hinh tat Offer to save passwords and passkeys.");
+  return { deleted, savingDisabled: true };
+}
+
+export function authenticationAppControl(action = "inspect") {
+  const normalize = (value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+  const visible = (node) => {
+    if (!(node instanceof HTMLElement)) return false;
+    const rect = node.getBoundingClientRect();
+    const style = getComputedStyle(node);
+    return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+  };
+  const enabled = (node) => visible(node) && !node.matches(":disabled, [aria-disabled='true']");
+  const code = Array.from(document.querySelectorAll("input")).find((node) => enabled(node)
+    && node.type !== "radio" && node.type !== "password"
+    && /approvals_code|security_code|one-time-code|code/.test(normalize(`${node.name} ${node.autocomplete} ${node.placeholder} ${node.getAttribute("aria-label") || ""}`)));
+  if (code) return { stage: "code" };
+  const dialogs = Array.from(document.querySelectorAll("[role='dialog'], [aria-modal='true']")).filter(visible);
+  const dialog = dialogs.find((node) => /authentication app/.test(normalize(node.innerText || node.textContent)));
+  if (dialog) {
+    const radios = Array.from(dialog.querySelectorAll("input[type='radio'], [role='radio']"));
+    let radio = radios.find((node) => /authentication app/.test(normalize(`${node.getAttribute("aria-label") || ""} ${node.innerText || node.textContent || ""} ${node.labels?.[0]?.textContent || ""}`)));
+    if (!radio) {
+      const label = Array.from(dialog.querySelectorAll("span, label, div")).find((node) => visible(node) && normalize(node.innerText || node.textContent) === "authentication app");
+      let parent = label;
+      while (parent && parent !== dialog) {
+        const candidates = Array.from(parent.querySelectorAll("[role='radio'], input[type='radio']"));
+        radio = parent.matches("[role='radio'], input[type='radio']") ? parent : candidates.length === 1 ? candidates[0] : null;
+        if (radio) break;
+        parent = parent.parentElement;
+      }
+    }
+    if (!radio || radio.matches(":disabled, [aria-disabled='true']")) return { stage: "choice", selected: false, available: false };
+    const selected = radio.checked === true || radio.getAttribute("aria-checked") === "true";
+    if (action === "select-app" && !selected) {
+      const target = visible(radio) ? radio : radio.closest("label") || radio.parentElement;
+      if (enabled(target)) target.click();
+    }
+    const next = Array.from(dialog.querySelectorAll("button, [role='button'], input[type='submit']"))
+      .find((node) => enabled(node) && normalize(node.getAttribute("aria-label") || node.innerText || node.textContent || node.value) === "continue");
+    if (action === "continue" && selected && next) {
+      next.click();
+      return { stage: "submitted", selected: true };
+    }
+    return { stage: "choice", selected, available: true, canContinue: Boolean(next) };
+  }
+  const text = normalize(document.body?.innerText || "");
+  if (/check your notifications on another device|waiting for approval/.test(text)) {
+    const button = Array.from(document.querySelectorAll("button, [role='button']"))
+      .find((node) => enabled(node) && normalize(node.getAttribute("aria-label") || node.innerText || node.textContent) === "try another way");
+    if (action === "try-another" && button) button.click();
+    return { stage: "approval", available: Boolean(button) };
+  }
+  return { stage: "waiting" };
+}
+
+export async function chooseAuthenticationAppTwofa(page, {
+  timeoutMs = 15000, pollMs = 300, actionDelayMs = 800, deadline = Infinity, onProgress = () => {}
+} = {}) {
+  const waitFor = async (predicate) => {
+    const until = Math.min(deadline, Date.now() + timeoutMs);
+    while (Date.now() < until) {
+      onProgress();
+      const state = await page.evaluate(authenticationAppControl).catch(() => ({ stage: "waiting" }));
+      if (predicate(state)) return state;
+      await sleep(pollMs);
+    }
+    return null;
+  };
+  let state = await page.evaluate(authenticationAppControl).catch(() => ({ stage: "waiting" }));
+  if (state.stage === "code") return true;
+  if (state.stage === "approval" && state.available) {
+    await sleep(actionDelayMs);
+    await page.evaluate(authenticationAppControl, "try-another").catch(() => {});
+    state = await waitFor((value) => value.stage === "choice" || value.stage === "code");
+  }
+  if (!state || state.stage === "waiting" || state.stage === "approval") return false;
+  if (state.stage === "code") return true;
+  if (!state.selected) {
+    await sleep(actionDelayMs);
+    await page.evaluate(authenticationAppControl, "select-app").catch(() => {});
+    state = await waitFor((value) => value.stage === "code" || (value.stage === "choice" && value.selected));
+  }
+  if (!state) return false;
+  if (state.stage === "code") return true;
+  state = await waitFor((value) => value.stage === "code" || (value.stage === "choice" && value.selected && value.canContinue));
+  if (!state) return false;
+  if (state.stage === "code") return true;
+  await sleep(actionDelayMs);
+  const result = await page.evaluate(authenticationAppControl, "continue").catch(() => null);
+  if (result?.stage === "code") return true;
+  if (result?.stage !== "submitted") return false;
+  return Boolean(await waitFor((value) => value.stage === "code"));
+}
+
 function normalizeKey(value) {
   return String(value || "")
     .normalize("NFD")
@@ -1442,50 +1629,6 @@ export function createDangNhap({ addRuntimeLog }) {
     return asElement;
   }
 
-  async function chooseAuthenticationAppTwofa(page) {
-    const onAnotherDeviceStep = await page.evaluate(() => {
-      const text = String(document.body?.innerText || "").replace(/\s+/g, " ").trim().toLowerCase();
-      return /check your notifications on another device/i.test(text)
-        || (/waiting for approval/i.test(text) && /try another way/i.test(text));
-    }).catch(() => false);
-    if (!onAnotherDeviceStep) return false;
-
-    const clickedTryAnotherWay = await clickByText(page, ["Try another way"]).catch(() => false);
-    if (!clickedTryAnotherWay) return false;
-    await sleep(1400);
-
-    await page.evaluate(() => {
-      const normalize = (value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
-      const isVisible = (element) => {
-        if (!(element instanceof HTMLElement)) return false;
-        const rect = element.getBoundingClientRect();
-        const style = window.getComputedStyle(element);
-        return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
-      };
-      const candidates = Array.from(document.querySelectorAll("label, [role='radio'], [role='button'], button, div"));
-      for (const node of candidates) {
-        const element = node instanceof HTMLElement ? node : node?.parentElement;
-        if (!(element instanceof HTMLElement) || !isVisible(element)) continue;
-        const text = normalize(element.innerText || element.textContent || "");
-        if (!/authentication app/.test(text)) continue;
-        const radio = element.querySelector("input[type='radio']") || element;
-        if (radio instanceof HTMLElement) {
-          radio.click();
-          element.click();
-          break;
-        }
-      }
-    }).catch(() => {});
-
-    await sleep(1000);
-    const clickedContinue = await clickByText(page, ["Continue"]).catch(() => false);
-    if (!clickedContinue) {
-      await clickFirstSelector(page, ["button[type='submit']", "input[type='submit']"]).catch(() => false);
-    }
-    await sleep(2200);
-    return true;
-  }
-
   async function completeTwofaIfNeeded(manager, page, row, updateLiveStatus = () => {}) {
     const secret = getTwofaValue(row);
     if (!secret) return false;
@@ -1497,13 +1640,11 @@ export function createDangNhap({ addRuntimeLog }) {
       const seconds = Math.max(0, Math.ceil(milliseconds / 1000));
       return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
     };
-    while (Date.now() < deadline) {
+    const updateWaitingStatus = () => {
       const now = Date.now();
-      input = await findVisibleTwofaInput(page).catch(() => null);
-      if (input) break;
       const remaining = now < minimumWaitUntil ? minimumWaitUntil - now : deadline - now;
       const status = now < minimumWaitUntil
-        ? `2FA: đang chờ đủ 02:00, còn ${formatRemaining(remaining)}; chưa thao tác`
+        ? `2FA: đang đợi ô nhập mã / chọn Authentication app; còn ${formatRemaining(remaining)}`
         : `2FA: đã chờ đủ 02:00, đang đợi ô nhập mã; còn ${formatRemaining(remaining)}`;
       updateLiveStatus(status, {
         twofaActive: true,
@@ -1511,9 +1652,17 @@ export function createDangNhap({ addRuntimeLog }) {
         twofaCountdownEndsAt: minimumWaitUntil,
         twofaWaitingForInput: now >= minimumWaitUntil
       });
+    };
+    while (Date.now() < deadline) {
+      input = await findVisibleTwofaInput(page).catch(() => null);
+      if (input) break;
+      updateWaitingStatus();
+      await chooseAuthenticationAppTwofa(page, { deadline, onProgress: updateWaitingStatus });
+      input = await findVisibleTwofaInput(page).catch(() => null);
+      if (input) break;
       await input?.dispose?.().catch(() => {});
       input = null;
-      await sleep(Math.min(1000, Math.max(1, remaining)));
+      await sleep(Math.min(1000, Math.max(1, deadline - Date.now())));
     }
     if (!input) {
       updateLiveStatus("2FA: hết thời gian dò mà chưa thấy ô nhập mã", {
@@ -2092,6 +2241,10 @@ export function createDangNhap({ addRuntimeLog }) {
 
   async function ensureFacebookLogin(manager, page, row, profileId, updateLiveStatus, options = {}) {
     const forceAccountLogin = Boolean(options?.forceAccountLogin);
+    await loginStep(profileId, updateLiveStatus, "login: don mat khau Chrome", "dang don mat khau Facebook cu trong Chrome", async () => {
+      const result = await prepareFacebookPasswordManager(page, updateLiveStatus);
+      logLogin(profileId, "login: don mat khau Chrome", `Da xoa ${result.deleted} tai khoan Facebook da luu va tat de nghi luu mat khau.`, "success");
+    });
     await loginStep(profileId, updateLiveStatus, "login: block Notifications chrome", "dang block Notifications cho facebook.com", async () => {
       await blockFacebookNotificationsInChrome(page);
     });
