@@ -1,4 +1,4 @@
-import { withFacebookLocale } from "./facebook_locale.js";
+import { assertMarketplaceAccess, withFacebookLocale } from "./facebook_locale.js";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -722,6 +722,7 @@ export function createCheckOrderTool({
 
       const orderResult = await step(profileId, job, "quet View order", async () => scanListingsAndAccept(manager, page, row, profileId, job), { timeoutMs: 1200000 });
       const shippingOrderCount = await step(profileId, job, "doc Shipping orders", async () => readShippingOrderCount(manager, page, row), { timeoutMs: 180000 });
+      await assertMarketplaceAccess(page);
       resultRow.order = String(shippingOrderCount);
       resultRow["tr\u1ea1ng th\u00e1i"] = "true";
       resultRow["chi ti\u1ebft"] = `da check ${orderResult.checked} view order, accept ${orderResult.accepted}, con ${shippingOrderCount} order`;
@@ -743,7 +744,7 @@ export function createCheckOrderTool({
         }
         return { stopped: true };
       }
-      const mapped = mapErrorForSheet(error);
+      const mapped = mapErrorForSheet(page?.__marketplaceAccess?.error || error);
       resultRow["tr\u1ea1ng th\u00e1i"] = "false";
       resultRow["chi ti\u1ebft"] = mapped.detail || String(error?.message || error || "loi check order");
       await renameProfileOnError(manager, profileId, row, mapped).catch((renameError) => {

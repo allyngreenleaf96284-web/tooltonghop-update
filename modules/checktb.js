@@ -1,5 +1,5 @@
-import { buildStandardName } from "./profile_name.js";
-import { withFacebookLocale } from "./facebook_locale.js";
+import { buildMarketplaceIneligibleName, buildStandardName } from "./profile_name.js";
+import { assertMarketplaceAccess, withFacebookLocale } from "./facebook_locale.js";
 
 export function createCheckTb({
   getManager,
@@ -330,6 +330,7 @@ export function createCheckTb({
       const notificationResult = await runStep(profileId, job, "quet thong bao", async () => {
         return manager.scanNotifications(page, row);
       });
+      await assertMarketplaceAccess(page);
 
       const nameStatus = notificationResult.flags.paused ? "pause" : notificationResult.flags.order ? "order" : "";
       const resolvedBaseName = stripResolvedNamePrefixes(currentName || profileInfo?.name || profileId);
@@ -387,24 +388,26 @@ export function createCheckTb({
         job.result = null;
         return { stopped: true };
       }
-      const mapped = mapErrorForSheet(error);
+      const mapped = mapErrorForSheet(page?.__marketplaceAccess?.error || error);
       const stableName = buildStandardName({
         currentName: stripResolvedNamePrefixes(currentName || profileId),
         sheetRow,
         uid: row.uid
       });
-      const runtimeName = buildRuntimeProfileName({
-        status: mapped.renameStatus || "loi",
-        tenChuan: stableName
-      });
+      const runtimeName = mapped.renameStatus === "die cho"
+        ? page?.__marketplaceAccess?.profileName || buildMarketplaceIneligibleName(currentName || originalName || profileId)
+        : buildRuntimeProfileName({
+          status: mapped.renameStatus || "loi",
+          tenChuan: stableName
+        });
       await manager.updateProfileName(profileId, runtimeName).catch((renameError) => {
         log(profileId, "doi ten profile khi loi", `khong doi duoc ten profile: ${renameError.message}`, "error");
       });
       const finalUpdate = {
         Tool: "xem tb",
-        trangThai: "loi",
+        trangThai: mapped.renameStatus === "die cho" ? "die cho" : "loi",
         chiTiet: mapped.detail || "loi xem thong bao",
-        tenChuan: stableName
+        tenChuan: mapped.renameStatus === "die cho" ? runtimeName : stableName
       };
       job.status = "error";
       job.liveStatus = mapped.detail;

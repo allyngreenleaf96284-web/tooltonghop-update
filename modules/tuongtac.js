@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
+import { isMarketplaceIneligibleError, assertMarketplaceAccess } from "./facebook_locale.js";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const INTERACTION_MAX_CONCURRENCY = 4;
 const FACEBOOK_LOCALE = "en_US";
@@ -2333,7 +2334,7 @@ async function runRenewListingsFlow(interactionManager, page, row, config, optio
   try {
     renewResult = await renewFromDashboard(interactionManager, page, row, config, options, log);
   } catch (error) {
-    if (String(error?.status || "").toLowerCase() === "stopped") throw error;
+    if (String(error?.status || "").toLowerCase() === "stopped" || isMarketplaceIneligibleError(error)) throw error;
     renewResult.error = String(error?.message || error || "loi renew");
     log(row.profile_id, "bam renew", `[${row.uid}] loi buoc To renew nhung van chay Needs attention: ${renewResult.error}`, "warn");
   }
@@ -2341,7 +2342,7 @@ async function runRenewListingsFlow(interactionManager, page, row, config, optio
   try {
     needsResult = await deleteNeedsAttentionListings(interactionManager, page, row, config, options, log);
   } catch (error) {
-    if (String(error?.status || "").toLowerCase() === "stopped") throw error;
+    if (String(error?.status || "").toLowerCase() === "stopped" || isMarketplaceIneligibleError(error)) throw error;
     needsResult.error = String(error?.message || error || "loi needs attention");
     log(row.profile_id, "needs attention", `[${row.uid}] loi buoc Needs attention: ${needsResult.error}`, "warn");
   }
@@ -2353,6 +2354,7 @@ function mapInteractionError(error) {
   const status = String(error?.status || "").trim().toLowerCase();
   const message = String(error?.message || error || "loi khong ro");
   if (status === "stopped") return { status: "stopped", detail: "Da dung han theo yeu cau." };
+  if (isMarketplaceIneligibleError(error)) return { status: "die cho", detail: message };
   const lower = message.toLowerCase();
   if (lower.includes("checkpoint") || lower.includes("captcha") || lower.includes("not a robot")) return { status: "loicapcha", detail: message };
   if (lower.includes("login") || lower.includes("logged out") || lower.includes("see more on facebook") || lower.includes("bi out")) return { status: "biout", detail: message };
@@ -2590,6 +2592,7 @@ export function createTuongTac({
       );
 
       const cookieHeader = await interactionManager.buildCurrentFacebookCookieHeader?.(page).catch(() => "") || "";
+      await assertMarketplaceAccess(page);
       const finalUpdate = {
         Tool: "đã tương tác",
         trangThai: "thành công",
@@ -2615,10 +2618,10 @@ export function createTuongTac({
         return { stopped: true };
       }
 
-      const mapped = mapInteractionError(error);
+      const mapped = mapInteractionError(page?.__marketplaceAccess?.error || error);
       const finalUpdate = {
         Tool: "tuong tac",
-        trangThai: "loi",
+        trangThai: mapped.status === "die cho" ? "die cho" : "loi",
         chiTiet: mapped.detail || "loi tuong tac"
       };
       if (job) {

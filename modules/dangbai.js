@@ -1,8 +1,8 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFile } from "node:fs/promises";
-import { buildStandardName, buildFullSuccessToken } from "./profile_name.js";
-import { withFacebookLocale } from "./facebook_locale.js";
+import { buildStandardName, buildFullSuccessToken, buildMarketplaceIneligibleName } from "./profile_name.js";
+import { withFacebookLocale, isMarketplaceIneligibleError } from "./facebook_locale.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const US_LOCATION_FILE = path.resolve(__dirname, "../data/us_locations.txt");
@@ -75,6 +75,7 @@ function mapPostError(error) {
   const status = String(error?.status || "").trim().toLowerCase();
   const message = String(error?.message || error || "loi khong ro");
   if (status === "stopped") return { status: "stopped", detail: "Da dung han theo yeu cau." };
+  if (isMarketplaceIneligibleError(error)) return { status: "die cho", detail: message };
   if (status === "loisp") return { status: "lỗi sp", detail: message };
   if (status === "loi link sp") return { status: "lỗi link sp", detail: message };
   if (status === "limitdb") return { status: "limitdb", detail: message };
@@ -115,6 +116,7 @@ function stripRuntimeNamePrefixes(value) {
 
 function buildStatusProfileName(status, value) {
   const label = String(status || "").trim();
+  if (label.toLowerCase() === "die cho") return buildMarketplaceIneligibleName(value);
   const base = stripRuntimeNamePrefixes(value) || "profile-tool";
   return label ? `${label}-${base}` : base;
 }
@@ -953,6 +955,7 @@ export function createDangBai({
         if (valid.enabled && !valid.invalid) return suggestionText;
         throw new Error("Da click goi y dau nhung nut Next van chua sang.");
       } catch (error) {
+        if (isMarketplaceIneligibleError(error)) throw error;
         lastError = error;
         log(profileId, "dien location dang bai", `thu lai location lan ${attempt}/3: ${error.message}`, "warn");
         await sleep(800);
@@ -2091,7 +2094,7 @@ export function createDangBai({
       return update;
     } catch (error) {
       if (allocatedSeller) await updateSellerInfoUid(config, allocatedSeller, "").catch(() => {});
-      const mapped = mapPostError(error);
+      const mapped = mapPostError(page?.__marketplaceAccess?.error || error);
       if (mapped.status === "stopped" && !noRollback) {
         sheetWriter.discard();
         await rename(manager, profileId, originalName).catch(() => {});
@@ -2101,10 +2104,10 @@ export function createDangBai({
         return { stopped: true };
       }
       let tenChuan = nameAfterPublishedPost || currentName;
-      if (!nameAfterPublishedPost) {
+      if (!nameAfterPublishedPost || mapped.status === "die cho") {
         // Keep the existing profile-name structure. Errors only replace the
         // leading runtime label, exactly like the 4v posting workflow.
-        const errorName = buildStatusProfileName(mapped.status, currentName);
+        const errorName = page?.__marketplaceAccess?.profileName || buildStatusProfileName(mapped.status, currentName);
         await rename(manager, profileId, errorName);
         tenChuan = errorName;
       }

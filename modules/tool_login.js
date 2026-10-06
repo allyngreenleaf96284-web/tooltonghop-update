@@ -312,7 +312,7 @@ export function createToolLogin({
       job.liveStatus = `da xong ${barStatus}`;
       return update;
     } catch (error) {
-      const mapped = mapFullError(error);
+      const mapped = mapFullError(page?.__marketplaceAccess?.error || error);
       if (mapped.status === "stopped") {
         writer.discard();
         await rename(manager, profileId, originalName).catch(() => {});
@@ -320,7 +320,7 @@ export function createToolLogin({
         job.liveStatus = "da dung han";
         return { stopped: true };
       }
-      const tenChuan = buildStandardName({
+      const tenChuan = page?.__marketplaceAccess?.profileName || buildStandardName({
         currentName,
         sheetRow,
         uid,
@@ -330,7 +330,7 @@ export function createToolLogin({
       await rename(manager, profileId, buildRuntimeProfileName({ status: mapped.status, tenChuan })).catch(() => {});
       const update = {
         Tool: "tool login",
-        trangThai: "loi",
+        trangThai: mapped.status === "die cho" ? "die cho" : "loi",
         soVach: stableBarValue(currentName, sheetRow, barStatus),
         chiTiet: mapped.detail,
         tenChuan

@@ -1,4 +1,4 @@
-import { withFacebookLocale } from "./facebook_locale.js";
+import { withFacebookLocale, isMarketplaceIneligibleError, assertMarketplaceAccess } from "./facebook_locale.js";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const LINK_ORDER_RESTART_DELAY_MS = 60 * 1000;
@@ -115,6 +115,7 @@ function classifyText(text) {
 async function waitForMarketplaceSignal(page, timeoutMs) {
   const deadline = Date.now() + Math.min(timeoutMs, 90000);
   while (Date.now() < deadline) {
+    await assertMarketplaceAccess(page);
     const found = await page.evaluate(() => {
       const text = document.body?.innerText || "";
       if (/this listing is(?:n't| not) available any\s*more/i.test(text)) return true;
@@ -122,6 +123,7 @@ async function waitForMarketplaceSignal(page, timeoutMs) {
       if (/marketplace access|log in|login|checkpoint|confirm your identity/i.test(text)) return true;
       return false;
     }).catch(() => false);
+    await assertMarketplaceAccess(page);
     if (found) return;
     await sleep(750);
   }
@@ -356,8 +358,10 @@ export function createMarketplaceLinkOrderTool({
           await applyWindowTiling(browser, page, workerSlot, workerTotal);
           lastStatus = await classifyPage(page, task.link, timeoutMs);
         }
+        await assertMarketplaceAccess(page);
         lastError = "";
       } catch (error) {
+        if (isMarketplaceIneligibleError(error)) throw error;
         lastError = error.message || String(error);
         lastStatus = "lỗi check";
         log(profileId, "check link", `${label} lan ${attempt} loi: ${lastError}`, "warn");
@@ -479,6 +483,7 @@ export function createMarketplaceLinkOrderTool({
           }
         });
         await Promise.all(workers);
+        await assertMarketplaceAccess(loginPage);
         await waitForSheetPeers(queue);
       }
       if (job) {
@@ -499,9 +504,10 @@ export function createMarketplaceLinkOrderTool({
       if (job) {
         job.status = "error";
         job.liveStatus = error.message || "loi check link order";
+        if (browser?.__marketplaceAccess?.error) job.result = { trangThai: "die cho", chiTiet: error.message };
       }
       log(profileId, "loi tong", `${nickLabel} loi: ${error.message || error}`, "error");
-      return { profileId, error: error.message || String(error), checked, total: totalTasks };
+      return { profileId, error: error.message || String(error), checked, total: totalTasks, permanent: Boolean(browser?.__marketplaceAccess?.error) };
     } finally {
       if (runtime.activeManagers instanceof Map) runtime.activeManagers.delete(profileId);
       try { if (loginPage && !loginPage.isClosed()) await loginPage.close({ runBeforeUnload: false }); } catch {}
@@ -522,7 +528,7 @@ export function createMarketplaceLinkOrderTool({
       nick2 ? { profileId: nick2, nickLabel: "nick 2", direction: "desc" } : null
     ].filter(Boolean);
 
-    const loadPlans = async () => {
+    const loadPlans = async (participantCount = profiles.length) => {
       const sheetInputs = Array.isArray(config.marketplaceCheckSpreadsheetIds) && config.marketplaceCheckSpreadsheetIds.length
         ? config.marketplaceCheckSpreadsheetIds
         : [config.marketplaceCheckSpreadsheetId || config.checkOrderSpreadsheetId || ""];
@@ -537,7 +543,7 @@ export function createMarketplaceLinkOrderTool({
         }
       }
       if (!plans.length) throw new Error("Chua nhap link/ID Sheet check link order.");
-      for (const plan of plans) plan.sharedQueue = createSharedQueue(plan, profiles.length);
+      for (const plan of plans) plan.sharedQueue = createSharedQueue(plan, participantCount);
       return plans;
     };
 
@@ -581,16 +587,17 @@ export function createMarketplaceLinkOrderTool({
     runtime.currentTool = "check link order";
     setImmediate(async () => {
       let pass = 0;
+      let activeProfiles = [...profiles];
       try {
         while (!runtime.stopRequested) {
           pass += 1;
           let currentPlans = plans;
           try {
-            if (pass > 1) currentPlans = await loadPlans();
+            if (pass > 1) currentPlans = await loadPlans(activeProfiles.length);
             const pendingLinks = currentPlans.reduce((total, plan) => total + Number(plan.sharedQueue?.total || 0), 0);
             if (!pendingLinks) break;
             if (pass > 1) {
-              for (const item of profiles) {
+              for (const item of activeProfiles) {
                 const job = runtime.jobs.get(item.profileId);
                 if (!job) continue;
                 job.status = "running";
@@ -598,23 +605,26 @@ export function createMarketplaceLinkOrderTool({
               }
               log("", "tu dong chay lai", `bat dau luot ${pass}, con ${pendingLinks} link loi check/khong ro can xu ly`, "warn");
             }
-            const results = await Promise.all(profiles.map((item, index) => runNick({
+            const results = await Promise.all(activeProfiles.map((item, index) => runNick({
               ...item,
               config,
               plans: currentPlans,
               tabCount,
               direction: item.direction,
               workerSlot: index,
-              workerTotal: profiles.length
+              workerTotal: activeProfiles.length
             })));
             if (runtime.stopRequested) break;
+            const blockedIds = new Set(results.filter((result) => result.permanent).map((result) => result.profileId));
+            activeProfiles = activeProfiles.filter((item) => !blockedIds.has(item.profileId));
+            if (!activeProfiles.length) break;
             const retryable = results.reduce((total, result) => total + Number(result?.retryable || 0), 0);
-            const errors = results.filter((result) => result?.error);
+            const errors = results.filter((result) => result?.error && !result.permanent);
             if (!retryable && !errors.length) break;
             const reason = errors.length
               ? `${errors.length} nick/browser loi`
               : `${retryable} link van la khong ro/loi check sau 3 lan`;
-            for (const item of profiles) {
+            for (const item of activeProfiles) {
               const job = runtime.jobs.get(item.profileId);
               if (!job) continue;
               job.status = "running";
@@ -624,7 +634,7 @@ export function createMarketplaceLinkOrderTool({
           } catch (error) {
             if (runtime.stopRequested) break;
             const reason = error?.message || String(error);
-            for (const item of profiles) {
+            for (const item of activeProfiles) {
               const job = runtime.jobs.get(item.profileId);
               if (!job) continue;
               job.status = "running";
@@ -636,7 +646,7 @@ export function createMarketplaceLinkOrderTool({
           const restartAt = Date.now() + LINK_ORDER_RESTART_DELAY_MS;
           while (!runtime.stopRequested && Date.now() < restartAt) {
             const seconds = Math.max(1, Math.ceil((restartAt - Date.now()) / 1000));
-            for (const item of profiles) {
+            for (const item of activeProfiles) {
               const job = runtime.jobs.get(item.profileId);
               if (job) job.liveStatus = `${item.nickLabel}: cho ${seconds}s de tu mo lai check link`;
             }
@@ -644,7 +654,7 @@ export function createMarketplaceLinkOrderTool({
           }
         }
         if (runtime.stopRequested) {
-          for (const item of profiles) {
+          for (const item of activeProfiles) {
             const job = runtime.jobs.get(item.profileId);
             if (!job) continue;
             job.status = "stopped";

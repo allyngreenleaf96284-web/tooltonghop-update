@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { buildFullSuccessToken, buildStandardName } from "./profile_name.js";
-import { withFacebookLocale } from "./facebook_locale.js";
+import { buildFullSuccessToken, buildStandardName, buildMarketplaceIneligibleName } from "./profile_name.js";
+import { withFacebookLocale, isMarketplaceIneligibleError, assertMarketplaceAccess } from "./facebook_locale.js";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const US_STATES = new Set([
@@ -191,6 +191,7 @@ export function mapFullError(error) {
   const status = String(error?.status || "").trim();
   const message = String(error?.message || error || "loi khong ro");
   if (status === "stopped") return { status: "stopped", detail: "Da dung han theo yeu cau." };
+  if (isMarketplaceIneligibleError(error)) return { status: "die cho", detail: message };
   if (status === "seller_info_invalid") return { status: "loi seller info", detail: message };
   if (status) return { status, detail: message };
   const lower = message.toLowerCase();
@@ -223,6 +224,7 @@ export function mapFullError(error) {
 export function buildRuntimeProfileName({ status = "", tenChuan = "" }) {
   const normalizedStatus = String(status || "").trim().toLowerCase();
   const base = String(tenChuan || "").trim() || "profile-tool";
+  if (normalizedStatus === "die cho") return buildMarketplaceIneligibleName(base);
   if (!normalizedStatus || normalizedStatus === "thanh cong" || normalizedStatus === "thành công") return base;
   if (normalizedStatus === "loi") return `loi-${base}`;
   return `${normalizedStatus}-${base}`;
@@ -474,6 +476,7 @@ export async function ensureMarketplaceCreatePageReady(manager, page, row) {
         })
       ]);
     } catch (error) {
+      if (isMarketplaceIneligibleError(error)) throw error;
       lastSnapshot = await readMarketplaceCreateState(page).catch(() => null);
       manager.sendLog?.(
         `[${row.uid}] Marketplace create/item dang treo lan ${attempt}/3, F5 lai trang.`,
@@ -1032,7 +1035,9 @@ export function createLamFull({
 
   async function runOldFullAttemptWithRetry(manager, page, browser, row, profileId, job) {
     if (job) job.liveStatus = "dang chay luong full goc";
-    return manager.runFullFlowAttempt(page, browser, row, profileId);
+    const result = await manager.runFullFlowAttempt(page, browser, row, profileId);
+    await assertMarketplaceAccess(page);
+    return result;
   }
 
   async function runMarketplaceAndFullWithRetry(manager, page, browser, row, profileId, job, locationCapture, progressCapture, sheetSession, currentName, markNoRollback = () => {}, onSellerInfoInvalid = null) {
@@ -1067,6 +1072,7 @@ export function createLamFull({
         restoreLocationCapture();
         restoreProgressCapture();
         lastError = error;
+        if (isMarketplaceIneligibleError(error)) throw error;
         const mappedStatus = String(error?.status || "").trim().toLowerCase();
         if (mappedStatus === "seller_info_invalid") {
           if (typeof onSellerInfoInvalid !== "function" || attempt >= maxAttempts) throw error;
@@ -1278,7 +1284,7 @@ export function createLamFull({
         location: locationCapture.current || locationCapture.initial
       });
       await rename(manager, profileId, buildRuntimeProfileName({ status: mappedStatus, tenChuan }));
-      const update = { Tool: "đã làm full", trangThai: "loi", soVach: stableBarValue(currentName, sheetRow, barStatus), chiTiet: mappedError.detail || detail || mappedStatus, tenChuan };
+      const update = { Tool: "đã làm full", trangThai: mappedStatus === "die cho" ? "die cho" : "loi", soVach: stableBarValue(currentName, sheetRow, barStatus), chiTiet: mappedError.detail || detail || mappedStatus, tenChuan };
       if (locationCapture.initial) update.diaChiBanDau = locationCapture.initial;
       await writeSheet(sheetWriter, profileId, update);
       await sheetWriter.commit();
@@ -1288,7 +1294,7 @@ export function createLamFull({
       if (sellerAllocation) await updateSellerInfoUid(config, sellerAllocation, "").catch(() => {});
       return update;
     } catch (error) {
-      const mapped = mapFullError(error);
+      const mapped = mapFullError(page?.__marketplaceAccess?.error || error);
       if (sellerAllocation && !submittedSellerInfo) await updateSellerInfoUid(config, sellerAllocation, "").catch(() => {});
       if (mapped.status === "stopped") {
         sheetWriter.discard();
@@ -1298,7 +1304,7 @@ export function createLamFull({
         job.result = null;
         return { stopped: true };
       }
-      const tenChuan = buildStandardName({
+      const tenChuan = page?.__marketplaceAccess?.profileName || buildStandardName({
         currentName,
         sheetRow,
         uid,
@@ -1308,7 +1314,7 @@ export function createLamFull({
       await rename(manager, profileId, buildRuntimeProfileName({ status: mapped.status, tenChuan }));
       const update = {
         Tool: "đã làm full",
-        trangThai: "loi",
+        trangThai: mapped.status === "die cho" ? "die cho" : "loi",
         soVach: stableBarValue(currentName, sheetRow, barStatus || progressCapture.value),
         chiTiet: mapped.detail,
         tenChuan

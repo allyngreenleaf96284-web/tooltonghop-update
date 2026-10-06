@@ -487,14 +487,15 @@ export function createRenewDocLapTool({
       return finalUpdate;
     } catch (error) {
       if (String(error?.status || "").toLowerCase() === "stopped") throw error;
-      const finalUpdate = { Tool: "renew doc lap", trangThai: "loi", chiTiet: String(error?.message || error || "loi renew doc lap") };
+      const failure = page?.__marketplaceAccess?.error || error;
+      const finalUpdate = { Tool: "renew doc lap", trangThai: failure.status === "die cho" ? "die cho" : "loi", chiTiet: String(failure?.message || failure || "loi renew doc lap") };
       if (job) {
         job.status = "error";
         job.liveStatus = finalUpdate.chiTiet;
         job.result = finalUpdate;
       }
       await sheetSession.updateOne(profileId, finalUpdate).catch(() => {});
-      throw error;
+      throw failure;
     } finally {
       if (proxyLease?.release) await proxyLease.release().catch(() => {});
       if (page && !page.isClosed?.()) await page.close().catch(() => {});

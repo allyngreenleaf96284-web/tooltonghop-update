@@ -1,7 +1,7 @@
 {
   "name": "Tool Tong Hop Full",
   "channel": "full",
-  "version": "2026.10.06.2",
+  "version": "2026.10.06.3",
   "rawBase": "https://raw.githubusercontent.com/allyngreenleaf96284-web/tooltonghop-update/main",
   "createdAt": "2026-09-17T00:00:00.000Z",
   "files": [
@@ -17,18 +17,18 @@
     },
     {
       "path": "modules/batch_retry.js",
-      "sha256": "b8eee5a7332fc635c726faa26ce331260af6fab7bb2ad075193b16e0e67a294f",
-      "size": 9566
+      "sha256": "fe9528e61fdd58c16f2862d12679db6bf98dae14abddffdefb6a69cfaf9a2732",
+      "size": 9708
     },
     {
       "path": "modules/checkorder.js",
-      "sha256": "5563c2109402d5a24d76e0f66671c4419aab4e0aca49a41cc7ea494e84e1dbe0",
-      "size": 36382
+      "sha256": "b7e196ab6dde6669add76273317f0d392ab66ff6f12e4ec3d8e89101983ef3b4",
+      "size": 36486
     },
     {
       "path": "modules/checktb.js",
-      "sha256": "30bf56cab61fb95137e9643e4883db0cfef44ffb4f9b8fffe34f349ba15ebbf7",
-      "size": 20673
+      "sha256": "4600864e0110838a9a734d3c1f551a5b86b13a9bff53775749a70b661195c6b7",
+      "size": 21082
     },
     {
       "path": "modules/clipproxy.js",
@@ -37,13 +37,13 @@
     },
     {
       "path": "modules/dangbai.js",
-      "sha256": "ac9112958e37a9a19a638b889770ceacad71bac926315d5ee4168677085df4f7",
-      "size": 113662
+      "sha256": "23b7e89602f0c7aee2b671961b38b86fa4d46c68d63d3ba3d2ac9eaca3cf7bf1",
+      "size": 114072
     },
     {
       "path": "modules/dangnhap.js",
-      "sha256": "16dc7b7af4be5a817281150c91f02e9705fd54f919083e61ad7e737686117fcb",
-      "size": 118574
+      "sha256": "8046e9ebe3cdb4032ef78aa49078cbf298daf38b15392ed65078c24912834ecf",
+      "size": 118893
     },
     {
       "path": "modules/dienmatkhau.js",
@@ -52,23 +52,23 @@
     },
     {
       "path": "modules/facebook_locale.js",
-      "sha256": "5c22f1f2c57a51dc0a48ffb961091ed5836c3c18968d270c1c94170ec236cc1f",
-      "size": 708
+      "sha256": "f68d0a0675ae986b1a25dc7033abe33718d0dda283cd12e7eaa6d830ad65b3b3",
+      "size": 6374
     },
     {
       "path": "modules/lamfull.js",
-      "sha256": "a037f98fc82b87e87139c1e28cc3e946245bcce4ae2a38907a40d7d3a521fe0c",
-      "size": 62858
+      "sha256": "46134262c4b33b504863d83b186b62f43ad89b032d9da5b852d2a10d5963a9e2",
+      "size": 63475
     },
     {
       "path": "modules/tool_login.js",
-      "sha256": "cecc087509c51d47851cb0740c741afbcdd6a0b95435e47eb7164c696e546e98",
-      "size": 15811
+      "sha256": "c186bf925183c041e121d088ca7c38b0526e07e3864bb2bb47b57234464c3552",
+      "size": 15931
     },
     {
       "path": "modules/marketplace_link_order.js",
-      "sha256": "5991d7bc6fb1c816fd07445d4217258d19bbb8d0e33238f3fd249c4821b9cd9f",
-      "size": 28613
+      "sha256": "6c730a0e0e0c9e13951002a12d8b60cd75040786208c9349ef19e7f945a69040",
+      "size": 29499
     },
     {
       "path": "modules/nineproxy.js",
@@ -77,8 +77,8 @@
     },
     {
       "path": "modules/profile_name.js",
-      "sha256": "0050612d688b1fd988e3e4ebc778c8baa10f9cb796b48007926103e0edb7c906",
-      "size": 4622
+      "sha256": "bcbf65592d26580eeb6ea6ec175f3b5595ddc4c0b886df026f61da40fdf3b920",
+      "size": 4967
     },
     {
       "path": "modules/proxypanel.js",
@@ -87,8 +87,8 @@
     },
     {
       "path": "modules/renewdoclap.js",
-      "sha256": "dea43a6241c2169ec2026794e1358bc444d948b2766c84d41b647ef592c14209",
-      "size": 30091
+      "sha256": "b98fbc3930c9211af4543eaa21d94886b9aee4430e532dff2fab46b9aa9f0f85",
+      "size": 30205
     },
     {
       "path": "modules/taopage.js",
@@ -97,8 +97,8 @@
     },
     {
       "path": "modules/tuongtac.js",
-      "sha256": "83c6b605cf67e6ad0912cfc60b1045642ba18b637a79ccbc073e41b8be004f83",
-      "size": 142847
+      "sha256": "7c28c7857df9d6d1f5c51d2a5a3765e85c51c8b89cab754ab1c825bb319ba403",
+      "size": 143230
     },
     {
       "path": "package.json",
@@ -132,8 +132,8 @@
     },
     {
       "path": "server.js",
-      "sha256": "5f61c1a472eae5b71e6fc048f2f49732bfa348154d718c2aa4065b43d73b0fef",
-      "size": 167952
+      "sha256": "dda88eeeb7bd2ed6d2085b5b8465bd6cf0f67418f286b8fe46fce3d6396a6d43",
+      "size": 168125
     }
   ]
 }

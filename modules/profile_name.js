@@ -6,6 +6,18 @@
   return "";
 }
 
+export function buildMarketplaceIneligibleName(value) {
+  let base = String(value || "").trim();
+  const marker = /(^|-)die\s+cho\s*-\s*/gi;
+  let previous;
+  do {
+    previous = base;
+    base = base.replace(marker, "$1");
+  } while (base !== previous);
+  base = base.replace(/^-+/, "").trim() || "profile-tool";
+  return `die cho-${base}`;
+}
+
 function normalizeKey(text) {
   return String(text || "")
     .normalize("NFD")

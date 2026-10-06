@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { withFacebookLocale } from "./facebook_locale.js";
+import { withFacebookLocale, installMarketplaceAccessGuard } from "./facebook_locale.js";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // Proxy connections often render Facebook's 2FA screen noticeably later than the password form.
@@ -2241,6 +2241,12 @@ export function createDangNhap({ addRuntimeLog }) {
 
   async function ensureFacebookLogin(manager, page, row, profileId, updateLiveStatus, options = {}) {
     const forceAccountLogin = Boolean(options?.forceAccountLogin);
+    installMarketplaceAccessGuard(manager, page, profileId,
+      getRawField(row?.raw, ["ten profile hien tai", "ten chuan"]) || row?.name || profileId,
+      (error) => {
+        updateLiveStatus(error.message);
+        logLogin(profileId, "die cho", error.message, "error");
+      });
     await loginStep(profileId, updateLiveStatus, "login: don mat khau Chrome", "dang don mat khau Facebook cu trong Chrome", async () => {
       const result = await prepareFacebookPasswordManager(page, updateLiveStatus);
       logLogin(profileId, "login: don mat khau Chrome", `Da xoa ${result.deleted} tai khoan Facebook da luu va tat de nghi luu mat khau.`, "success");

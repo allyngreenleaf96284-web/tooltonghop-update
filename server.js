@@ -23,6 +23,7 @@ import { createNineProxyTool, mergeProxyDefaults, sanitizeProxyConfigInput } fro
 import { createClipProxyTool, mergeClipProxyDefaults, sanitizeClipProxyConfigInput } from "./modules/clipproxy.js";
 import { createProxyPanelTool, isProxyPanelStateProxy, mergeProxyPanelDefaults, sanitizeProxyPanelConfigInput } from "./modules/proxypanel.js";
 import { startAutoRetryBatch } from "./modules/batch_retry.js";
+import { isMarketplaceIneligibleError } from "./modules/facebook_locale.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -2943,6 +2944,7 @@ function buildToolRow(profileId, sheetRow) {
 function mapErrorForSheet(error) {
   const status = String(error?.status || "").trim().toLowerCase();
   const message = String(error?.message || "Lỗi không rõ.").trim();
+  if (isMarketplaceIneligibleError(error)) return { renameStatus: "die cho", detail: message };
   if (status === "cp282") return { renameStatus: "cp282", detail: message || "Checkpoint cp282 khi đăng nhập." };
   if (status === "cp956") return { renameStatus: "cp956", detail: message || "Checkpoint cp956 khi đăng nhập." };
   if (status === "loicapcha") return { renameStatus: "loicapcha", detail: message || "Facebook yeu cau reCAPTCHA khi dang nhap." };

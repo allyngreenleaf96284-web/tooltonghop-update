@@ -1,6 +1,7 @@
 const FINAL_JOB_STATUSES = new Set(["success", "done", "completed", "stopped", "cancelled", "skipped"]);
 const GENERIC_FAILURE_STATUSES = new Set(["", "loi", "error", "fail", "failed", "false"]);
 const KNOWN_FAILURE_PATTERNS = [
+  /die cho|marketplace\/ineligible|marketplace (?:isn['\u2019]t|is not) available|pages can['\u2019]t use marketplace|marketplace chet cho/i,
   /cp282|cp956|checkpoint/i,
   /captcha|recaptcha|not a robot/i,
   /bi out|bị out|logged out|see more on facebook/i,
