@@ -127,6 +127,90 @@ export async function prepareFacebookPasswordManager(page, updateStatus = () => 
   return { deleted, savingDisabled: true };
 }
 
+export function twofaCodeControl(action = "inspect") {
+  const normalize = (value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+  const visible = (node) => {
+    if (!(node instanceof HTMLElement) || node.closest("[aria-hidden='true'], [inert]")) return false;
+    const rect = node.getBoundingClientRect();
+    const style = getComputedStyle(node);
+    return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+  };
+  const enabled = (node) => visible(node) && !node.matches(":disabled, [aria-disabled='true']");
+  const facebook = /(^|\.)facebook\.com$/i.test(location.hostname);
+  const twofaRoute = facebook && /^\/two_step_verification\/(?:two_factor|authentication)(?:\/|$)/i.test(location.pathname);
+  const inputs = Array.from(document.querySelectorAll("input")).filter((node) => enabled(node) && !node.readOnly
+    && ["text", "tel", "number"].includes(node.type)
+    && !/^(?:username|email|current-password|new-password)$/.test(normalize(node.autocomplete)));
+  const strong = inputs.filter((node) => /approvals_code|security_code/.test(normalize(node.name))
+    || normalize(node.autocomplete) === "one-time-code");
+  let field = strong.length === 1 ? strong[0] : null;
+  if (!strong.length) {
+    const englishContext = /authentication app|two-factor|two factor|login code/.test(normalize(document.body?.innerText));
+    const labelled = inputs.filter((node) => /\bcode\b/.test(normalize(`${node.placeholder} ${node.getAttribute("aria-label") || ""} ${node.labels?.[0]?.textContent || ""}`)));
+    if ((twofaRoute || englishContext) && labelled.length === 1) field = labelled[0];
+    // Modern Facebook localizes every label and may expose no OTP attributes at all.
+    else if ((twofaRoute || englishContext) && inputs.length === 1) field = inputs[0];
+  }
+  const dialogs = Array.from(document.querySelectorAll("[role='dialog'], [aria-modal='true']")).filter(visible);
+  if (field && dialogs.some((dialog) => !dialog.contains(field))) field = null;
+  if (action === "input") return field;
+  if (!field) return { stage: inputs.length > 1 || strong.length > 1 ? "ambiguous" : "waiting" };
+
+  const form = field.closest("form");
+  const controlsIn = (root) => Array.from(root.querySelectorAll("button, [role='button'], input[type='submit']"))
+    .filter((node) => visible(node) && !node.closest("a[href]"));
+  let next = null;
+  let region = form || field.parentElement;
+  for (let depth = 0; region && depth < 8; depth += 1, region = region.parentElement) {
+    const controls = controlsIn(region);
+    if (!controls.length) continue;
+    const submits = controls.filter((node) => node.id === "checkpointSubmitButton" || node.matches("input[type='submit']")
+      || (node.tagName === "BUTTON" && node.type === "submit" && (!form || node.form === form)));
+    const labelled = controls.filter((node) => /^(?:continue|log in)$/i.test(normalize(node.getAttribute("aria-label") || node.innerText || node.value)));
+    if (submits.length === 1) next = submits[0];
+    else if (!submits.length && labelled.length === 1) next = labelled[0];
+    else if (twofaRoute && form && region.querySelectorAll("form").length === 1 && controls.length === 2
+      && controls.every((node) => node.getAttribute("role") === "button" && Boolean(form.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING))) {
+      // Observed code-screen layout: the form is followed by Continue, then Try another way.
+      next = controls[0];
+    }
+    break;
+  }
+  const filled = /^\d{6}$/.test(field.value);
+  const canContinue = Boolean(next && enabled(next));
+  if (action === "submit" && filled && canContinue) {
+    next.click();
+    return { stage: "submitted" };
+  }
+  return { stage: "code", filled, canContinue, invalid: field.getAttribute("aria-invalid") === "true" };
+}
+
+export async function fillTwofaInput(page, input, otp) {
+  return page.evaluate((field, value) => {
+    if (!(field instanceof HTMLInputElement) || !field.isConnected || field.disabled || field.readOnly) return false;
+    field.focus();
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    if (setter) setter.call(field, value);
+    else field.value = value;
+    field.dispatchEvent(new InputEvent("input", { bubbles: true, data: value, inputType: "insertText" }));
+    field.dispatchEvent(new Event("change", { bubbles: true }));
+    field.blur();
+    return field.value === value;
+  }, input, otp);
+}
+
+export async function submitTwofaCode(page, { timeoutMs = 15000, pollMs = 300, onProgress = () => {} } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    onProgress();
+    const state = await page.evaluate(twofaCodeControl, "submit");
+    if (state.stage === "submitted") return true;
+    if (state.invalid) throw new Error("Facebook bao ma 2FA khong hop le.");
+    await sleep(Math.min(pollMs, Math.max(1, deadline - Date.now())));
+  }
+  throw new Error("Da nhap ma 2FA nhung khong xac dinh duoc nut Tiep tuc hoac nut chua san sang sau 15 giay.");
+}
+
 export function authenticationAppControl(action = "inspect") {
   const normalize = (value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
   const visible = (node) => {
@@ -182,17 +266,22 @@ export function authenticationAppControl(action = "inspect") {
 export async function chooseAuthenticationAppTwofa(page, {
   timeoutMs = 15000, pollMs = 300, actionDelayMs = 800, deadline = Infinity, onProgress = () => {}
 } = {}) {
+  const inspect = async () => {
+    const code = await page.evaluate(twofaCodeControl).catch(() => ({ stage: "waiting" }));
+    if (code.stage === "code") return code;
+    return page.evaluate(authenticationAppControl).catch(() => ({ stage: "waiting" }));
+  };
   const waitFor = async (predicate) => {
     const until = Math.min(deadline, Date.now() + timeoutMs);
     while (Date.now() < until) {
       onProgress();
-      const state = await page.evaluate(authenticationAppControl).catch(() => ({ stage: "waiting" }));
+      const state = await inspect();
       if (predicate(state)) return state;
       await sleep(pollMs);
     }
     return null;
   };
-  let state = await page.evaluate(authenticationAppControl).catch(() => ({ stage: "waiting" }));
+  let state = await inspect();
   if (state.stage === "code") return true;
   if (state.stage === "approval" && state.available) {
     await sleep(actionDelayMs);
@@ -1570,7 +1659,7 @@ export function createDangNhap({ addRuntimeLog }) {
     return freshPage;
   }
 
-  async function waitForLoginSettled(manager, page, timeoutMs = 12000) {
+  async function waitForLoginSettled(manager, page, timeoutMs = 12000, { afterTwofaSubmit = false } = {}) {
     const started = Date.now();
     while (Date.now() - started < timeoutMs) {
       await handlePostLoginDismiss(manager, page);
@@ -1579,7 +1668,7 @@ export function createDangNhap({ addRuntimeLog }) {
       if (
         await hasActiveFacebookSession(page)
         || url.includes("/checkpoint/")
-        || url.includes("two_step_verification")
+        || (!afterTwofaSubmit && url.includes("two_step_verification"))
         || /we suspect automated behavior on your account/i.test(bodyText)
       ) {
         return;
@@ -1589,38 +1678,7 @@ export function createDangNhap({ addRuntimeLog }) {
   }
 
   async function findVisibleTwofaInput(page) {
-    const handle = await page.evaluateHandle(() => {
-      const isVisible = (element) => {
-        if (!(element instanceof HTMLElement)) return false;
-        const rect = element.getBoundingClientRect();
-        const style = window.getComputedStyle(element);
-        return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
-      };
-      const normalize = (value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
-      const preferred = Array.from(document.querySelectorAll("input")).find((element) => {
-        if (!(element instanceof HTMLInputElement) || !isVisible(element)) return false;
-        const placeholder = normalize(element.getAttribute("placeholder") || "");
-        const aria = normalize(element.getAttribute("aria-label") || "");
-        const label = normalize(element.labels?.[0]?.innerText || element.labels?.[0]?.textContent || "");
-        const name = normalize(element.getAttribute("name") || "");
-        const auto = normalize(element.getAttribute("autocomplete") || "");
-        return /approvals_code|security_code/.test(name)
-          || /one time code|one-time-code/.test(auto)
-          || /code/.test(placeholder)
-          || /code/.test(aria)
-          || /code/.test(label);
-      });
-      if (preferred) return preferred;
-      const bodyText = normalize(document.body?.innerText || "");
-      if (/authentication app|two-factor|two factor|login code/.test(bodyText)) {
-        return Array.from(document.querySelectorAll("input")).find((element) => {
-          if (!(element instanceof HTMLInputElement) || !isVisible(element)) return false;
-          const type = normalize(element.getAttribute("type") || "text");
-          return ["text", "tel", "number", ""].includes(type);
-        }) || null;
-      }
-      return null;
-    });
+    const handle = await page.evaluateHandle(twofaCodeControl, "input");
     const asElement = handle.asElement();
     if (!asElement) {
       await handle.dispose().catch(() => {});
@@ -1680,58 +1738,16 @@ export function createDangNhap({ addRuntimeLog }) {
       twofaWaitingForInput: true
     });
 
-    const otp = generateTotp(secret);
-    await page.evaluate((otpValue) => {
-      const isVisible = (element) => {
-        if (!(element instanceof HTMLElement)) return false;
-        const rect = element.getBoundingClientRect();
-        const style = window.getComputedStyle(element);
-        return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
-      };
-      const normalize = (value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
-      const bodyText = normalize(document.body?.innerText || "");
-      const field = Array.from(document.querySelectorAll("input")).find((element) => {
-        if (!(element instanceof HTMLInputElement) || !isVisible(element)) return false;
-        const placeholder = normalize(element.getAttribute("placeholder") || "");
-        const aria = normalize(element.getAttribute("aria-label") || "");
-        const label = normalize(element.labels?.[0]?.innerText || element.labels?.[0]?.textContent || "");
-        const name = normalize(element.getAttribute("name") || "");
-        const auto = normalize(element.getAttribute("autocomplete") || "");
-        return /approvals_code|security_code/.test(name)
-          || /one time code|one-time-code/.test(auto)
-          || /code/.test(placeholder)
-          || /code/.test(aria)
-          || /code/.test(label)
-          || /authentication app|two-factor|two factor|login code/.test(bodyText);
-      });
-      if (!(field instanceof HTMLInputElement)) return false;
-      field.focus();
-      field.click();
-      field.value = "";
-      field.dispatchEvent(new Event("input", { bubbles: true }));
-      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), "value")?.set;
-      if (setter) setter.call(field, otpValue);
-      else field.value = otpValue;
-      field.dispatchEvent(new InputEvent("input", { bubbles: true, data: otpValue, inputType: "insertText" }));
-      field.dispatchEvent(new Event("change", { bubbles: true }));
-      field.dispatchEvent(new Event("blur", { bubbles: true }));
-      return true;
-    }, otp).catch(() => {});
-
-    const clicked = await clickFirstSelector(page, [
-      "#checkpointSubmitButton",
-      "button[type='submit']",
-      "input[type='submit']",
-      "div[role='button'][aria-label='Continue']",
-      "div[role='button'][aria-label='Log in']"
-    ]);
-    if (!clicked) {
-      await page.keyboard.press("Enter").catch(() => {});
+    try {
+      if (!await fillTwofaInput(page, input, generateTotp(secret))) throw new Error("O nhap ma 2FA da thay doi, chua dien duoc ma.");
+    } finally {
+      await input.dispose().catch(() => {});
     }
-    await sleep(3000);
-    await clickFirstSelector(page, ["#checkpointSubmitButton", "button[type='submit']", "input[type='submit']"]).catch(() => false);
-    await sleep(2500);
-    await waitForLoginSettled(manager, page, TWOFA_SETTLE_WAIT_MS).catch(() => {});
+    await submitTwofaCode(page, {
+      onProgress: () => updateLiveStatus("2FA: da nhap ma, dang cho nut Tiep tuc san sang")
+    });
+    updateLiveStatus("2FA: da bam Tiep tuc, dang cho Facebook xac minh ma");
+    await waitForLoginSettled(manager, page, TWOFA_SETTLE_WAIT_MS, { afterTwofaSubmit: true });
     await handlePostLoginDismiss(manager, page);
     return true;
   }
