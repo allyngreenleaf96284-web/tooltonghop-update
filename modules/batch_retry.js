@@ -1,9 +1,11 @@
+import { isFacebookCaptchaError, isMarketplaceIneligibleError } from "./facebook_locale.js";
+
 const FINAL_JOB_STATUSES = new Set(["success", "done", "completed", "stopped", "cancelled", "skipped"]);
 const GENERIC_FAILURE_STATUSES = new Set(["", "loi", "error", "fail", "failed", "false"]);
 const KNOWN_FAILURE_PATTERNS = [
   /die cho|marketplace\/ineligible|marketplace (?:isn['\u2019]t|is not) available|pages can['\u2019]t use marketplace|marketplace chet cho/i,
   /cp282|cp956|checkpoint/i,
-  /captcha|recaptcha|not a robot/i,
+  /captcha|capcha|recaptcha|not a robot/i,
   /bi out|bị out|logged out|see more on facebook/i,
   /het proxy|hết proxy|proxy.*(sai|loi|lỗi|failed|rejected|not active)/i,
   /chua nhap|chưa nhập|thieu cot|thiếu cột|thieu du lieu|thiếu dữ liệu|thieu cau hinh|thiếu cấu hình|khong tim thay description\.txt|không tìm thấy description\.txt|khong tim thay dong du lieu trong sheet|không tìm thấy dòng dữ liệu trong sheet/i,
@@ -41,6 +43,17 @@ export function isUnknownFailure(job) {
   if (!GENERIC_FAILURE_STATUSES.has(status)) return false;
   const message = jobMessage(job);
   return !KNOWN_FAILURE_PATTERNS.some((pattern) => pattern.test(message));
+}
+
+export function isRetryableFailure(job) {
+  if (!job || String(job.status || "").toLowerCase() !== "error") return false;
+  const result = job.result || {};
+  const status = normalize(result.trangThai ?? result["trạng thái"] ?? result.status ?? "");
+  const message = jobMessage(job);
+  if (["cp282", "cp956", "die cho", "stopped"].includes(status) || isMarketplaceIneligibleError({ status, message })) return false;
+  if (["capcha", "loicapcha"].includes(status)) return true;
+  if (GENERIC_FAILURE_STATUSES.has(status) && !/cp282|cp956/i.test(message) && isFacebookCaptchaError({ status, message })) return true;
+  return isUnknownFailure(job);
 }
 
 function isCompleted(job) {
@@ -172,7 +185,7 @@ export async function startAutoRetryBatch({
       // still use this common batch runner for their first pass.
       if (batch.maxRetries <= 0) return;
 
-      let retryIds = ids.filter((id) => isUnknownFailure(runtime.jobs.get(id)));
+      let retryIds = ids.filter((id) => isRetryableFailure(runtime.jobs.get(id)));
       batch.retryIds = retryIds;
       batch.currentIds = retryIds;
       for (const id of retryIds) {
@@ -185,7 +198,7 @@ export async function startAutoRetryBatch({
       }
       updateBatchCounts(runtime, batch);
       if (retryIds.length && addRuntimeLog) {
-        addRuntimeLog(`[${tool}] Luot dau da xong, gom ${retryIds.length} profile loi khong xac dinh de chay lai.`, "warn", "", {
+        addRuntimeLog(`[${tool}] Luot dau da xong, gom ${retryIds.length} profile loi khong xac dinh/CAPTCHA de chay lai.`, "warn", "", {
           tool,
           step: "cho chay lai",
           detail: retryIds.join(", ")
@@ -208,7 +221,7 @@ export async function startAutoRetryBatch({
         await waitForQueueToFinish(runtime, batch);
         annotateRetryResults(runtime, retryIds, batch, attempt);
         updateBatchCounts(runtime, batch);
-        retryIds = retryIds.filter((id) => isUnknownFailure(runtime.jobs.get(id)));
+        retryIds = retryIds.filter((id) => isRetryableFailure(runtime.jobs.get(id)));
         batch.retryIds = retryIds;
         batch.currentIds = retryIds;
         batch.lastRetryData = retryData || null;
@@ -222,7 +235,7 @@ export async function startAutoRetryBatch({
           }
         }
         if (retryIds.length && addRuntimeLog) {
-          addRuntimeLog(`[${tool}] Con ${retryIds.length} profile van loi khong xac dinh sau lan thu lai ${attempt}.`, "warn", "", {
+          addRuntimeLog(`[${tool}] Con ${retryIds.length} profile van loi khong xac dinh/CAPTCHA sau lan thu lai ${attempt}.`, "warn", "", {
             tool,
             step: "retry",
             detail: retryIds.join(", ")
@@ -237,7 +250,7 @@ export async function startAutoRetryBatch({
           job.retryFinal = true;
           job.phaseState = "retry_failed";
           job.status = "error";
-          job.liveStatus = `retry van loi khong xac dinh sau ${batch.maxRetries} lan`;
+          job.liveStatus = `retry van loi khong xac dinh/CAPTCHA sau ${batch.maxRetries} lan`;
         }
       }
     } catch (error) {
@@ -263,3 +276,4 @@ export async function startAutoRetryBatch({
     maxRetries: batch.maxRetries
   };
 }
+

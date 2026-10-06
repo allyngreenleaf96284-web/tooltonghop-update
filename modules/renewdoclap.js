@@ -488,7 +488,7 @@ export function createRenewDocLapTool({
     } catch (error) {
       if (String(error?.status || "").toLowerCase() === "stopped") throw error;
       const failure = page?.__marketplaceAccess?.error || error;
-      const finalUpdate = { Tool: "renew doc lap", trangThai: failure.status === "die cho" ? "die cho" : "loi", chiTiet: String(failure?.message || failure || "loi renew doc lap") };
+      const finalUpdate = { Tool: "renew doc lap", trangThai: ["die cho", "capcha"].includes(failure.status) ? failure.status : "loi", chiTiet: String(failure?.message || failure || "loi renew doc lap") };
       if (job) {
         job.status = "error";
         job.liveStatus = finalUpdate.chiTiet;

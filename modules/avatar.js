@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { withFacebookLocale } from "./facebook_locale.js";
+import { withFacebookLocale, isFacebookCaptchaError } from "./facebook_locale.js";
 
 const PROFILE_URL = "https://www.facebook.com/profile";
 const STABLE_AVATAR_CONCURRENCY = 2;
@@ -458,6 +458,7 @@ function mapAvatarError(error) {
   const status = String(error?.status || "").trim().toLowerCase();
   const message = String(error?.message || error || "loi khong ro");
   if (status === "stopped") return { status: "stopped", detail: "Da dung han theo yeu cau." };
+  if (isFacebookCaptchaError(error)) return { status: "capcha", detail: message };
   const lower = message.toLowerCase();
   if (lower.includes("login") || lower.includes("logged out") || lower.includes("see more on facebook") || lower.includes("bi out")) {
     return { status: "biout", detail: message };

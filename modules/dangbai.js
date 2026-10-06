@@ -1,8 +1,8 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFile } from "node:fs/promises";
-import { buildStandardName, buildFullSuccessToken, buildMarketplaceIneligibleName } from "./profile_name.js";
-import { withFacebookLocale, isMarketplaceIneligibleError } from "./facebook_locale.js";
+import { buildStandardName, buildFullSuccessToken, buildMarketplaceIneligibleName, buildCaptchaProfileName } from "./profile_name.js";
+import { withFacebookLocale, isMarketplaceIneligibleError, isFacebookCaptchaError } from "./facebook_locale.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const US_LOCATION_FILE = path.resolve(__dirname, "../data/us_locations.txt");
@@ -76,6 +76,7 @@ function mapPostError(error) {
   const message = String(error?.message || error || "loi khong ro");
   if (status === "stopped") return { status: "stopped", detail: "Da dung han theo yeu cau." };
   if (isMarketplaceIneligibleError(error)) return { status: "die cho", detail: message };
+  if (isFacebookCaptchaError(error)) return { status: "capcha", detail: message };
   if (status === "loisp") return { status: "lỗi sp", detail: message };
   if (status === "loi link sp") return { status: "lỗi link sp", detail: message };
   if (status === "limitdb") return { status: "limitdb", detail: message };
@@ -109,7 +110,7 @@ function normalizeVietnameseText(value) {
 function stripRuntimeNamePrefixes(value) {
   let name = String(value || "").trim();
   // A retry replaces the old runtime state instead of growing a name chain.
-  const prefix = /^(?:(?:lỗi|loi)\s*(?:sp|link\s*sp|location|publish|login)?|(?:tụt|tut)\s*[^-]+|limitdb|cp\d+|loicapcha|hetproxy|biout|bỏ\s*qua|bo\s*qua)\s*-\s*/i;
+  const prefix = /^(?:(?:lỗi|loi)\s*(?:sp|link\s*sp|location|publish|login)?|(?:tụt|tut)\s*[^-]+|limitdb|cp\d+|loicapcha|capcha|captcha|hetproxy|biout|bỏ\s*qua|bo\s*qua)\s*-\s*/i;
   while (prefix.test(name)) name = name.replace(prefix, "").trim();
   return name;
 }
@@ -117,6 +118,7 @@ function stripRuntimeNamePrefixes(value) {
 function buildStatusProfileName(status, value) {
   const label = String(status || "").trim();
   if (label.toLowerCase() === "die cho") return buildMarketplaceIneligibleName(value);
+  if (["capcha", "loicapcha"].includes(label.toLowerCase())) return buildCaptchaProfileName(value);
   const base = stripRuntimeNamePrefixes(value) || "profile-tool";
   return label ? `${label}-${base}` : base;
 }
@@ -2104,10 +2106,10 @@ export function createDangBai({
         return { stopped: true };
       }
       let tenChuan = nameAfterPublishedPost || currentName;
-      if (!nameAfterPublishedPost || mapped.status === "die cho") {
+      if (!nameAfterPublishedPost || ["die cho", "capcha"].includes(mapped.status)) {
         // Keep the existing profile-name structure. Errors only replace the
         // leading runtime label, exactly like the 4v posting workflow.
-        const errorName = page?.__marketplaceAccess?.profileName || buildStatusProfileName(mapped.status, currentName);
+        const errorName = page?.__marketplaceAccess?.profileName || error?.captchaProfileName || buildStatusProfileName(mapped.status, currentName);
         await rename(manager, profileId, errorName);
         tenChuan = errorName;
       }

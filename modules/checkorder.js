@@ -64,7 +64,7 @@ export function createCheckOrderTool({
       /^loi\s+ssn-/i,
       /^loi\s+bank-/i,
       /^loi-/i,
-      /^loicapcha-/i,
+      /^(?:loicapcha|capcha|captcha)-/i,
       /^cp282-/i,
       /^cp956-/i,
       /^cp049-/i,

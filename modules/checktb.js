@@ -87,7 +87,7 @@ export function createCheckTb({
       /^loi\s+ssn-/i,
       /^loi\s+bank-/i,
       /^loi-/i,
-      /^loicapcha-/i,
+      /^(?:loicapcha|capcha|captcha)-/i,
       /^cp282-/i,
       /^cp956-/i,
       /^cp049-/i,
@@ -396,7 +396,7 @@ export function createCheckTb({
       });
       const runtimeName = mapped.renameStatus === "die cho"
         ? page?.__marketplaceAccess?.profileName || buildMarketplaceIneligibleName(currentName || originalName || profileId)
-        : buildRuntimeProfileName({
+        : error?.captchaProfileName || buildRuntimeProfileName({
           status: mapped.renameStatus || "loi",
           tenChuan: stableName
         });
@@ -405,9 +405,9 @@ export function createCheckTb({
       });
       const finalUpdate = {
         Tool: "xem tb",
-        trangThai: mapped.renameStatus === "die cho" ? "die cho" : "loi",
+        trangThai: ["die cho", "capcha"].includes(mapped.renameStatus) ? mapped.renameStatus : "loi",
         chiTiet: mapped.detail || "loi xem thong bao",
-        tenChuan: mapped.renameStatus === "die cho" ? runtimeName : stableName
+        tenChuan: ["die cho", "capcha"].includes(mapped.renameStatus) ? runtimeName : stableName
       };
       job.status = "error";
       job.liveStatus = mapped.detail;

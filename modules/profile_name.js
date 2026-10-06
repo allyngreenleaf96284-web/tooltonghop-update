@@ -18,6 +18,16 @@ export function buildMarketplaceIneligibleName(value) {
   return `die cho-${base}`;
 }
 
+export function buildCaptchaProfileName(value) {
+  let base = String(value || "").trim();
+  let previous;
+  do {
+    previous = base;
+    base = base.replace(/(^|-)(?:capcha|captcha|loicapcha)\s*-\s*/gi, "$1");
+  } while (base !== previous);
+  return `capcha-${base.replace(/^-+/, "").trim() || "profile-tool"}`;
+}
+
 function normalizeKey(text) {
   return String(text || "")
     .normalize("NFD")

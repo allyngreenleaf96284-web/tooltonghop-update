@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { buildFullSuccessToken, buildStandardName, buildMarketplaceIneligibleName } from "./profile_name.js";
-import { withFacebookLocale, isMarketplaceIneligibleError, assertMarketplaceAccess } from "./facebook_locale.js";
+import { buildFullSuccessToken, buildStandardName, buildMarketplaceIneligibleName, buildCaptchaProfileName } from "./profile_name.js";
+import { withFacebookLocale, isMarketplaceIneligibleError, assertMarketplaceAccess, isFacebookCaptchaError } from "./facebook_locale.js";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const US_STATES = new Set([
@@ -99,7 +99,7 @@ function cleanProfileBase(name) {
     /^loilogin-/i,
     /^loi(?:-[^-]+)?(?:-3v)?-/i,
     /^loi login-/i,
-    /^loicapcha-/i,
+    /^(?:loicapcha|capcha|captcha)-/i,
     /^cp282-/i,
     /^cp956-/i,
     /^cp049-/i,
@@ -129,7 +129,7 @@ function cleanProfileBase(name) {
       .replace(/^loilogin-/i, "")
       .replace(/^loi login-/i, "")
       .replace(/^loi-/i, "")
-      .replace(/^loicapcha-/i, "")
+      .replace(/^(?:loicapcha|capcha|captcha)-/i, "")
       .replace(/^cp282-/i, "")
       .replace(/^cp956-/i, "")
       .replace(/^cp049-/i, "")
@@ -162,7 +162,7 @@ export function stripResolvedNamePrefixes(name) {
     /^loi\s+ssn-/i,
     /^loi\s+bank-/i,
     /^loi-/i,
-    /^loicapcha-/i,
+    /^(?:loicapcha|capcha|captcha)-/i,
     /^cp282-/i,
     /^cp956-/i,
     /^cp049-/i,
@@ -192,6 +192,7 @@ export function mapFullError(error) {
   const message = String(error?.message || error || "loi khong ro");
   if (status === "stopped") return { status: "stopped", detail: "Da dung han theo yeu cau." };
   if (isMarketplaceIneligibleError(error)) return { status: "die cho", detail: message };
+  if (isFacebookCaptchaError(error)) return { status: "capcha", detail: message };
   if (status === "seller_info_invalid") return { status: "loi seller info", detail: message };
   if (status) return { status, detail: message };
   const lower = message.toLowerCase();
@@ -225,6 +226,7 @@ export function buildRuntimeProfileName({ status = "", tenChuan = "" }) {
   const normalizedStatus = String(status || "").trim().toLowerCase();
   const base = String(tenChuan || "").trim() || "profile-tool";
   if (normalizedStatus === "die cho") return buildMarketplaceIneligibleName(base);
+  if (["capcha", "loicapcha"].includes(normalizedStatus)) return buildCaptchaProfileName(base);
   if (!normalizedStatus || normalizedStatus === "thanh cong" || normalizedStatus === "thành công") return base;
   if (normalizedStatus === "loi") return `loi-${base}`;
   return `${normalizedStatus}-${base}`;
@@ -1304,7 +1306,7 @@ export function createLamFull({
         job.result = null;
         return { stopped: true };
       }
-      const tenChuan = page?.__marketplaceAccess?.profileName || buildStandardName({
+      const tenChuan = page?.__marketplaceAccess?.profileName || error?.captchaProfileName || buildStandardName({
         currentName,
         sheetRow,
         uid,
@@ -1314,7 +1316,7 @@ export function createLamFull({
       await rename(manager, profileId, buildRuntimeProfileName({ status: mapped.status, tenChuan }));
       const update = {
         Tool: "đã làm full",
-        trangThai: mapped.status === "die cho" ? "die cho" : "loi",
+        trangThai: ["die cho", "capcha"].includes(mapped.status) ? mapped.status : "loi",
         soVach: stableBarValue(currentName, sheetRow, barStatus || progressCapture.value),
         chiTiet: mapped.detail,
         tenChuan

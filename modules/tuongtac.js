@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { isMarketplaceIneligibleError, assertMarketplaceAccess } from "./facebook_locale.js";
+import { isMarketplaceIneligibleError, assertMarketplaceAccess, isFacebookCaptchaError } from "./facebook_locale.js";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const INTERACTION_MAX_CONCURRENCY = 4;
 const FACEBOOK_LOCALE = "en_US";
@@ -2355,6 +2355,7 @@ function mapInteractionError(error) {
   const message = String(error?.message || error || "loi khong ro");
   if (status === "stopped") return { status: "stopped", detail: "Da dung han theo yeu cau." };
   if (isMarketplaceIneligibleError(error)) return { status: "die cho", detail: message };
+  if (isFacebookCaptchaError(error)) return { status: "capcha", detail: message };
   const lower = message.toLowerCase();
   if (lower.includes("checkpoint") || lower.includes("captcha") || lower.includes("not a robot")) return { status: "loicapcha", detail: message };
   if (lower.includes("login") || lower.includes("logged out") || lower.includes("see more on facebook") || lower.includes("bi out")) return { status: "biout", detail: message };
@@ -2621,7 +2622,7 @@ export function createTuongTac({
       const mapped = mapInteractionError(page?.__marketplaceAccess?.error || error);
       const finalUpdate = {
         Tool: "tuong tac",
-        trangThai: mapped.status === "die cho" ? "die cho" : "loi",
+        trangThai: ["die cho", "capcha"].includes(mapped.status) ? mapped.status : "loi",
         chiTiet: mapped.detail || "loi tuong tac"
       };
       if (job) {

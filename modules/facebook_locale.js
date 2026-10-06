@@ -2,6 +2,13 @@ import { buildMarketplaceIneligibleName } from "./profile_name.js";
 
 const FACEBOOK_LOCALE = "en_US";
 
+export function isFacebookCaptchaError(error) {
+  const status = String(error?.status || "").trim().toLowerCase();
+  if (["stopped", "die cho", "cp282", "cp956"].includes(status) || error?.code === "MARKETPLACE_INELIGIBLE") return false;
+  return error?.code === "LOGIN_CAPTCHA" || ["capcha", "loicapcha"].includes(status)
+    || /captcha|capcha|not a robot/i.test(String(error?.message || error || ""));
+}
+
 export function isMarketplaceIneligibleUrl(value) {
   try {
     const url = new URL(String(value || ""));

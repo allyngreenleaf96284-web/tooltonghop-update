@@ -320,7 +320,7 @@ export function createToolLogin({
         job.liveStatus = "da dung han";
         return { stopped: true };
       }
-      const tenChuan = page?.__marketplaceAccess?.profileName || buildStandardName({
+      const tenChuan = page?.__marketplaceAccess?.profileName || error?.captchaProfileName || buildStandardName({
         currentName,
         sheetRow,
         uid,
@@ -330,7 +330,7 @@ export function createToolLogin({
       await rename(manager, profileId, buildRuntimeProfileName({ status: mapped.status, tenChuan })).catch(() => {});
       const update = {
         Tool: "tool login",
-        trangThai: mapped.status === "die cho" ? "die cho" : "loi",
+        trangThai: ["die cho", "capcha"].includes(mapped.status) ? mapped.status : "loi",
         soVach: stableBarValue(currentName, sheetRow, barStatus),
         chiTiet: mapped.detail,
         tenChuan

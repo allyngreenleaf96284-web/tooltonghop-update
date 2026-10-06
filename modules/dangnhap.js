@@ -1,11 +1,62 @@
 import crypto from "node:crypto";
-import { withFacebookLocale, installMarketplaceAccessGuard } from "./facebook_locale.js";
+import { withFacebookLocale, installMarketplaceAccessGuard, isFacebookCaptchaError } from "./facebook_locale.js";
+import { buildCaptchaProfileName } from "./profile_name.js";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // Proxy connections often render Facebook's 2FA screen noticeably later than the password form.
 const TWOFA_SCREEN_WAIT_MS = 120000;
 const TWOFA_INPUT_EXTRA_WAIT_MS = 180000;
 const TWOFA_SETTLE_WAIT_MS = 45000;
+
+export function readLoginCaptchaChallenge() {
+  if (!/(^|\.)facebook\.com$/i.test(location.hostname)) return false;
+  const visible = (node) => {
+    if (!(node instanceof HTMLElement) || node.closest("[aria-hidden='true'], [inert]")) return false;
+    const rect = node.getBoundingClientRect();
+    const style = getComputedStyle(node);
+    return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+  };
+  const text = String(document.body?.innerText || "").replace(/\u2019/g, "'").replace(/\s+/g, " ").toLowerCase();
+  const widget = Array.from(document.querySelectorAll("iframe[src], .g-recaptcha, [data-sitekey]"))
+    .some((node) => {
+      if (!visible(node)) return false;
+      if (node.matches(".g-recaptcha, [data-sitekey]")) return true;
+      try {
+        const url = new URL(node.getAttribute("src"), location.href);
+        return /(^|\.)(google\.com|recaptcha\.net)$/i.test(url.hostname)
+          && /\/recaptcha\/(?:api2|enterprise)\/(?:anchor|bframe)/i.test(url.pathname);
+      } catch { return false; }
+    });
+  return widget || /(?:i'm|i am) not a robot/.test(text)
+    || (/recaptcha/.test(text) && /combat harmful conduct|security check/.test(text));
+}
+
+export async function assertNoLoginCaptcha(page, step = "login: kiem tra captcha") {
+  const browser = page.browser();
+  if (browser.__loginCaptcha?.error) throw browser.__loginCaptcha.error;
+  if (!await page.evaluate(readLoginCaptchaChallenge).catch(() => false)) return;
+  const error = new Error("Facebook yeu cau reCAPTCHA / I'm not a robot khi dang nhap; de lai cho luot chay lai.");
+  error.status = "capcha";
+  error.code = "LOGIN_CAPTCHA";
+  error.retryable = true;
+  error.step = step;
+  browser.__loginCaptcha = { error };
+  throw error;
+}
+
+export function facebookLoginPlan(state, { forceAccountLogin = false } = {}) {
+  let blockedRoute = false;
+  if (state?.url) {
+    try {
+      const url = new URL(state.url);
+      blockedRoute = !/(^|\.)facebook\.com$/i.test(url.hostname)
+        || /^\/(?:login(?:\/|\.php|$)|recover(?:\/|\.php|$)|lite(?:\/|$)|two_step_verification(?:\/|$)|checkpoint(?:\/|$))/i.test(url.pathname);
+    } catch { blockedRoute = true; }
+  }
+  const reusable = state?.hasSession && !state.onLoginForm && !state.onContinue && !state.onPasswordModal
+    && !state.checkpointStatus && !blockedRoute && state.credentialStep === "logged_in";
+  return reusable ? "session" : forceAccountLogin ? "account" : "cookie";
+}
 
 export function clickLoginDismissControl() {
   const isVisible = (element) => {
@@ -199,9 +250,10 @@ export async function fillTwofaInput(page, input, otp) {
   }, input, otp);
 }
 
-export async function submitTwofaCode(page, { timeoutMs = 15000, pollMs = 300, onProgress = () => {} } = {}) {
+export async function submitTwofaCode(page, { timeoutMs = 15000, pollMs = 300, onProgress = () => {}, checkChallenge = async () => {} } = {}) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    await checkChallenge();
     onProgress();
     const state = await page.evaluate(twofaCodeControl, "submit");
     if (state.stage === "submitted") return true;
@@ -264,9 +316,10 @@ export function authenticationAppControl(action = "inspect") {
 }
 
 export async function chooseAuthenticationAppTwofa(page, {
-  timeoutMs = 15000, pollMs = 300, actionDelayMs = 800, deadline = Infinity, onProgress = () => {}
+  timeoutMs = 15000, pollMs = 300, actionDelayMs = 800, deadline = Infinity, onProgress = () => {}, checkChallenge = async () => {}
 } = {}) {
   const inspect = async () => {
+    await checkChallenge();
     const code = await page.evaluate(twofaCodeControl).catch(() => ({ stage: "waiting" }));
     if (code.stage === "code") return code;
     return page.evaluate(authenticationAppControl).catch(() => ({ stage: "waiting" }));
@@ -977,33 +1030,8 @@ export function createDangNhap({ addRuntimeLog }) {
     }
   }
 
-  async function detectCaptchaChallenge(page) {
-    return page.evaluate(() => {
-      const url = String(window.location.href || "").toLowerCase();
-      const body = String(document.body?.innerText || "").replace(/\s+/g, " ").toLowerCase();
-      const hasRecaptchaFrame = Array.from(document.querySelectorAll("iframe[src], div, textarea"))
-        .some((node) => {
-          const text = `${node.getAttribute?.("src") || ""} ${node.getAttribute?.("title") || ""} ${node.getAttribute?.("aria-label") || ""} ${node.innerText || ""}`.toLowerCase();
-          return /recaptcha|i'm not a robot|i am not a robot/.test(text);
-        });
-      return (
-        url.includes("/two_step_verification/authentication")
-        && (
-          body.includes("i'm not a robot")
-          || body.includes("recaptcha")
-          || body.includes("combat harmful conduct")
-          || hasRecaptchaFrame
-        )
-      );
-    }).catch(() => false);
-  }
-
   async function throwIfCaptchaChallenge(page, step = "login: kiem tra captcha") {
-    if (!(await detectCaptchaChallenge(page))) return;
-    const error = new Error("Facebook yeu cau reCAPTCHA / I'm not a robot khi dang nhap.");
-    error.status = "loicapcha";
-    error.step = step;
-    throw error;
+    await assertNoLoginCaptcha(page, step);
   }
 
   async function getCheckpointStatus(page) {
@@ -1264,6 +1292,7 @@ export function createDangNhap({ addRuntimeLog }) {
   async function waitForLoginSuccess(manager, page, timeoutMs = 8000) {
     const started = Date.now();
     while (Date.now() - started < timeoutMs) {
+      await throwIfCaptchaChallenge(page);
       await handlePostLoginDismiss(manager, page);
       if (await hasActiveFacebookSession(page) && !(await isLoggedOutFacebook(page))) {
         return true;
@@ -1280,6 +1309,7 @@ export function createDangNhap({ addRuntimeLog }) {
   async function waitAfterContinueForNextStep(manager, page, timeoutMs = 10000) {
     const started = Date.now();
     while (Date.now() - started < timeoutMs) {
+      await throwIfCaptchaChallenge(page);
       if (await isInvalidRequestPopupVisible(page)) return "invalid_request";
       if (await isPasswordConfirmModalVisible(page) || await passwordStepReady(page)) return "password_modal";
       const stepResult = await waitForCredentialStepResult(manager, page, 1200).catch(() => "timeout");
@@ -1662,6 +1692,7 @@ export function createDangNhap({ addRuntimeLog }) {
   async function waitForLoginSettled(manager, page, timeoutMs = 12000, { afterTwofaSubmit = false } = {}) {
     const started = Date.now();
     while (Date.now() - started < timeoutMs) {
+      await throwIfCaptchaChallenge(page);
       await handlePostLoginDismiss(manager, page);
       const url = String(page.url() || "").toLowerCase();
       const bodyText = await page.evaluate(() => (document.body?.innerText || "").replace(/\s+/g, " ").trim()).catch(() => "");
@@ -1712,10 +1743,14 @@ export function createDangNhap({ addRuntimeLog }) {
       });
     };
     while (Date.now() < deadline) {
+      await throwIfCaptchaChallenge(page, "login: cho o nhap 2FA");
       input = await findVisibleTwofaInput(page).catch(() => null);
       if (input) break;
       updateWaitingStatus();
-      await chooseAuthenticationAppTwofa(page, { deadline, onProgress: updateWaitingStatus });
+      await chooseAuthenticationAppTwofa(page, {
+        deadline, onProgress: updateWaitingStatus,
+        checkChallenge: () => throwIfCaptchaChallenge(page, "login: chon cach nhap 2FA")
+      });
       input = await findVisibleTwofaInput(page).catch(() => null);
       if (input) break;
       await input?.dispose?.().catch(() => {});
@@ -1744,6 +1779,7 @@ export function createDangNhap({ addRuntimeLog }) {
       await input.dispose().catch(() => {});
     }
     await submitTwofaCode(page, {
+      checkChallenge: () => throwIfCaptchaChallenge(page, "login: gui ma 2FA"),
       onProgress: () => updateLiveStatus("2FA: da nhap ma, dang cho nut Tiep tuc san sang")
     });
     updateLiveStatus("2FA: da bam Tiep tuc, dang cho Facebook xac minh ma");
@@ -1756,12 +1792,15 @@ export function createDangNhap({ addRuntimeLog }) {
     const started = Date.now();
     while (Date.now() - started < timeoutMs) {
       try {
+        await throwIfCaptchaChallenge(page);
         if (detectLiteRedirect && isFacebookLiteUrl(page)) return "lite";
-        if (await hasActiveFacebookSession(page)) return "logged_in";
         const url = String(page.url() || "").toLowerCase();
         if (url.includes("two_step_verification") || url.includes("two-factor")) return "twofa";
         const hasTwofa = await findVisibleTwofaInput(page);
-        if (hasTwofa) return "twofa";
+        if (hasTwofa) {
+          await hasTwofa.dispose().catch(() => {});
+          return "twofa";
+        }
         if (url.includes("checkpoint")) {
           if (await waitForDismissableCp049(page)) continue;
           if (await dismissAutomatedBehaviorCheckpoint(page)) continue;
@@ -1769,6 +1808,8 @@ export function createDangNhap({ addRuntimeLog }) {
           if (checkpointStatus) return checkpointStatus;
           return "checkpoint";
         }
+        if (await hasActiveFacebookSession(page) && !await isStandardLoginFormVisible(page)
+          && !await isProfileChooserState(page) && !await isPasswordConfirmModalVisible(page)) return "logged_in";
         if (await waitForLoginSuccess(manager, page, 1500).catch(() => false)) return "logged_in";
         if (!(await isPasswordConfirmModalVisible(page)) && await isProfileChooserState(page)) {
           return "continue";
@@ -2246,16 +2287,20 @@ export function createDangNhap({ addRuntimeLog }) {
     await waitForDismissableCp049(page);
     await dismissAutomatedBehaviorCheckpoint(page);
     return {
+      url: String(page.url() || ""),
       hasSession: await hasActiveFacebookSession(page).catch(() => false),
       onLoginForm: await isStandardLoginFormVisible(page).catch(() => false),
       onContinue: await isProfileChooserState(page).catch(() => false),
       onPasswordModal: await isPasswordConfirmModalVisible(page).catch(() => false),
-      credentialStep: await waitForCredentialStepResult(manager, page, 2000).catch(() => "timeout"),
+      credentialStep: await waitForCredentialStepResult(manager, page, 2000).catch((error) => {
+        if (isFacebookCaptchaError(error)) throw error;
+        return "timeout";
+      }),
       checkpointStatus: await getCheckpointStatus(page).catch(() => "")
     };
   }
 
-  async function ensureFacebookLogin(manager, page, row, profileId, updateLiveStatus, options = {}) {
+  async function performFacebookLogin(manager, page, row, profileId, updateLiveStatus, options = {}) {
     const forceAccountLogin = Boolean(options?.forceAccountLogin);
     installMarketplaceAccessGuard(manager, page, profileId,
       getRawField(row?.raw, ["ten profile hien tai", "ten chuan"]) || row?.name || profileId,
@@ -2263,13 +2308,6 @@ export function createDangNhap({ addRuntimeLog }) {
         updateLiveStatus(error.message);
         logLogin(profileId, "die cho", error.message, "error");
       });
-    await loginStep(profileId, updateLiveStatus, "login: don mat khau Chrome", "dang don mat khau Facebook cu trong Chrome", async () => {
-      const result = await prepareFacebookPasswordManager(page, updateLiveStatus);
-      logLogin(profileId, "login: don mat khau Chrome", `Da xoa ${result.deleted} tai khoan Facebook da luu va tat de nghi luu mat khau.`, "success");
-    });
-    await loginStep(profileId, updateLiveStatus, "login: block Notifications chrome", "dang block Notifications cho facebook.com", async () => {
-      await blockFacebookNotificationsInChrome(page);
-    });
     await loginStep(profileId, updateLiveStatus, "login: vao facebook.com", "dang vao facebook.com", async () => {
       await gotoWithFallback(manager, page, "https://www.facebook.com/", row, 3);
       await page.waitForSelector("body", { timeout: 10000 }).catch(() => {});
@@ -2279,15 +2317,6 @@ export function createDangNhap({ addRuntimeLog }) {
     await loginStep(profileId, updateLiveStatus, "login: tat popup facebook", "dang tat popup Facebook", async () => {
       await handlePostLoginDismiss(manager, page);
     });
-
-    if (forceAccountLogin) {
-      await loginStep(profileId, updateLiveStatus, "login: xoa session cu", "Tool Login dang xoa session cu va mo form tai khoan/mat khau", async () => {
-        await clearFacebookCookiesOnly(page);
-        await openStandardFacebookLogin(page, { forceLoginForm: true });
-        await page.waitForSelector("body", { timeout: 10000 }).catch(() => {});
-        await throwIfCaptchaChallenge(page, "login: mo form tai khoan mat khau");
-      });
-    }
 
     const currentState = await loginStep(profileId, updateLiveStatus, "login: doc trang thai hien tai", "dang doc trang thai dang nhap", async () => {
       const state = await detectCurrentState(manager, page);
@@ -2299,8 +2328,22 @@ export function createDangNhap({ addRuntimeLog }) {
       return state;
     });
 
+    const plan = facebookLoginPlan(currentState, { forceAccountLogin });
+    if (plan !== "session") {
+      await loginStep(profileId, updateLiveStatus, "login: don mat khau Chrome", "dang don mat khau Facebook cu trong Chrome", async () => {
+        const result = await prepareFacebookPasswordManager(page, updateLiveStatus);
+        logLogin(profileId, "login: don mat khau Chrome", `Da xoa ${result.deleted} tai khoan Facebook da luu va tat de nghi luu mat khau.`, "success");
+      });
+      await loginStep(profileId, updateLiveStatus, "login: block Notifications chrome", "dang block Notifications cho facebook.com", async () => {
+        await blockFacebookNotificationsInChrome(page);
+      });
+    }
     let loginSource = "login";
-    if (forceAccountLogin) {
+    if (plan === "session") {
+      updateLiveStatus("dang nhap Facebook da co san, giu nguyen session");
+      logLogin(profileId, "login: session co san", "dang nhap Facebook da co san, giu nguyen session", "success");
+      loginSource = "session";
+    } else if (plan === "account") {
       await loginStep(profileId, updateLiveStatus, "login: tai khoan mat khau", "Tool Login dang login bang tai khoan/mat khau", async () => {
         const result = await loginWithAccount(manager, page, row, updateLiveStatus, {
           forceLoginForm: true,
@@ -2311,10 +2354,6 @@ export function createDangNhap({ addRuntimeLog }) {
         await throwIfCaptchaChallenge(page, "login: tai khoan mat khau");
       });
       loginSource = "account";
-    } else if (currentState.hasSession && !currentState.onLoginForm && !currentState.onContinue && !currentState.onPasswordModal && currentState.credentialStep !== "twofa") {
-      updateLiveStatus("dang nhap Facebook da co san");
-      logLogin(profileId, "login: session co san", "dang nhap Facebook da co san", "success");
-      loginSource = "session";
     } else {
       try {
         await loginStep(profileId, updateLiveStatus, "login: cookie", "dang login bang cookie", async () => {
@@ -2340,7 +2379,7 @@ export function createDangNhap({ addRuntimeLog }) {
         if (cookieError?.page && typeof cookieError.page.isClosed === "function" && !cookieError.page.isClosed()) {
           page = cookieError.page;
         }
-        if (["cp282", "cp956", "loicapcha"].includes(String(cookieError?.status || "").trim())) throw cookieError;
+        if (["cp282", "cp956"].includes(String(cookieError?.status || "").trim()) || isFacebookCaptchaError(cookieError)) throw cookieError;
         logLogin(profileId, "login: cookie", `login cookie loi: ${cookieError.message}. Chuyen sang tai khoan/mat khau.`, "warn", cookieError.message);
         await loginStep(profileId, updateLiveStatus, "login: tai khoan mat khau", "dang login bang tai khoan/mat khau", async () => {
           const result = await loginWithAccount(manager, page, row, updateLiveStatus);
@@ -2361,31 +2400,11 @@ export function createDangNhap({ addRuntimeLog }) {
       throw new Error("Da thu dang nhap nhung facebook.com chua co session c_user.");
     }
 
-    if (String(process.env.DANGNHAP_FAST_SESSION_ONLY || "").trim() === "1") {
-      const cookieHeader = await loginStep(profileId, updateLiveStatus, "login: lay cookie moi", "dang lay cookie moi", async () => {
-        if (typeof manager?.buildCurrentFacebookCookieHeader === "function") {
-          return manager.buildCurrentFacebookCookieHeader(page).catch(() => "");
-        }
-        return buildCurrentFacebookCookieHeader(page).catch(() => "");
-      });
-      updateLiveStatus("dang nhap Facebook thanh cong");
-      logLogin(profileId, "login: thanh cong", "dang nhap Facebook thanh cong", "success", "fast session only");
-      return { ok: true, source: loginSource, cookieHeader, page };
-    }
-
     const cookieHeader = await loginStep(profileId, updateLiveStatus, "login: lay cookie moi", "dang lay cookie moi", async () => {
       if (typeof manager?.buildCurrentFacebookCookieHeader === "function") {
         return manager.buildCurrentFacebookCookieHeader(page).catch(() => "");
       }
       return buildCurrentFacebookCookieHeader(page).catch(() => "");
-    });
-    await loginStep(profileId, updateLiveStatus, "login: chuyen ve nick chinh", "dang dam bao dang dung nick chinh", async () => {
-      const identity = await ensureMainFacebookIdentity(manager, page, row, profileId, updateLiveStatus);
-      if (!identity.ok && !identity.skipped) {
-        const error = new Error(`Facebook dang o Page context nhung khong chuyen ve duoc nick chinh: ${identity.beforeUrl || identity.reason || ""}`);
-        error.status = "loi login";
-        throw error;
-      }
     });
     await loginStep(profileId, updateLiveStatus, "login: doi ngon ngu English", "dang kiem tra ngon ngu Facebook", async () => {
       const ok = await ensureEnglishLanguageFallback(manager, page, row, profileId);
@@ -2398,6 +2417,47 @@ export function createDangNhap({ addRuntimeLog }) {
     updateLiveStatus("dang nhap Facebook thanh cong");
     logLogin(profileId, "login: thanh cong", "dang nhap Facebook thanh cong", "success");
     return { ok: true, source: loginSource, cookieHeader, page };
+  }
+
+  async function ensureFacebookLogin(manager, page, row, profileId, updateLiveStatus = () => {}, options = {}) {
+    if (!(manager.__captchaProfileNames instanceof Map)) manager.__captchaProfileNames = new Map();
+    manager.__captchaProfileNames.delete(String(profileId));
+    delete page.browser().__loginCaptcha;
+    if (!manager.__captchaRenamePatched && typeof manager.updateProfileName === "function") {
+      const update = manager.updateProfileName;
+      manager.updateProfileName = function updateWithCaptchaStatus(id, name, ...args) {
+        const marked = this.__marketplaceBlockedNames?.get(String(id)) || this.__captchaProfileNames?.get(String(id));
+        return update.call(this, id, marked || name, ...args);
+      };
+      manager.__captchaRenamePatched = true;
+    }
+    try {
+      return await performFacebookLogin(manager, page, row, profileId, updateLiveStatus, options);
+    } catch (caught) {
+      const failure = page.browser().__loginCaptcha?.error || caught;
+      if (!isFacebookCaptchaError(failure)) throw failure;
+      const error = failure instanceof Error ? failure : new Error(String(failure || "loi dang nhap"));
+      error.status = "capcha";
+      error.code = "LOGIN_CAPTCHA";
+      error.retryable = true;
+      let currentName = "";
+      try {
+        currentName = typeof manager.getProfileNameById === "function"
+          ? await manager.getProfileNameById(profileId)
+          : (await manager.getProfileById?.(profileId))?.name || "";
+      } catch {}
+      const marked = buildCaptchaProfileName(currentName || getRawField(row?.raw, ["ten profile hien tai", "ten chuan"]) || row?.name || profileId);
+      error.captchaProfileName = marked;
+      manager.__captchaProfileNames.set(String(profileId), marked);
+      if (String(currentName || "").trim() !== marked) {
+        await manager.updateProfileName?.(profileId, marked).catch((renameError) => {
+          logLogin(profileId, "capcha", `khong doi duoc ten profile: ${renameError.message}`, "error");
+        });
+      }
+      updateLiveStatus("capcha: Facebook yeu cau xac minh not a robot, chuyen sang danh sach chay lai");
+      logLogin(profileId, "capcha", error.message, "error");
+      throw error;
+    }
   }
 
   return { ensureFacebookLogin, ensureMainFacebookIdentity };

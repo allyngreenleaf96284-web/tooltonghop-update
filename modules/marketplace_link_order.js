@@ -505,6 +505,7 @@ export function createMarketplaceLinkOrderTool({
         job.status = "error";
         job.liveStatus = error.message || "loi check link order";
         if (browser?.__marketplaceAccess?.error) job.result = { trangThai: "die cho", chiTiet: error.message };
+        else if (browser?.__loginCaptcha?.error) job.result = { trangThai: "capcha", chiTiet: error.message };
       }
       log(profileId, "loi tong", `${nickLabel} loi: ${error.message || error}`, "error");
       return { profileId, error: error.message || String(error), checked, total: totalTasks, permanent: Boolean(browser?.__marketplaceAccess?.error) };
