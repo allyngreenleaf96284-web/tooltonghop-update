@@ -228,8 +228,7 @@ export function buildRuntimeProfileName({ status = "", tenChuan = "" }) {
   if (normalizedStatus === "die cho") return buildMarketplaceIneligibleName(base);
   if (["capcha", "loicapcha"].includes(normalizedStatus)) return buildCaptchaProfileName(base);
   if (!normalizedStatus || normalizedStatus === "thanh cong" || normalizedStatus === "thành công") return base;
-  if (normalizedStatus === "loi") return `loi-${base}`;
-  return `${normalizedStatus}-${base}`;
+  return `${normalizedStatus}-${stripResolvedNamePrefixes(base)}`;
 }
 
 function extractLocationFromProfileName(name) {
@@ -1277,16 +1276,9 @@ export function createLamFull({
 
       const mappedError = mapFullError({ status, message: detail || status || "loi" });
       const mappedStatus = mappedError.status || "loi";
-      const tenChuan = buildStandardName({
-        currentName,
-        sheetRow,
-        uid,
-        fullToken: existingFullToken,
-        soVach: stableBarValue(currentName, sheetRow, barStatus || progressCapture.value),
-        location: locationCapture.current || locationCapture.initial
-      });
-      await rename(manager, profileId, buildRuntimeProfileName({ status: mappedStatus, tenChuan }));
-      const update = { Tool: "đã làm full", trangThai: mappedStatus === "die cho" ? "die cho" : "loi", soVach: stableBarValue(currentName, sheetRow, barStatus), chiTiet: mappedError.detail || detail || mappedStatus, tenChuan };
+      const tenChuan = buildRuntimeProfileName({ status: mappedStatus, tenChuan: currentName });
+      await rename(manager, profileId, tenChuan);
+      const update = { Tool: "đã làm full", trangThai: ["die cho", "capcha"].includes(mappedStatus) ? mappedStatus : "loi", soVach: stableBarValue(currentName, sheetRow, barStatus), chiTiet: mappedError.detail || detail || mappedStatus, tenChuan };
       if (locationCapture.initial) update.diaChiBanDau = locationCapture.initial;
       await writeSheet(sheetWriter, profileId, update);
       await sheetWriter.commit();
@@ -1306,14 +1298,11 @@ export function createLamFull({
         job.result = null;
         return { stopped: true };
       }
-      const tenChuan = page?.__marketplaceAccess?.profileName || error?.captchaProfileName || buildStandardName({
-        currentName,
-        sheetRow,
-        uid,
-        soVach: stableBarValue(currentName, sheetRow, barStatus || progressCapture.value),
-        location: locationCapture.current || locationCapture.initial
+      const tenChuan = buildRuntimeProfileName({
+        status: mapped.status,
+        tenChuan: page?.__marketplaceAccess?.profileName || error?.captchaProfileName || currentName
       });
-      await rename(manager, profileId, buildRuntimeProfileName({ status: mapped.status, tenChuan }));
+      await rename(manager, profileId, tenChuan);
       const update = {
         Tool: "đã làm full",
         trangThai: ["die cho", "capcha"].includes(mapped.status) ? mapped.status : "loi",

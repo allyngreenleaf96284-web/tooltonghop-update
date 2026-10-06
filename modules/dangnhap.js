@@ -8,19 +8,33 @@ const TWOFA_SCREEN_WAIT_MS = 120000;
 const TWOFA_INPUT_EXTRA_WAIT_MS = 180000;
 const TWOFA_SETTLE_WAIT_MS = 45000;
 
-export function readLoginCaptchaChallenge() {
-  if (!/(^|\.)facebook\.com$/i.test(location.hostname)) return false;
+export function readLoginCaptchaChallenge({ embedded = false } = {}) {
+  const facebook = /(^|\.)facebook\.com$/i.test(location.hostname);
+  const recaptchaFrame = /(^|\.)(google\.com|recaptcha\.net)$/i.test(location.hostname)
+    && /\/recaptcha\/(?:api2|enterprise)\/(?:anchor|bframe)/i.test(location.pathname);
+  const inheritedFrame = /^(?:about:blank|about:srcdoc)$/.test(location.href);
+  if (!facebook && !(embedded && (recaptchaFrame || inheritedFrame))) return false;
   const visible = (node) => {
     if (!(node instanceof HTMLElement) || node.closest("[aria-hidden='true'], [inert]")) return false;
     const rect = node.getBoundingClientRect();
-    const style = getComputedStyle(node);
-    return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    if (rect.width <= 0 || rect.height <= 0) return false;
+    for (let parent = node; parent; parent = parent.parentElement || parent.getRootNode()?.host) {
+      const style = getComputedStyle(parent);
+      if (style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse" || Number(style.opacity) === 0) return false;
+    }
+    return true;
   };
-  const text = String(document.body?.innerText || "").replace(/\u2019/g, "'").replace(/\s+/g, " ").toLowerCase();
-  const widget = Array.from(document.querySelectorAll("iframe[src], .g-recaptcha, [data-sitekey]"))
+  const roots = [document];
+  for (let i = 0; i < roots.length; i += 1) {
+    for (const node of roots[i].querySelectorAll("*")) if (node.shadowRoot) roots.push(node.shadowRoot);
+  }
+  const text = roots.map((root) => root === document ? document.body?.innerText || ""
+    : visible(root.host) ? Array.from(root.querySelectorAll("*")).filter(visible).map((node) => node.innerText || "").join(" ") : "")
+    .join(" ").replace(/\u2019/g, "'").replace(/\s+/g, " ").toLowerCase();
+  const widget = roots.flatMap((root) => Array.from(root.querySelectorAll("iframe[src], .g-recaptcha, [data-sitekey], #recaptcha-anchor")))
     .some((node) => {
       if (!visible(node)) return false;
-      if (node.matches(".g-recaptcha, [data-sitekey]")) return true;
+      if (node.matches(".g-recaptcha, [data-sitekey]") || (recaptchaFrame && node.id === "recaptcha-anchor")) return true;
       try {
         const url = new URL(node.getAttribute("src"), location.href);
         return /(^|\.)(google\.com|recaptcha\.net)$/i.test(url.hostname)
@@ -31,10 +45,41 @@ export function readLoginCaptchaChallenge() {
     || (/recaptcha/.test(text) && /combat harmful conduct|security check/.test(text));
 }
 
+export async function hasLoginCaptchaChallenge(page) {
+  let url;
+  try { url = new URL(page.url()); } catch { return false; }
+  if (!/(^|\.)facebook\.com$/i.test(url.hostname)) return false;
+  if (await page.evaluate(readLoginCaptchaChallenge).catch(() => false)) return true;
+  // Cross-origin and nested frames have their own DOM, outside the Facebook document.
+  for (const frame of page.frames()) {
+    if (frame === page.mainFrame()) continue;
+    let displayed = true;
+    for (let ancestor = frame; ancestor.parentFrame(); ancestor = ancestor.parentFrame()) {
+      let element;
+      try {
+        element = await ancestor.frameElement();
+        displayed = Boolean(element) && await element.evaluate((node) => {
+          const rect = node.getBoundingClientRect();
+          if (rect.width <= 0 || rect.height <= 0 || node.closest("[aria-hidden='true'], [inert]")) return false;
+          for (let parent = node; parent; parent = parent.parentElement || parent.getRootNode()?.host) {
+            const style = getComputedStyle(parent);
+            if (style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse" || Number(style.opacity) === 0) return false;
+          }
+          return true;
+        });
+      } catch { displayed = false; }
+      finally { await element?.dispose().catch(() => {}); }
+      if (!displayed) break;
+    }
+    if (displayed && await frame.evaluate(readLoginCaptchaChallenge, { embedded: true }).catch(() => false)) return true;
+  }
+  return false;
+}
+
 export async function assertNoLoginCaptcha(page, step = "login: kiem tra captcha") {
   const browser = page.browser();
   if (browser.__loginCaptcha?.error) throw browser.__loginCaptcha.error;
-  if (!await page.evaluate(readLoginCaptchaChallenge).catch(() => false)) return;
+  if (!await hasLoginCaptchaChallenge(page)) return;
   const error = new Error("Facebook yeu cau reCAPTCHA / I'm not a robot khi dang nhap; de lai cho luot chay lai.");
   error.status = "capcha";
   error.code = "LOGIN_CAPTCHA";
@@ -2454,7 +2499,7 @@ export function createDangNhap({ addRuntimeLog }) {
           logLogin(profileId, "capcha", `khong doi duoc ten profile: ${renameError.message}`, "error");
         });
       }
-      updateLiveStatus("capcha: Facebook yeu cau xac minh not a robot, chuyen sang danh sach chay lai");
+      updateLiveStatus("capcha: Facebook yeu cau xac minh not a robot, chuyen sang danh sach chay lai", { twofaActive: false });
       logLogin(profileId, "capcha", error.message, "error");
       throw error;
     }

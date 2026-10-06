@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { after, before, test } from "node:test";
-import { createDangNhap, facebookLoginPlan, readLoginCaptchaChallenge, assertNoLoginCaptcha, chooseAuthenticationAppTwofa, submitTwofaCode } from "../modules/dangnhap.js";
+import { createDangNhap, facebookLoginPlan, readLoginCaptchaChallenge, hasLoginCaptchaChallenge, assertNoLoginCaptcha, chooseAuthenticationAppTwofa, submitTwofaCode } from "../modules/dangnhap.js";
 import { buildCaptchaProfileName } from "../modules/profile_name.js";
-import { mapFullError, buildRuntimeProfileName, stripResolvedNamePrefixes } from "../modules/lamfull.js";
+import { createLamFull, mapFullError, buildRuntimeProfileName, stripResolvedNamePrefixes } from "../modules/lamfull.js";
 import { isRetryableFailure, isUnknownFailure, startAutoRetryBatch } from "../modules/batch_retry.js";
 
 const require = createRequire(import.meta.url);
@@ -117,6 +117,51 @@ test("CAPTCHA exits shared login promptly, preserves the original name, and neve
   } finally { delete browser.__loginCaptcha; await context.close(); }
 });
 
+test("CAPTCHA inside a nested frame or shadow root is detected, but hidden frames and ordinary OTP are not", async () => {
+  const { context, page } = await fixture("<body></body>");
+  try {
+    await page.goto("https://www.facebook.com/two_step_verification/authentication/");
+    await page.setContent('<iframe id="wrapper" srcdoc="<iframe id=inner></iframe>"></iframe>');
+    const wrapper = await page.$("#wrapper");
+    const middle = await wrapper.contentFrame();
+    await middle.waitForSelector("#inner");
+    const inner = await middle.$("#inner");
+    const challenge = await inner.contentFrame();
+    await challenge.setContent("<p>I'm not a robot</p>");
+    assert.equal(await page.evaluate(readLoginCaptchaChallenge), false, "Top-level DOM cannot read iframe text.");
+    assert.equal(await hasLoginCaptchaChallenge(page), true);
+    await wrapper.evaluate((node) => { node.style.opacity = "0"; });
+    assert.equal(await hasLoginCaptchaChallenge(page), false);
+    await wrapper.evaluate((node) => { node.style.opacity = "1"; node.style.display = "none"; });
+    assert.equal(await hasLoginCaptchaChallenge(page), false);
+    await page.setContent('<div id="host"></div>');
+    await page.evaluate(() => { document.querySelector("#host").attachShadow({ mode: "open" }).innerHTML = '<div class="g-recaptcha" style="width:304px;height:78px"></div>'; });
+    assert.equal(await hasLoginCaptchaChallenge(page), true);
+    await page.evaluate(() => { document.querySelector("#host").style.display = "none"; });
+    assert.equal(await hasLoginCaptchaChallenge(page), false);
+    await page.setContent('<label>Code<input autocomplete="one-time-code"></label><button disabled>Continue</button>');
+    assert.equal(await hasLoginCaptchaChallenge(page), false);
+  } finally { await context.close(); }
+});
+
+test("a CAPTCHA frame appearing while waiting for 2FA interrupts the wait without the two-minute countdown", async () => {
+  const { context, page } = await fixture("<body></body>");
+  try {
+    await page.goto("https://www.facebook.com/two_step_verification/authentication/");
+    await page.setContent('<h1>Check your notifications on another device</h1><button id="try">Try another way</button>');
+    await page.evaluate(() => {
+      document.querySelector("#try").onclick = () => setTimeout(() => {
+        const frame = document.createElement("iframe");
+        frame.srcdoc = "<p>I'm not a robot</p>";
+        document.body.replaceChildren(frame);
+      }, 100);
+    });
+    const started = Date.now();
+    await assert.rejects(chooseAuthenticationAppTwofa(page, { timeoutMs: 4000, pollMs: 30, actionDelayMs: 5, checkChallenge: () => assertNoLoginCaptcha(page) }), (error) => error.code === "LOGIN_CAPTCHA");
+    assert.ok(Date.now() - started < 3000);
+  } finally { delete browser.__loginCaptcha; await context.close(); }
+});
+
 test("CAPTCHA appearing during method selection or button loading interrupts their polling", async () => {
   const { context, page } = await fixture("<body></body>");
   try {
@@ -139,6 +184,46 @@ test("name and error normalization recognize old CAPTCHA aliases while success c
   assert.equal(buildRuntimeProfileName({ status: "capcha", tenChuan: "capcha-name-tool" }), "capcha-name-tool");
   assert.equal(stripResolvedNamePrefixes("capcha-capcha-2v-name-tool"), "2v-name-tool");
   assert.equal(mapFullError({ status: "loi", message: "login: reCAPTCHA / not a robot" }).status, "capcha");
+});
+
+test("Full failures replace recognized error prefixes without changing the rest of the current name", () => {
+  const base = "db2-2v-61594499510154-Nuevo, California";
+  for (const current of [base, `loi-${base}`, `loi-loi-${base}`, `loi login-loi bank-${base}`, `cp282-${base}`]) {
+    assert.equal(buildRuntimeProfileName({ status: "loi", tenChuan: current }), `loi-${base}`);
+  }
+  for (const status of ["loi login", "loi bank", "loi ssn", "loi seller info", "loipb", "hetproxy", "biout", "cp282", "cp956", "cp049", "k co Offer shipping"]) {
+    const once = buildRuntimeProfileName({ status, tenChuan: base });
+    assert.equal(buildRuntimeProfileName({ status, tenChuan: once }), once);
+    assert.equal(buildRuntimeProfileName({ status: "loi", tenChuan: once }), `loi-${base}`);
+  }
+  assert.equal(buildRuntimeProfileName({ status: "thành công", tenChuan: base }), base);
+});
+
+test("Full queue writes the preserved error name to both the profile and Sheet across reruns", async () => {
+  const base = "db2-2v-61594499510154-Nuevo, California";
+  let name = base;
+  const writes = [];
+  const runtime = { jobs: new Map(), running: false };
+  const manager = {
+    saveConfig() {},
+    async getProfileById() { return { name, browserType: "chrome" }; },
+    async updateProfileName(id, value) { name = value; }
+  };
+  const sheet = { rows: new Map([["p1", { "tên profile hiện tại": base }]]), async updateOne(id, value) { writes.push(value); }, async flushAll() {} };
+  const full = createLamFull({
+    getManager: () => manager, getLocationManager: () => ({}), dangNhap: {}, addRuntimeLog() {},
+    buildToolRow: () => ({ uid: "61594499510154", raw: {} }), createSheetRowSession: async () => sheet,
+    allocateSellerInfoRow: async () => ({ raw: {} }), updateSellerInfoUid: async () => {},
+    stateProxy: { async ensureForProfile() { throw new Error("fixture failure"); } }, runtime
+  });
+  for (let run = 0; run < 2; run += 1) {
+    await full.runQueue(["p1"], { fullDataRoot: "fixture", fullPriceMin: 20, fullPriceMax: 25, sellerSpreadsheetId: "fixture" });
+    for (let i = 0; i < 200 && runtime.running; i += 1) await pause(10);
+    assert.equal(runtime.running, false);
+    assert.equal(name, `loi-${base}`);
+    assert.equal(runtime.jobs.get("p1").result.tenChuan, name);
+    assert.equal(writes.at(-1)["tên chuẩn"], name);
+  }
 });
 
 test("CAPTCHA is retryable but not unknown, while terminal Marketplace and checkpoint errors remain excluded", () => {
