@@ -1036,9 +1036,21 @@ export function createLamFull({
 
   async function runOldFullAttemptWithRetry(manager, page, browser, row, profileId, job) {
     if (job) job.liveStatus = "dang chay luong full goc";
-    const result = await manager.runFullFlowAttempt(page, browser, row, profileId);
-    await assertMarketplaceAccess(page);
-    return result;
+    const updateName = manager.updateProfileName;
+    // The legacy flow renames before checking bars; only the final outcome owns ordinary renames.
+    manager.updateProfileName = function deferFullRename(id, name, ...args) {
+      const key = String(id);
+      const guarded = this.__marketplaceBlockedNames?.get(key) || this.__captchaProfileNames?.get(key);
+      if (key !== String(profileId) || guarded) return updateName.call(this, id, name, ...args);
+      return Promise.resolve();
+    };
+    try {
+      const result = await manager.runFullFlowAttempt(page, browser, row, profileId);
+      await assertMarketplaceAccess(page);
+      return result;
+    } finally {
+      manager.updateProfileName = updateName;
+    }
   }
 
   async function runMarketplaceAndFullWithRetry(manager, page, browser, row, profileId, job, locationCapture, progressCapture, sheetSession, currentName, markNoRollback = () => {}, onSellerInfoInvalid = null) {
@@ -1185,14 +1197,6 @@ export function createLamFull({
 
       restoreManagerLoginGuards = patchManagerForCentralizedLogin(manager, row);
 
-      const cleanedNameAfterLogin = stripResolvedNamePrefixes(currentName);
-      if (cleanedNameAfterLogin && cleanedNameAfterLogin !== currentName) {
-        await step(profileId, job, "xoa prefix loi login cu", async () => {
-          await rename(manager, profileId, cleanedNameAfterLogin);
-          currentName = cleanedNameAfterLogin;
-        }, { timeoutMs: 20000 });
-      }
-
       const existingFullToken = buildStandardName({
         currentName,
         sheetRow,
@@ -1226,12 +1230,25 @@ export function createLamFull({
       );
       const outcome = flowResult.outcome;
 
-      barStatus = stableBarValue(currentName, sheetRow, String(outcome?.barStatus || progressCapture.value || "").trim());
+      const detectedBar = String(outcome?.barStatus || progressCapture.value || "").trim().toLowerCase();
+      barStatus = stableBarValue(currentName, sheetRow, detectedBar);
       const status = String(outcome?.status || "").trim();
       const detail = String(outcome?.detail || "").trim();
 
-      if (["2v", "4v"].includes(barStatus) || status === "loi 2v" || status === "loi 4v") {
-        const checkedBar = barStatus === "4v" || status === "loi 4v" ? "4v" : "2v";
+      if (detectedBar === "2v" || status === "loi 2v") {
+        const update = { Tool: "đã làm full", trangThai: "thành công", soVach: "2v", chiTiet: "đã kiểm tra 2v, giữ nguyên tên và đóng profile", tenChuan: currentName };
+        if (locationCapture.initial) update.diaChiBanDau = locationCapture.initial;
+        await writeSheet(sheetWriter, profileId, update);
+        await sheetWriter.commit();
+        job.status = "success";
+        job.liveStatus = update.chiTiet;
+        job.result = update;
+        if (sellerAllocation) await updateSellerInfoUid(config, sellerAllocation, "").catch(() => {});
+        return update;
+      }
+
+      if (barStatus === "4v" || status === "loi 4v") {
+        const checkedBar = "4v";
         const tenChuan = buildStandardName({
           currentName,
           sheetRow,

@@ -226,6 +226,68 @@ test("Full queue writes the preserved error name to both the profile and Sheet a
   }
 });
 
+test("Full detects 2v without any profile rename, closes it, and still renames a completed Full flow", async () => {
+  for (const outcome of [
+    { ok: false, status: "loi 2v", barStatus: "2v" },
+    { ok: false, status: "loi 2v", barStatus: "" },
+    { ok: true, status: "da submit info", barStatus: "3v" }
+  ]) {
+    const originalName = "loi-loi-db2-2v-61594499510154-Nuevo, California";
+    const { context, page } = await fixture('<button role="button" aria-label="Location: Nuevo, California">Nuevo, California</button>');
+    const runtime = { jobs: new Map(), running: false };
+    const updates = [], writes = [], releases = [], logs = [];
+    let name = originalName, stopped = 0, continued = false;
+    const manager = {
+      saveConfig() {}, sendLog() {},
+      async getProfileById() { return { name, browserType: "chrome" }; },
+      async updateProfileName(id, value) { name = value; updates.push(value); },
+      async connectBrowser() { return { newPage: async () => page, disconnect: async () => {} }; },
+      async stopHideMyAccProfile() { stopped += 1; },
+      async gotoWithRetry(tab, url) { await tab.goto(url); },
+      async runFullFlowAttempt() {
+        await this.updateProfileName("p1", "legacy-opened-name");
+        await this.updateProfileName("p1", "legacy-location-name");
+        assert.equal(name, originalName);
+        if (outcome.ok) {
+          continued = true;
+          await this.updateProfileName("p1", "legacy-success-name");
+        }
+        return outcome;
+      }
+    };
+    const originalWriter = manager.updateProfileName;
+    const sheet = { rows: new Map([["p1", { "tên profile hiện tại": originalName }]]), async updateOne(id, value) { writes.push(value); }, async flushAll() {} };
+    const full = createLamFull({
+      getManager: () => manager, getLocationManager: () => ({}), dangNhap: { ensureFacebookLogin: async () => ({ ok: true }) }, addRuntimeLog: (message) => logs.push(message),
+      buildToolRow: () => ({ uid: "61594499510154", raw: {} }), createSheetRowSession: async () => sheet,
+      allocateSellerInfoRow: async () => ({ raw: { SSN: "123456789" } }), updateSellerInfoUid: async (config, allocation, uid) => { releases.push(uid); },
+      stateProxy: { ensureForProfile: async () => null }, runtime
+    });
+    try {
+      await full.runQueue(["p1"], { fullDataRoot: "fixture", fullPriceMin: 20, fullPriceMax: 25, sellerSpreadsheetId: "fixture" });
+      for (let i = 0; i < 1000 && runtime.running; i += 1) await pause(10);
+      assert.equal(runtime.running, false, JSON.stringify({ outcome, logs, job: runtime.jobs.get("p1") }));
+      assert.equal(runtime.jobs.get("p1").status, "success");
+      assert.equal(page.isClosed(), true);
+      assert.equal(stopped, 1);
+      assert.equal(manager.updateProfileName, originalWriter);
+      assert.equal(writes.at(-1)["tên chuẩn"], name);
+      if (!outcome.ok) {
+        assert.equal(name, originalName);
+        assert.deepEqual(updates, []);
+        assert.equal(continued, false);
+        assert.equal(runtime.jobs.get("p1").result.soVach, "2v");
+        assert.equal(releases.at(-1), "");
+      } else {
+        assert.equal(updates.length, 1);
+        assert.match(name, /full\s+\d+\/\d+\s+123456789/i);
+        assert.equal(continued, true);
+        assert.equal(releases.at(-1), "61594499510154");
+      }
+    } finally { await context.close(); }
+  }
+});
+
 test("CAPTCHA is retryable but not unknown, while terminal Marketplace and checkpoint errors remain excluded", () => {
   for (const result of [{ trangThai: "capcha", chiTiet: "not a robot" }, { trangThai: "loicapcha" }, { trangThai: "loi", chiTiet: "login: reCAPTCHA" }]) {
     const job = { status: "error", result };
