@@ -1073,7 +1073,7 @@ export function createDangBai({
     markNoRollback();
     await manager.clickActionButton(page, "Publish");
     await waitForPublishSuccess(page);
-    if (typeof manager.consumeUsedTitle === "function") {
+    if (barStatus !== "2v" && typeof manager.consumeUsedTitle === "function") {
       manager.consumeUsedTitle(payload.titleFile, payload.title);
     }
     return { ok: true, detail: "Đã đăng bài thành công.", location: picked || target };
