@@ -130,7 +130,7 @@ function normalizeBaseUrl(value) {
 export function normalizeProxyPanelConfig(config = {}) {
   return {
     stateProxyEnabled: Boolean(config.stateProxyEnabled),
-    stateProxyProvider: String(config.stateProxyProvider || DEFAULT_CONFIG.stateProxyProvider).toLowerCase() === "proxypanel" ? "proxypanel" : "clipproxy",
+    stateProxyProvider: ["proxypanel", "nineproxy"].includes(String(config.stateProxyProvider || "").toLowerCase()) ? String(config.stateProxyProvider).toLowerCase() : "clipproxy",
     proxyPanelBaseUrl: normalizeBaseUrl(config.proxyPanelBaseUrl),
     proxyPanelApiKey: String(config.proxyPanelApiKey || "").trim(),
     proxyPanelProxyId: String(config.proxyPanelProxyId || "").trim(),

@@ -20,6 +20,7 @@ import { createCheckOrderTool, CHECK_ORDER_HEADERS } from "./modules/checkorder.
 import { createMarketplaceLinkOrderTool } from "./modules/marketplace_link_order.js";
 import { buildStandardName } from "./modules/profile_name.js";
 import { createNineProxyTool, mergeProxyDefaults, sanitizeProxyConfigInput } from "./modules/nineproxy.js";
+import { createNineCloudTool, normalizeNineCloudConfig, saveNineCloudApiKey } from "./modules/nineproxy_cloud.js";
 import { createClipProxyTool, mergeClipProxyDefaults, sanitizeClipProxyConfigInput } from "./modules/clipproxy.js";
 import { createProxyPanelTool, isProxyPanelStateProxy, mergeProxyPanelDefaults, sanitizeProxyPanelConfigInput } from "./modules/proxypanel.js";
 import { startAutoRetryBatch } from "./modules/batch_retry.js";
@@ -1087,6 +1088,7 @@ async function readConfig() {
 
 async function saveConfig(input) {
   const current = await readConfig();
+  saveNineCloudApiKey(input.nineCloudApiKey);
   const proxyConfig = sanitizeProxyConfigInput(input, current);
   const clipProxyConfig = sanitizeClipProxyConfigInput(input, current);
   const proxyPanelConfig = sanitizeProxyPanelConfigInput(input, current);
@@ -1137,6 +1139,7 @@ async function saveConfig(input) {
     ...proxyConfig,
     ...clipProxyConfig,
     ...proxyPanelConfig,
+    ...normalizeNineCloudConfig({ ...current, ...input }),
     interactionHomeTimeMin: Math.max(1, Math.floor(Number(input.interactionHomeTimeMin ?? current.interactionHomeTimeMin ?? DEFAULT_CONFIG.interactionHomeTimeMin)) || DEFAULT_CONFIG.interactionHomeTimeMin),
     interactionHomeTimeMax: Math.max(1, Math.floor(Number(input.interactionHomeTimeMax ?? current.interactionHomeTimeMax ?? DEFAULT_CONFIG.interactionHomeTimeMax)) || DEFAULT_CONFIG.interactionHomeTimeMax),
     interactionReelsTotalMin: Math.max(1, Math.floor(Number(input.interactionReelsTotalMin ?? current.interactionReelsTotalMin ?? DEFAULT_CONFIG.interactionReelsTotalMin)) || DEFAULT_CONFIG.interactionReelsTotalMin),
@@ -1229,6 +1232,7 @@ function looksLikeMojibakeHeader(header) {
 
 async function saveConfigV2(input) {
   const current = await readConfig();
+  saveNineCloudApiKey(input.nineCloudApiKey);
   const proxyConfig = sanitizeProxyConfigInput(input, current);
   const clipProxyConfig = sanitizeClipProxyConfigInput(input, current);
   const proxyPanelConfig = sanitizeProxyPanelConfigInput(input, current);
@@ -1289,6 +1293,7 @@ async function saveConfigV2(input) {
     ...proxyConfig,
     ...clipProxyConfig,
     ...proxyPanelConfig,
+    ...normalizeNineCloudConfig({ ...current, ...input }),
     interactionHomeTimeMin: Math.max(1, Math.floor(Number(input.interactionHomeTimeMin ?? current.interactionHomeTimeMin ?? DEFAULT_CONFIG.interactionHomeTimeMin)) || DEFAULT_CONFIG.interactionHomeTimeMin),
     interactionHomeTimeMax: Math.max(1, Math.floor(Number(input.interactionHomeTimeMax ?? current.interactionHomeTimeMax ?? DEFAULT_CONFIG.interactionHomeTimeMax)) || DEFAULT_CONFIG.interactionHomeTimeMax),
     interactionReelsTotalMin: Math.max(1, Math.floor(Number(input.interactionReelsTotalMin ?? current.interactionReelsTotalMin ?? DEFAULT_CONFIG.interactionReelsTotalMin)) || DEFAULT_CONFIG.interactionReelsTotalMin),
@@ -3008,7 +3013,10 @@ const proxyPanelTool = createProxyPanelTool({
   addRuntimeLog
 });
 
+const nineCloudTool = createNineCloudTool({ hideRequest, addRuntimeLog });
+
 function activeStateProxyTool(config = {}) {
+  if (config.stateProxyProvider === "nineproxy") return nineCloudTool;
   return stateProxyProviderIsProxyPanel(config) ? proxyPanelTool : clipProxyTool;
 }
 
@@ -3023,6 +3031,7 @@ const stateProxyTool = {
     return activeStateProxyTool(options.config || {}).ensureForProfile(options);
   },
   release(lease) {
+    if (lease?.provider === "nineproxy") return nineCloudTool.release(lease);
     if (lease?.provider === "proxypanel") return proxyPanelTool.release(lease);
     return clipProxyTool.release(lease);
   },
@@ -3410,6 +3419,11 @@ async function handleApi(req, res) {
     if (req.method === "POST" && url.pathname === "/api/state-proxy/check") {
       const body = await parseBody(req).catch(() => ({}));
       const current = await readConfig();
+      if ((body.stateProxyProvider || current.stateProxyProvider) === "nineproxy") {
+        const config = await saveConfigV2({ ...current, ...body });
+        const data = await nineCloudTool.checkAll(config);
+        return jsonResponse(res, 200, { ok: true, data });
+      }
       const config = stateProxyUsesProxyPanel({ ...current, ...body })
         ? sanitizeProxyPanelConfigInput(body, current)
         : sanitizeClipProxyConfigInput(body, current);
