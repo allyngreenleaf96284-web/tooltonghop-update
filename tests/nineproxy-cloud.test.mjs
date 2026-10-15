@@ -8,7 +8,7 @@ const config = { stateProxyEnabled: true, stateProxyProvider: "nineproxy", brows
 const user = { status: 1, user_name: "fixture-sub-user", use_key: "fixture-password" };
 const connection = { country_code: "US", state_code: "CA", is_keep: 1, start_port: 12000, end_port: 12001 };
 
-function fixture({ users = [user], connections = [connection], pages = false, failure = null, assignmentFails = false } = {}) {
+function fixture({ users = [user], connections = [connection], pages = false, failure = null, assignmentFails = false, probeFailure = false } = {}) {
   const calls = [], requests = [], logs = [], profiles = new Map(), mutableConnections = [...connections];
   const tool = createNineCloudTool({
     getApiKey: () => key,
@@ -30,6 +30,12 @@ function fixture({ users = [user], connections = [connection], pages = false, fa
       return { ok: true, status: 200, json: async () => ({ success: true, result: { items, totalPages: pages && !isUser ? 2 : items.length ? 1 : 0, configs: isUser ? {} : { server_ip: "gateway.example.test" } } }) };
     },
     ping: async (host, port) => { assert.equal(host, "gateway.example.test"); assert.ok(port >= 12000); },
+    probe: async (proxy, mode) => {
+      assert.equal(proxy.host, "gateway.example.test");
+      assert.ok(["http", "socks5"].includes(mode));
+      if (probeFailure) throw new Error("HTTP proxy rejected tunnel (407)");
+      return "198.51.100.42";
+    },
     hideRequest: async (c, endpoint, options = {}) => {
       requests.push({ endpoint, options });
       if (assignmentFails) throw new Error(`${key} ${user.use_key}`);
@@ -67,7 +73,19 @@ test("valid configurations are listed without revealing API keys, usernames, or 
   assert.deepEqual(result.errors, []);
   assert.equal(result.status.proxies.length, 2);
   assert.equal(result.status.api.ready, true);
+  assert.ok(result.status.proxies.every((proxy) => proxy.alive && proxy.exitIp === "198.51.100.42"));
   for (const secret of [key, user.user_name, user.use_key]) assert.equal(JSON.stringify(result).includes(secret), false);
+});
+
+test("connection checks use authenticated proxy traffic and report an unusable port without credentials", async () => {
+  const { tool, requests } = fixture({ probeFailure: true });
+  const result = await tool.checkAll(config);
+  assert.equal(result.checked, 2);
+  assert.equal(result.errors.length, 2);
+  assert.ok(result.status.proxies.every((proxy) => proxy.alive === false && proxy.lastError === "Proxy từ chối xác thực"));
+  await assert.rejects(tool.ensureForProfile({ config, profileId: "a", row: { bang: "California" } }), /khong ket noi duoc gateway/);
+  assert.equal(requests.length, 0);
+  assert.equal(JSON.stringify(result).includes(user.use_key), false);
 });
 
 test("creates one sticky Proxy2Web connection for each missing configured state", async () => {

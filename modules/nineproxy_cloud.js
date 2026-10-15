@@ -1,4 +1,5 @@
 import net from "node:net";
+import tls from "node:tls";
 import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -53,8 +54,152 @@ function rowState(row) {
   return "";
 }
 
-export function createNineCloudTool({ hideRequest, addRuntimeLog = () => {}, fetchImpl = fetch, getApiKey = storedKey, ping = tcpPing } = {}) {
+function connectTcp(host, port, timeoutMs = 20000) {
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection({ host, port });
+    const stop = (error) => { socket.destroy(); reject(error); };
+    socket.setTimeout(timeoutMs, () => stop(new Error("Gateway timeout")));
+    socket.once("error", stop);
+    socket.once("connect", () => {
+      socket.off("error", stop);
+      socket.setTimeout(0);
+      resolve(socket);
+    });
+  });
+}
+
+function readBytes(socket, length, timeoutMs = 20000) {
+  return new Promise((resolve, reject) => {
+    let data = Buffer.alloc(0);
+    const timer = setTimeout(() => finish(new Error("Proxy response timeout")), timeoutMs);
+    const finish = (error) => {
+      clearTimeout(timer);
+      socket.off("data", onData);
+      socket.off("error", onError);
+      socket.off("close", onClose);
+      if (error) reject(error); else resolve(data);
+    };
+    const onError = () => finish(new Error("Proxy connection closed"));
+    const onClose = () => finish(new Error("Proxy connection closed"));
+    const onData = (chunk) => {
+      data = Buffer.concat([data, chunk]);
+      if (data.length < length) return;
+      const extra = data.subarray(length);
+      data = data.subarray(0, length);
+      if (extra.length) socket.unshift(extra);
+      finish();
+    };
+    socket.on("data", onData);
+    socket.once("error", onError);
+    socket.once("close", onClose);
+  });
+}
+
+function readHttpHeaders(socket, timeoutMs = 20000) {
+  return new Promise((resolve, reject) => {
+    let data = Buffer.alloc(0);
+    const timer = setTimeout(() => finish(new Error("Proxy response timeout")), timeoutMs);
+    const finish = (error, result) => {
+      clearTimeout(timer);
+      socket.off("data", onData);
+      socket.off("error", onError);
+      socket.off("close", onClose);
+      if (error) reject(error); else resolve(result);
+    };
+    const onError = () => finish(new Error("Proxy connection closed"));
+    const onClose = () => finish(new Error("Proxy connection closed"));
+    const onData = (chunk) => {
+      data = Buffer.concat([data, chunk]);
+      const marker = data.indexOf("\r\n\r\n");
+      if (marker < 0) {
+        if (data.length > 32768) finish(new Error("Proxy returned invalid response"));
+        return;
+      }
+      const remainder = data.subarray(marker + 4);
+      if (remainder.length) socket.unshift(remainder);
+      finish(null, data.subarray(0, marker).toString("latin1"));
+    };
+    socket.on("data", onData);
+    socket.once("error", onError);
+    socket.once("close", onClose);
+  });
+}
+
+async function httpTunnel(proxy) {
+  const socket = await connectTcp(proxy.host, proxy.port);
+  const authorization = Buffer.from(`${proxy.username}:${proxy.password}`).toString("base64");
+  socket.write(`CONNECT api.ipify.org:443 HTTP/1.1\r\nHost: api.ipify.org:443\r\nProxy-Authorization: Basic ${authorization}\r\nConnection: keep-alive\r\n\r\n`);
+  const head = await readHttpHeaders(socket);
+  const code = Number(head.match(/^HTTP\/\d(?:\.\d)?\s+(\d+)/i)?.[1]);
+  if (code !== 200) throw new Error(`HTTP proxy rejected tunnel (${Number.isFinite(code) ? code : "invalid response"})`);
+  return socket;
+}
+
+async function socksTunnel(proxy) {
+  const socket = await connectTcp(proxy.host, proxy.port);
+  const user = Buffer.from(proxy.username, "utf8"), password = Buffer.from(proxy.password, "utf8");
+  if (!user.length || user.length > 255 || password.length > 255) throw new Error("Invalid SOCKS credentials");
+  socket.write(Buffer.from([5, 2, 0, 2]));
+  const greeting = await readBytes(socket, 2);
+  if (greeting[0] !== 5 || greeting[1] !== 2) throw new Error("SOCKS proxy rejected authentication");
+  socket.write(Buffer.concat([Buffer.from([1, user.length]), user, Buffer.from([password.length]), password]));
+  const authentication = await readBytes(socket, 2);
+  if (authentication[1] !== 0) throw new Error("SOCKS proxy rejected credentials");
+  const hostname = Buffer.from("api.ipify.org", "ascii");
+  socket.write(Buffer.concat([Buffer.from([5, 1, 0, 3, hostname.length]), hostname, Buffer.from([1, 187])]));
+  const response = await readBytes(socket, 5);
+  if (response[0] !== 5 || response[1] !== 0) throw new Error("SOCKS proxy rejected tunnel");
+  const remaining = response[3] === 1 ? 5 : response[3] === 4 ? 17 : response[3] === 3 ? response[4] + 2 : 0;
+  if (!remaining) throw new Error("SOCKS proxy returned invalid response");
+  await readBytes(socket, remaining);
+  return socket;
+}
+
+function readHttpsIp(socket, timeoutMs = 20000) {
+  return new Promise((resolve, reject) => {
+    const secure = tls.connect({ socket, servername: "api.ipify.org" });
+    let response = "";
+    let done = false;
+    const timer = setTimeout(() => finish(new Error("Proxy response timeout")), timeoutMs);
+    const finish = (error, ip) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      secure.destroy();
+      if (error) reject(error); else resolve(ip);
+    };
+    secure.once("error", () => finish(new Error("Proxy TLS connection failed")));
+    secure.once("secureConnect", () => secure.write("GET /?format=json HTTP/1.1\r\nHost: api.ipify.org\r\nConnection: close\r\n\r\n"));
+    secure.on("data", (chunk) => { response += chunk.toString("utf8"); });
+    secure.once("end", () => {
+      try {
+        const separator = response.indexOf("\r\n\r\n");
+        if (separator < 0) return finish(new Error("Proxy returned invalid response"));
+        const ip = String(JSON.parse(response.slice(separator + 4) || "{}").ip || "").trim();
+        if (!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(ip) && !/^[0-9a-f:]+$/i.test(ip)) return finish(new Error("Proxy returned no exit IP"));
+        finish(null, ip);
+      } catch { finish(new Error("Proxy returned invalid response")); }
+    });
+  });
+}
+
+async function probeProxyConnection(proxy, mode) {
+  const tunnel = mode === "socks5" ? await socksTunnel(proxy) : await httpTunnel(proxy);
+  return readHttpsIp(tunnel);
+}
+
+function safeProbeError(error) {
+  const message = String(error?.message || "Proxy check failed");
+  if (/\b(401|407)\b/.test(message)) return "Proxy từ chối xác thực";
+  if (/timeout/i.test(message)) return "Proxy timeout";
+  if (/TLS/i.test(message)) return "Proxy không tạo được kết nối HTTPS";
+  if (/rejected/i.test(message)) return "Proxy từ chối kết nối";
+  return "Không kiểm tra được kết nối proxy";
+}
+
+export function createNineCloudTool({ hideRequest, addRuntimeLog = () => {}, fetchImpl = fetch, getApiKey = storedKey, ping = tcpPing, probe = probeProxyConnection } = {}) {
   const leases = new Map();
+  const health = new Map();
   let snapshot = { proxies: [], checkedAt: 0, subUsers: 0, connections: 0, lastError: "", ready: false };
   let pending = Promise.resolve();
 
@@ -158,14 +303,34 @@ export function createNineCloudTool({ hideRequest, addRuntimeLog = () => {}, fet
       config: { stateProxyEnabled: Boolean(config.stateProxyEnabled), stateProxyProvider: "nineproxy", stateProxyStates: config.stateProxyStates || [], ...normalizeNineCloudConfig(config) },
       states: config.stateProxyStates || [], enabled: Boolean(config.stateProxyEnabled),
       api: { ...snapshot, proxies: undefined, keyConfigured: Boolean(getApiKey()) },
-      proxies: snapshot.proxies.map((proxy) => ({ ...proxy, raw: `${proxy.host}:${proxy.port}`, alive: null, inUse: leases.has(proxy.id), assignedProfileId: leases.get(proxy.id)?.profileId || "", lastError: "" }))
+      proxies: snapshot.proxies.map((proxy) => ({ ...proxy, raw: `${proxy.host}:${proxy.port}`, alive: null, inUse: leases.has(proxy.id), assignedProfileId: leases.get(proxy.id)?.profileId || "", ...(health.get(proxy.id) || {}) }))
     };
+  }
+
+  async function verifyProxy(proxy, mode) {
+    const startedAt = Date.now();
+    try {
+      const exitIp = await probe(proxy, mode);
+      const result = { alive: true, exitIp, pingMs: Date.now() - startedAt, checkedAt: Date.now(), lastError: "" };
+      health.set(proxy.id, result);
+      return result;
+    } catch (error) {
+      const result = { alive: false, exitIp: "", pingMs: null, checkedAt: Date.now(), lastError: safeProbeError(error) };
+      health.set(proxy.id, result);
+      return result;
+    }
   }
 
   async function checkAll(config) {
     const errors = [];
-    try { await refresh(config); } catch (error) { errors.push(error.message); }
-    return { checked: snapshot.proxies.length, errors, status: getStatus(config) };
+    let proxies = [];
+    try { proxies = await refresh(config); } catch (error) { errors.push(error.message); }
+    const mode = normalizeNineCloudConfig(config).nineCloudProtocol;
+    await Promise.all(proxies.map(async (proxy) => {
+      const result = await verifyProxy(proxy, mode);
+      if (!result.alive) errors.push(`${proxy.state}: ${result.lastError}`);
+    }));
+    return { checked: proxies.length, errors, status: getStatus(config) };
   }
 
   async function createConnections(config) {
@@ -205,6 +370,9 @@ export function createNineCloudTool({ hideRequest, addRuntimeLog = () => {}, fet
       try {
         await ping(slot.host, slot.port);
         const mode = normalizeNineCloudConfig(config).nineCloudProtocol;
+        let checked = health.get(slot.id);
+        if (!checked || Date.now() - checked.checkedAt > 60_000) checked = await verifyProxy(slot, mode);
+        if (checked?.alive === false) throw new Error(checked.lastError || "Proxy check failed");
         const proxy = { host: slot.host, port: slot.port, mode, username: slot.username, password: slot.password };
         const raw = `${slot.host}:${slot.port}:${slot.username}:${slot.password}`;
         const hide = String(config.browserApiProvider || "").toLowerCase() === "hide";
