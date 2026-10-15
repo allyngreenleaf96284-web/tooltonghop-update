@@ -866,6 +866,7 @@ function renderStateProxyConfig(config = state.config || {}) {
   document.querySelectorAll(".ninecloud-field").forEach((el) => { el.style.display = provider === "nineproxy" ? "" : "none"; });
   if ($("checkStateProxyBtn")) $("checkStateProxyBtn").textContent = provider === "nineproxy" ? "Kiểm tra API" : "Check ping";
   if ($("applyStateProxyBtn")) $("applyStateProxyBtn").style.display = provider === "nineproxy" ? "none" : "";
+  if ($("createNineProxyBtn")) $("createNineProxyBtn").style.display = provider === "nineproxy" ? "" : "none";
   if ($("stateProxyPanel")) $("stateProxyPanel").classList.toggle("enabled", enabled);
   if ($("stateProxyProvider")) $("stateProxyProvider").value = provider;
   document.querySelectorAll(".proxypanel-field").forEach((el) => {
@@ -1074,6 +1075,18 @@ async function checkStateProxyPool(options = {}) {
   } finally {
     state.stateProxyCheckRunning = false;
   }
+}
+
+async function createNineProxyConnections() {
+  const { config, data } = await api("/api/state-proxy/create-nine-connections", {
+    method: "POST",
+    body: JSON.stringify(readProxyConfigForm())
+  });
+  state.config = config;
+  state.stateProxyStatus = data.status;
+  renderStateProxyConfig(config);
+  const created = Array.isArray(data.created) ? data.created : [];
+  setStatus(created.length ? `Đã tạo Proxy2Web cho: ${created.join(", ")}.` : "Các bang đã có Proxy2Web.");
 }
 
 async function applyStateProxyNow() {
@@ -3377,6 +3390,7 @@ if ($("applyStateProxyBtn")) $("applyStateProxyBtn").addEventListener("click", (
   refreshStateProxyStatus().catch(() => {});
 }));
 if ($("checkStateProxyBtn")) $("checkStateProxyBtn").addEventListener("click", () => checkStateProxyPool().catch((error) => setStatus(error.message, true)));
+if ($("createNineProxyBtn")) $("createNineProxyBtn").addEventListener("click", () => createNineProxyConnections().catch((error) => setStatus(error.message, true)));
 if ($("toggleStateProxyPanelBtn")) $("toggleStateProxyPanelBtn").addEventListener("click", toggleStateProxyPanel);
 if ($("addStateProxyBtn")) $("addStateProxyBtn").addEventListener("click", () => addStateProxyState().catch((error) => setStatus(error.message, true)));
 if ($("addClipProxyAsnBtn")) $("addClipProxyAsnBtn").addEventListener("click", () => addClipProxyAsn().catch((error) => setStatus(error.message, true)));

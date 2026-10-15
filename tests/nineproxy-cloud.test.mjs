@@ -9,19 +9,24 @@ const user = { status: 1, user_name: "fixture-sub-user", use_key: "fixture-passw
 const connection = { country_code: "US", state_code: "CA", is_keep: 1, start_port: 12000, end_port: 12001 };
 
 function fixture({ users = [user], connections = [connection], pages = false, failure = null, assignmentFails = false } = {}) {
-  const calls = [], requests = [], logs = [], profiles = new Map();
+  const calls = [], requests = [], logs = [], profiles = new Map(), mutableConnections = [...connections];
   const tool = createNineCloudTool({
     getApiKey: () => key,
     fetchImpl: async (url, options) => {
       assert.equal(url.origin, "https://api.9proxy.com");
       assert.equal(url.searchParams.get("api-key"), key);
       assert.equal(options.redirect, "error");
-      assert.equal(options.method, undefined, "Discovery must not create users, configurations, or charge proxy usage.");
+      assert.ok(["GET", "POST"].includes(options.method || "GET"));
       calls.push(url.pathname);
       if (failure) return { ok: false, status: 403, json: async () => ({ success: false, message: `${key} ${user.use_key}` }) };
       const isUser = url.pathname.includes("user-passes");
+      if (url.pathname.endsWith("/proxy-connection/create")) {
+        const body = JSON.parse(options.body);
+        mutableConnections.push({ country_code: body.country_code, state_code: body.state_code, is_keep: body.session_type === 2 ? 1 : 0, start_port: 13000 + mutableConnections.length, end_port: 13000 + mutableConnections.length });
+        return { ok: true, status: 200, json: async () => ({ success: true, result: { created: true } }) };
+      }
       const page = Number(url.searchParams.get("page"));
-      const items = isUser ? users : pages && page === 1 ? [] : connections;
+      const items = isUser ? users : pages && page === 1 ? [] : mutableConnections;
       return { ok: true, status: 200, json: async () => ({ success: true, result: { items, totalPages: pages && !isUser ? 2 : items.length ? 1 : 0, configs: isUser ? {} : { server_ip: "gateway.example.test" } } }) };
     },
     ping: async (host, port) => { assert.equal(host, "gateway.example.test"); assert.ok(port >= 12000); },
@@ -63,6 +68,14 @@ test("valid configurations are listed without revealing API keys, usernames, or 
   assert.equal(result.status.proxies.length, 2);
   assert.equal(result.status.api.ready, true);
   for (const secret of [key, user.user_name, user.use_key]) assert.equal(JSON.stringify(result).includes(secret), false);
+});
+
+test("creates one sticky Proxy2Web connection for each missing configured state", async () => {
+  const { tool, calls } = fixture({ connections: [] });
+  const result = await tool.createConnections({ ...config, stateProxyStates: ["California", "Texas"] });
+  assert.deepEqual(result.created, ["California", "Texas"]);
+  assert.equal(result.status.proxies.length, 2);
+  assert.equal(calls.filter((path) => path.endsWith("/proxy-connection/create")).length, 2);
 });
 
 test("simultaneous workers use different ports, release leases, and assign through the shared GPM adapter", async () => {

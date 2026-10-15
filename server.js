@@ -3430,6 +3430,13 @@ async function handleApi(req, res) {
       const data = await stateProxyTool.checkAll({ ...current, ...config });
       return jsonResponse(res, 200, { ok: true, data });
     }
+    if (req.method === "POST" && url.pathname === "/api/state-proxy/create-nine-connections") {
+      const body = await parseBody(req).catch(() => ({}));
+      const current = await readConfig();
+      const config = await saveConfigV2({ ...current, ...body, stateProxyProvider: "nineproxy" });
+      const data = await nineCloudTool.createConnections(config);
+      return jsonResponse(res, 200, { ok: true, config, data });
+    }
     if (req.method === "POST" && url.pathname === "/api/state-proxy/apply") {
       const body = await parseBody(req).catch(() => ({}));
       const current = await readConfig();

@@ -58,7 +58,7 @@ export function createNineCloudTool({ hideRequest, addRuntimeLog = () => {}, fet
   let snapshot = { proxies: [], checkedAt: 0, subUsers: 0, connections: 0, lastError: "", ready: false };
   let pending = Promise.resolve();
 
-  async function api(endpoint, page = 1) {
+  async function api(endpoint, page = 1, options = {}) {
     const key = getApiKey();
     if (!key) throw fail("9Proxy API: chua cau hinh API key.");
     const url = new URL(endpoint, "https://api.9proxy.com");
@@ -67,12 +67,21 @@ export function createNineCloudTool({ hideRequest, addRuntimeLog = () => {}, fet
     url.searchParams.set("page", String(page));
     let response, body;
     try {
-      response = await fetchImpl(url, { redirect: "error", signal: AbortSignal.timeout(20000), headers: { accept: "application/json" } });
+      response = await fetchImpl(url, {
+        redirect: "error",
+        signal: AbortSignal.timeout(20000),
+        method: options.method || "GET",
+        headers: {
+          accept: "application/json",
+          ...(options.body ? { "content-type": "application/json" } : {})
+        },
+        ...(options.body ? { body: JSON.stringify(options.body) } : {})
+      });
       body = await response.json();
     } catch { throw fail("9Proxy API: khong ket noi duoc hoac phan hoi khong phai JSON."); }
     // Never propagate a provider response or request URL containing credentials into logs.
     if (!response.ok || body.success !== true) throw fail(`9Proxy API: yeu cau bi tu choi (HTTP ${response.status}).`);
-    if (!Array.isArray(body.result?.items)) throw fail("9Proxy API: cau truc phan hoi chua duoc ho tro.");
+    if (options.list !== false && !Array.isArray(body.result?.items)) throw fail("9Proxy API: cau truc phan hoi chua duoc ho tro.");
     return body.result;
   }
 
@@ -90,19 +99,32 @@ export function createNineCloudTool({ hideRequest, addRuntimeLog = () => {}, fet
     throw fail("9Proxy API: vuot gioi han so trang.");
   }
 
-  async function discover(config) {
+  async function activeUser(config) {
     const users = await list("/client/v1/user-passes/get-list");
-    const connections = await list("/client/v1/proxy-connection/get-list");
     const wanted = normalizeNineCloudConfig(config).nineCloudUsername;
     const active = users.items.filter((user) => Number(user.status) === 1 && (!wanted || field(user, "user_name") === wanted));
     snapshot.subUsers = users.items.length;
-    snapshot.connections = connections.items.length;
     if (active.length !== 1) throw fail(active.length === 0
-      ? "9Proxy API hop le nhung chua co sub-user active. Tao sub-user cho goi IP/Proxy2Web tren 9Proxy, sau do kiem tra lai."
+      ? wanted
+        ? `9Proxy: khong tim thay sub-user active \"${wanted}\". Kiem tra lai username trong 9Proxy.`
+        : "9Proxy API hop le nhung chua co sub-user active. Tao sub-user cho goi IP/Proxy2Web tren 9Proxy, sau do kiem tra lai."
       : "9Proxy co nhieu sub-user active; can chon username trong cau hinh.");
     const user = { user_name: field(active[0], "user_name"), use_key: field(active[0], "use_key") };
     if (!user.user_name || !user.use_key || /[:\r\n]/.test(`${user.user_name}${user.use_key}`)) throw fail("9Proxy: thong tin xac thuc proxy khong hop le.");
-    if (!connections.items.length) throw fail("9Proxy: chua co cau hinh ket noi. Tao Proxy2Web cho goi IP tren 9Proxy truoc khi chay.");
+    return user;
+  }
+
+  function stickyUsConnection(connection, code) {
+    return String(field(connection, "country_code")).toUpperCase() === "US"
+      && nineCloudStateCode(field(connection, "state_code")) === code
+      && Number(field(connection, "is_keep")) === 1;
+  }
+
+  async function discover(config) {
+    const connections = await list("/client/v1/proxy-connection/get-list");
+    const user = await activeUser(config);
+    snapshot.connections = connections.items.length;
+    if (!connections.items.length) throw fail("9Proxy: chua co connection Proxy2Web. Bam 'Tao Proxy2Web' trong tool hoac Create Proxy tren 9Proxy, sau do kiem tra lai.");
     const host = String(field(connections.configs, "server_ip") || "").trim();
     if (!host || /[\s/@:]/.test(host)) throw fail("9Proxy: API chua tra gateway hop le; khong tu doan dia chi proxy.");
     const proxies = [];
@@ -110,7 +132,7 @@ export function createNineCloudTool({ hideRequest, addRuntimeLog = () => {}, fet
       const code = nineCloudStateCode(field(connection, "state_code"));
       const start = Number(field(connection, "start_port")), end = Number(field(connection, "end_port"));
       // A session must not rotate IP per request while a profile is running.
-      if (String(field(connection, "country_code")).toUpperCase() !== "US" || !code || Number(field(connection, "is_keep")) !== 1) continue;
+      if (!stickyUsConnection(connection, code)) continue;
       if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end > 65535 || end < start || end - start > 10000) continue;
       for (let port = start; port <= end; port += 1) {
         proxies.push({ id: `${host}:${port}`, host, port, state: stateCodes.get(code), code, username: user.user_name, password: user.use_key });
@@ -146,6 +168,30 @@ export function createNineCloudTool({ hideRequest, addRuntimeLog = () => {}, fet
     return { checked: snapshot.proxies.length, errors, status: getStatus(config) };
   }
 
+  async function createConnections(config) {
+    await activeUser(config);
+    const connections = await list("/client/v1/proxy-connection/get-list");
+    snapshot.connections = connections.items.length;
+    const codes = [...new Set((config.stateProxyStates || []).map(nineCloudStateCode).filter(Boolean))];
+    if (!codes.length) throw fail("9Proxy: hay them it nhat mot bang US truoc khi tao Proxy2Web.", "thieubang");
+    const created = [];
+    for (const code of codes) {
+      if (connections.items.some((connection) => stickyUsConnection(connection, code))) continue;
+      await api("/client/v1/proxy-connection/create", 1, {
+        method: "POST",
+        list: false,
+        body: { country_code: "US", state_code: code, quantity: 1, session_type: 2, session_time: 1440 }
+      });
+      created.push(stateCodes.get(code));
+    }
+    const proxies = await refresh(config);
+    addRuntimeLog(`9Proxy Proxy2Web: ${created.length ? `da tao ${created.join(", ")}` : "cac bang da co san"}.`, "success", "", {
+      tool: "proxy theo bang",
+      step: "tao Proxy2Web"
+    });
+    return { created, checked: proxies.length, status: getStatus(config) };
+  }
+
   async function ensureForProfile({ config = {}, profileId, row = {}, log } = {}) {
     if (!config.stateProxyEnabled || config.stateProxyProvider !== "nineproxy") return null;
     const code = nineCloudStateCode(rowState(row));
@@ -179,7 +225,7 @@ export function createNineCloudTool({ hideRequest, addRuntimeLog = () => {}, fet
   }
 
   return {
-    getStatus, checkAll, ensureForProfile,
+    getStatus, checkAll, createConnections, ensureForProfile,
     applyNow: checkAll,
     addState(config, state) {
       const code = nineCloudStateCode(state);
