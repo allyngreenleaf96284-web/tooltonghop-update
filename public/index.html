@@ -259,6 +259,30 @@
                 Số proxy mỗi bang
                 <input id="nineCloudPoolSize" type="number" min="1" max="20" step="1" placeholder="1" />
               </label>
+              <label class="ninecloud-field">
+                Tối đa lượt/proxy
+                <input id="nineCloudMaxUse" type="number" min="1" max="100" step="1" placeholder="10" />
+              </label>
+              <label class="ninecloud-field">
+                Đổi sau phút
+                <input id="nineCloudMaxAgeMinutes" type="number" min="1" max="1440" step="1" placeholder="60" />
+              </label>
+              <label class="ninecloud-field">
+                Ping tốt ms
+                <input id="nineCloudGoodPingMs" type="number" min="100" max="60000" step="100" placeholder="1500" />
+              </label>
+              <label class="ninecloud-field">
+                Ping tối đa ms
+                <input id="nineCloudPingLimitMs" type="number" min="100" max="60000" step="100" placeholder="3000" />
+              </label>
+              <label class="ninecloud-field">
+                Nghỉ proxy chậm phút
+                <input id="nineCloudSlowCooldownMinutes" type="number" min="1" max="240" step="1" placeholder="10" />
+              </label>
+              <label class="ninecloud-field">
+                Dự phòng/bang
+                <input id="nineCloudReserveSize" type="number" min="0" max="20" step="1" placeholder="2" />
+              </label>
               <label class="ninecloud-field wide-field">
                 ISP 9Proxy, cách nhau bằng dấu phẩy
                 <input id="nineCloudIsps" autocomplete="off" placeholder="Verizon, Verizon Business, T-mobile Usa, Inc." />

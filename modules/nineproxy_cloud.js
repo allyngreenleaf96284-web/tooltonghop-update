@@ -51,6 +51,12 @@ export function normalizeNineCloudConfig(config = {}) {
     nineCloudApiPort: clamp(config.nineCloudApiPort, 10100, 1, 65535),
     nineCloudProxyPortStart: clamp(config.nineCloudProxyPortStart, 24584, 1, 65535),
     nineCloudPoolSize: clamp(config.nineCloudPoolSize, 1, 1, 20),
+    nineCloudMaxUse: clamp(config.nineCloudMaxUse, 10, 1, 100),
+    nineCloudMaxAgeMinutes: clamp(config.nineCloudMaxAgeMinutes, 60, 1, 1440),
+    nineCloudGoodPingMs: clamp(config.nineCloudGoodPingMs, 1500, 100, 60000),
+    nineCloudPingLimitMs: clamp(config.nineCloudPingLimitMs, 3000, 100, 60000),
+    nineCloudSlowCooldownMinutes: clamp(config.nineCloudSlowCooldownMinutes, 10, 1, 240),
+    nineCloudReserveSize: clamp(config.nineCloudReserveSize, 2, 0, 20),
     nineCloudIsps: normalizeIsps(config.nineCloudIsps),
     nineCloudProtocol: config.nineCloudProtocol === "socks5" ? "socks5" : "http",
     nineCloudRequestTimeoutMs: clamp(config.nineCloudRequestTimeoutMs, 30000, 5000, 120000),
@@ -147,8 +153,9 @@ export function createNineCloudTool({ hideRequest, addRuntimeLog = () => {}, fet
 
   async function requestState(config, state) {
     const stateIndex = config.stateProxyStates.indexOf(state);
-    const startPort = config.nineCloudProxyPortStart + Math.max(0, stateIndex) * config.nineCloudPoolSize;
-    const url = localApiUrl(config, state, startPort, config.nineCloudPoolSize);
+    const slotCount = Math.min(20, config.nineCloudPoolSize + config.nineCloudReserveSize);
+    const startPort = config.nineCloudProxyPortStart + Math.max(0, stateIndex) * 20;
+    const url = localApiUrl(config, state, startPort, slotCount);
     let response, payload;
     try {
       response = await fetchImpl(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(config.nineCloudRequestTimeoutMs) });
@@ -171,6 +178,9 @@ export function createNineCloudTool({ hideRequest, addRuntimeLog = () => {}, fet
       lastError: "",
       createdAt: now,
       checkedAt: 0,
+      usageCount: 0,
+      coldUntil: 0,
+      coldReason: "",
       inUse: false,
       assignedProfileId: ""
     }));
@@ -188,7 +198,26 @@ export function createNineCloudTool({ hideRequest, addRuntimeLog = () => {}, fet
     slot.region = result.ok ? String(result.region || "") : "";
     slot.org = result.ok ? String(result.org || "") : "";
     slot.lastError = result.ok ? "" : String(result.error || "proxy khong ket noi duoc").slice(0, 180);
+    if (slot.alive && slot.pingMs > config.nineCloudPingLimitMs) {
+      slot.coldUntil = Date.now() + config.nineCloudSlowCooldownMinutes * 60 * 1000;
+      slot.coldReason = `ping cao ${slot.pingMs}ms > ${config.nineCloudPingLimitMs}ms`;
+      slot.lastError = slot.coldReason;
+    } else if (slot.alive) {
+      slot.coldUntil = 0;
+      slot.coldReason = "";
+    }
     return slot;
+  }
+
+  function isCooling(slot) { return Number(slot.coldUntil || 0) > Date.now(); }
+  function isExpired(config, slot) { return Date.now() - Number(slot.createdAt || 0) >= config.nineCloudMaxAgeMinutes * 60 * 1000; }
+  function isUsageExhausted(config, slot) { return Number(slot.usageCount || 0) >= config.nineCloudMaxUse; }
+  function isTooSlow(config, slot) {
+    const ping = Number(slot?.pingMs);
+    return Number.isFinite(ping) && ping > config.nineCloudPingLimitMs;
+  }
+  function isAssignable(config, slot) {
+    return Boolean(slot && !slot.inUse && slot.alive !== false && !isCooling(slot) && !isExpired(config, slot) && !isUsageExhausted(config, slot) && !isTooSlow(config, slot));
   }
 
   async function ensureState(config, state) {
@@ -215,6 +244,13 @@ export function createNineCloudTool({ hideRequest, addRuntimeLog = () => {}, fet
         pingMs: slot.pingMs,
         inUse: slot.inUse,
         assignedProfileId: slot.assignedProfileId,
+        usageCount: slot.usageCount,
+        maxUse: safe.nineCloudMaxUse,
+        cooling: isCooling(slot),
+        coldUntil: Number(slot.coldUntil || 0),
+        coldSeconds: isCooling(slot) ? Math.max(0, Math.ceil((slot.coldUntil - Date.now()) / 1000)) : 0,
+        coldReason: slot.coldReason,
+        pingQuality: slot.pingMs === null ? "unknown" : slot.pingMs <= safe.nineCloudGoodPingMs ? "good" : slot.pingMs <= safe.nineCloudPingLimitMs ? "warm" : "slow",
         ageSeconds: Math.floor((Date.now() - slot.createdAt) / 1000),
         lastError: slot.lastError
       });
@@ -234,7 +270,7 @@ export function createNineCloudTool({ hideRequest, addRuntimeLog = () => {}, fet
     for (const state of safe.stateProxyStates) {
       try {
         let slots = await ensureState(safe, state);
-        if (slots.length && slots.every((slot) => slot.alive === false && !slot.inUse)) {
+        if (slots.length && slots.every((slot) => !slot.inUse && (slot.alive === false || isExpired(safe, slot) || isUsageExhausted(safe, slot)))) {
           slots = await withStateLock(state, () => requestState(safe, state));
         }
         for (const slot of slots) {
@@ -257,8 +293,8 @@ export function createNineCloudTool({ hideRequest, addRuntimeLog = () => {}, fet
     const slot = await withStateLock(state, async () => {
       const existing = slotsFor(state);
       let items = existing.length ? existing : await requestState(safe, state);
-      let candidate = items.find((item) => !item.inUse && item.alive !== false);
-      if (!candidate && items.length && items.every((item) => item.alive === false && !item.inUse)) {
+      let candidate = items.filter((item) => isAssignable(safe, item)).sort((a, b) => Number(a.usageCount || 0) - Number(b.usageCount || 0) || Number(a.pingMs || Infinity) - Number(b.pingMs || Infinity))[0];
+      if (!candidate && items.length && items.every((item) => !item.inUse && (item.alive === false || isExpired(safe, item) || isUsageExhausted(safe, item) || isCooling(item)))) {
         items = await requestState(safe, state);
         candidate = items.find((item) => !item.inUse && item.alive !== false);
       }
@@ -268,7 +304,7 @@ export function createNineCloudTool({ hideRequest, addRuntimeLog = () => {}, fet
         throw fail(`9Proxy local: khong con port ranh cho bang ${state}. Tang so proxy/bang neu can chay nhieu luong.`);
       }
       if (!candidate.checkedAt || Date.now() - candidate.checkedAt > 120000) await verify(safe, candidate);
-      if (!candidate.alive) throw fail(`9Proxy local: ${state} ${candidate.lastError}`);
+      if (!isAssignable(safe, candidate)) throw fail(`9Proxy local: ${state} ${candidate.lastError || "proxy khong dat dieu kien pool"}`);
       candidate.inUse = true;
       candidate.assignedProfileId = profileId;
       return candidate;
@@ -309,6 +345,7 @@ export function createNineCloudTool({ hideRequest, addRuntimeLog = () => {}, fet
       if (!slot || slot.assignedProfileId !== lease.profileId) return;
       slot.inUse = false;
       slot.assignedProfileId = "";
+      slot.usageCount = Number(slot.usageCount || 0) + 1;
       leases.delete(slot.id);
     }
   };

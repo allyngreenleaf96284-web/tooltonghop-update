@@ -319,6 +319,12 @@ async function loadConfig() {
   if ($("nineCloudApiPort")) $("nineCloudApiPort").value = config.nineCloudApiPort || 10100;
   if ($("nineCloudProxyPortStart")) $("nineCloudProxyPortStart").value = config.nineCloudProxyPortStart || 24584;
   if ($("nineCloudPoolSize")) $("nineCloudPoolSize").value = config.nineCloudPoolSize || 1;
+  if ($("nineCloudMaxUse")) $("nineCloudMaxUse").value = config.nineCloudMaxUse || 10;
+  if ($("nineCloudMaxAgeMinutes")) $("nineCloudMaxAgeMinutes").value = config.nineCloudMaxAgeMinutes || 60;
+  if ($("nineCloudGoodPingMs")) $("nineCloudGoodPingMs").value = config.nineCloudGoodPingMs || 1500;
+  if ($("nineCloudPingLimitMs")) $("nineCloudPingLimitMs").value = config.nineCloudPingLimitMs || 3000;
+  if ($("nineCloudSlowCooldownMinutes")) $("nineCloudSlowCooldownMinutes").value = config.nineCloudSlowCooldownMinutes || 10;
+  if ($("nineCloudReserveSize")) $("nineCloudReserveSize").value = config.nineCloudReserveSize ?? 2;
   if ($("nineCloudIsps")) $("nineCloudIsps").value = Array.isArray(config.nineCloudIsps) ? config.nineCloudIsps.join(", ") : String(config.nineCloudIsps || "");
   if ($("nineCloudProtocol")) $("nineCloudProtocol").value = config.nineCloudProtocol || "http";
   if ($("proxyPanelBaseUrl")) $("proxyPanelBaseUrl").value = config.proxyPanelBaseUrl || "https://proxypanel.io/api/v1";
@@ -458,6 +464,12 @@ function readProxyConfigForm() {
     nineCloudApiPort: Math.max(1, Math.min(65535, Number($("nineCloudApiPort")?.value || 10100))),
     nineCloudProxyPortStart: Math.max(1, Math.min(65535, Number($("nineCloudProxyPortStart")?.value || 24584))),
     nineCloudPoolSize: Math.max(1, Math.min(20, Number($("nineCloudPoolSize")?.value || 1))),
+    nineCloudMaxUse: Math.max(1, Math.min(100, Number($("nineCloudMaxUse")?.value || 10))),
+    nineCloudMaxAgeMinutes: Math.max(1, Math.min(1440, Number($("nineCloudMaxAgeMinutes")?.value || 60))),
+    nineCloudGoodPingMs: Math.max(100, Math.min(60000, Number($("nineCloudGoodPingMs")?.value || 1500))),
+    nineCloudPingLimitMs: Math.max(100, Math.min(60000, Number($("nineCloudPingLimitMs")?.value || 3000))),
+    nineCloudSlowCooldownMinutes: Math.max(1, Math.min(240, Number($("nineCloudSlowCooldownMinutes")?.value || 10))),
+    nineCloudReserveSize: Math.max(0, Math.min(20, Number($("nineCloudReserveSize")?.value || 2))),
     nineCloudIsps: $("nineCloudIsps")?.value || "",
     nineCloudProtocol: $("nineCloudProtocol")?.value || "http",
     proxyPanelBaseUrl: $("proxyPanelBaseUrl")?.value || "https://proxypanel.io/api/v1",

@@ -51,12 +51,12 @@ test("local API requests the documented t=2 state and ISP parameters without a c
   assert.equal(ny.origin, "http://192.168.100.28:10100");
   assert.equal(ny.pathname, "/api/proxy");
   assert.equal(ny.searchParams.get("t"), "2");
-  assert.equal(ny.searchParams.get("num"), "2");
+  assert.equal(ny.searchParams.get("num"), "4");
   assert.equal(ny.searchParams.get("port"), "24584");
   assert.equal(ny.searchParams.get("country"), "US");
   assert.equal(ny.searchParams.get("state"), "New York");
   assert.equal(ny.searchParams.get("isp"), "Verizon,T-mobile Usa, Inc.");
-  assert.equal(calls[1].searchParams.get("port"), "24586");
+  assert.equal(calls[1].searchParams.get("port"), "24604");
   assert.equal(result.status.proxies.length, 4);
   assert.ok(result.status.proxies.every((proxy) => proxy.alive && proxy.exitIp));
   assert.equal(JSON.stringify(result).includes("api-key"), false);
@@ -80,4 +80,15 @@ test("a free local endpoint is assigned as an unauthenticated HTTP proxy and rel
   assert.equal(tool.getStatus(config).proxies.find((proxy) => proxy.id === lease.slotId).inUse, true);
   tool.release(lease);
   assert.equal(tool.getStatus(config).proxies.find((proxy) => proxy.id === lease.slotId).inUse, false);
+});
+
+test("local pool reuses healthy endpoints by usage, then replaces exhausted entries", async () => {
+  const shortUseConfig = { ...config, stateProxyStates: ["New York"], nineCloudPoolSize: 1, nineCloudReserveSize: 0, nineCloudMaxUse: 1 };
+  const { tool, calls } = fixture({ response: ["192.168.100.28:24584"] });
+  const first = await tool.ensureForProfile({ config: shortUseConfig, profileId: "a", row: { bang: "New York" } });
+  tool.release(first);
+  assert.equal(tool.getStatus(shortUseConfig).proxies[0].usageCount, 1);
+  const second = await tool.ensureForProfile({ config: shortUseConfig, profileId: "b", row: { bang: "New York" } });
+  assert.equal(calls.length, 2);
+  assert.equal(second.slotId, "New York|192.168.100.28:24584");
 });
