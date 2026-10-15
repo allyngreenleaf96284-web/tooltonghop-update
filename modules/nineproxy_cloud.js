@@ -61,8 +61,12 @@ export function normalizeNineCloudConfig(config = {}) {
     nineCloudProtocol: config.nineCloudProtocol === "socks5" ? "socks5" : "http",
     nineCloudRequestTimeoutMs: clamp(config.nineCloudRequestTimeoutMs, 30000, 5000, 120000),
     nineCloudInfoTimeoutMs: clamp(config.nineCloudInfoTimeoutMs, 30000, 5000, 120000),
+    // This module owns only the local 9Proxy settings. Preserve the selected
+    // provider so saving those settings never switches ClipProxy/ProxyPanel.
     stateProxyEnabled: Boolean(config.stateProxyEnabled),
-    stateProxyProvider: "nineproxy",
+    stateProxyProvider: ["clipproxy", "proxypanel", "nineproxy"].includes(String(config.stateProxyProvider || "").toLowerCase())
+      ? String(config.stateProxyProvider).toLowerCase()
+      : "clipproxy",
     stateProxyStates: normalizeStates(config.stateProxyStates)
   };
 }
@@ -269,10 +273,9 @@ export function createNineCloudTool({ hideRequest, addRuntimeLog = () => {}, fet
     const errors = [];
     for (const state of safe.stateProxyStates) {
       try {
-        let slots = await ensureState(safe, state);
-        if (slots.length && slots.every((slot) => !slot.inUse && (slot.alive === false || isExpired(safe, slot) || isUsageExhausted(safe, slot)))) {
-          slots = await withStateLock(state, () => requestState(safe, state));
-        }
+        // Checking the UI must never consume/allocate 9Proxy ports. The pool
+        // is populated lazily by ensureForProfile when a selected tool runs.
+        const slots = [...slotsFor(state)];
         for (const slot of slots) {
           await verify(safe, slot);
           if (!slot.alive) errors.push(`${state}: ${slot.lastError}`);

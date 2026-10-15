@@ -883,9 +883,9 @@ function renderStateProxyConfig(config = state.config || {}) {
   const enabled = Boolean(config.stateProxyEnabled);
   const provider = ["proxypanel", "nineproxy"].includes(config.stateProxyProvider) ? config.stateProxyProvider : "clipproxy";
   document.querySelectorAll(".ninecloud-field").forEach((el) => { el.style.display = provider === "nineproxy" ? "" : "none"; });
-  if ($("checkStateProxyBtn")) $("checkStateProxyBtn").textContent = provider === "nineproxy" ? "Lấy & kiểm tra" : "Check ping";
+  if ($("checkStateProxyBtn")) $("checkStateProxyBtn").textContent = provider === "nineproxy" ? "Check pool" : "Check ping";
   if ($("applyStateProxyBtn")) $("applyStateProxyBtn").style.display = provider === "nineproxy" ? "none" : "";
-  if ($("createNineProxyBtn")) $("createNineProxyBtn").style.display = provider === "nineproxy" ? "" : "none";
+  if ($("createNineProxyBtn")) $("createNineProxyBtn").style.display = "none";
   if ($("stateProxyPanel")) $("stateProxyPanel").classList.toggle("enabled", enabled);
   if ($("stateProxyProvider")) $("stateProxyProvider").value = provider;
   document.querySelectorAll(".proxypanel-field").forEach((el) => {
@@ -920,7 +920,7 @@ function renderStateProxyConfig(config = state.config || {}) {
       const apiStatus = state.stateProxyStatus?.config?.stateProxyProvider === "nineproxy" ? state.stateProxyStatus.api : null;
       $("stateProxySummary").textContent = apiStatus?.lastError || (apiStatus?.checkedAt
         ? `9Proxy local: ${state.stateProxyStatus?.proxies?.length || 0} proxy trong pool`
-        : "9Proxy local: nhập IP local rồi bấm Lấy & kiểm tra");
+        : "9Proxy local: proxy sẽ được lấy khi tool chạy tới profile");
     }
   }
   const asnList = $("clipProxyAsnList");
@@ -953,7 +953,7 @@ function renderStateProxyStatus(config = state.config || {}) {
   const proxies = data?.proxies || [];
   if (!proxies.length) {
     pool.innerHTML = config.stateProxyProvider === "nineproxy"
-      ? `<div class="muted">Chưa lấy proxy 9Proxy local. Bấm Lấy & kiểm tra để tạo pool theo các bang đã chọn.</div>`
+      ? `<div class="muted">Chưa có proxy 9Proxy local trong pool. Proxy sẽ được lấy khi tool chạy tới profile.</div>`
       : `<div class="muted">Chưa có proxy trong pool. Tool sẽ lấy proxy khi chạy tới profile; Check ping chỉ kiểm tra proxy đã có.</div>`;
     return;
   }
@@ -1083,7 +1083,9 @@ async function checkStateProxyPool(options = {}) {
     const errorCount = Array.isArray(data.errors) ? data.errors.length : 0;
     if ($("stateProxySummary")) {
       $("stateProxySummary").textContent = data.status?.config?.stateProxyProvider === "nineproxy"
-        ? data.errors?.[0] || `9Proxy local: đã kiểm tra ${proxyCount} proxy.`
+        ? data.errors?.[0] || (proxyCount
+          ? `9Proxy local: đã kiểm tra ${proxyCount} proxy trong pool.`
+          : "9Proxy local: chưa có proxy trong pool; proxy sẽ được lấy khi tool chạy tới profile.")
         : removed
         ? `Đã check ${checkedAttempts} proxy, xóa ${removed} proxy chết, còn ${proxyCount}.`
         : errorCount
@@ -1096,15 +1098,7 @@ async function checkStateProxyPool(options = {}) {
 }
 
 async function createNineProxyConnections() {
-  const { config, data } = await api("/api/state-proxy/create-nine-connections", {
-    method: "POST",
-    body: JSON.stringify(readProxyConfigForm())
-  });
-  state.config = config;
-  state.stateProxyStatus = data.status;
-  renderStateProxyConfig(config);
-  const created = Array.isArray(data.created) ? data.created : [];
-  setStatus(created.length ? `Đã lấy proxy 9Proxy cho: ${created.join(", ")}.` : "Đã lấy và kiểm tra proxy 9Proxy.");
+  await checkStateProxyPool();
 }
 
 async function applyStateProxyNow() {

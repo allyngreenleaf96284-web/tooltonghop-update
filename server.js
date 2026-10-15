@@ -3433,8 +3433,8 @@ async function handleApi(req, res) {
     if (req.method === "POST" && url.pathname === "/api/state-proxy/create-nine-connections") {
       const body = await parseBody(req).catch(() => ({}));
       const current = await readConfig();
-      const config = await saveConfigV2({ ...current, ...body, stateProxyProvider: "nineproxy" });
-      const data = await nineCloudTool.createConnections(config);
+      const config = await saveConfigV2({ ...current, ...body });
+      const data = await nineCloudTool.checkAll(config);
       return jsonResponse(res, 200, { ok: true, config, data });
     }
     if (req.method === "POST" && url.pathname === "/api/state-proxy/apply") {

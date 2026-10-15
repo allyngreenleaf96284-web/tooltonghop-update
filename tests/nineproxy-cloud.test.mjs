@@ -40,13 +40,17 @@ test("local 9Proxy configuration has an editable host, ports, and comma-separate
   assert.equal(nineCloudStateCode("New York"), "NY");
   assert.equal(nineCloudStateCode("US-TX"), "TX");
   assert.equal(sanitizeProxyPanelConfigInput({ stateProxyProvider: "nineproxy" }).stateProxyProvider, "nineproxy");
+  assert.equal(normalizeNineCloudConfig({ stateProxyProvider: "clipproxy" }).stateProxyProvider, "clipproxy");
+  assert.equal(normalizeNineCloudConfig({ stateProxyProvider: "proxypanel" }).stateProxyProvider, "proxypanel");
 });
 
-test("local API requests the documented t=2 state and ISP parameters without a cloud key", async () => {
+test("local API requests the documented t=2 state and ISP parameters only when a profile runs", async () => {
   const { tool, calls } = fixture();
   const result = await tool.checkAll(config);
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 0);
   assert.equal(result.errors.length, 0);
+  await tool.ensureForProfile({ config, profileId: "profile-a", row: { bang: "New York" } });
+  assert.equal(calls.length, 1);
   const ny = calls[0];
   assert.equal(ny.origin, "http://192.168.100.28:10100");
   assert.equal(ny.pathname, "/api/proxy");
@@ -56,18 +60,18 @@ test("local API requests the documented t=2 state and ISP parameters without a c
   assert.equal(ny.searchParams.get("country"), "US");
   assert.equal(ny.searchParams.get("state"), "New York");
   assert.equal(ny.searchParams.get("isp"), "Verizon,T-mobile Usa, Inc.");
-  assert.equal(calls[1].searchParams.get("port"), "24604");
-  assert.equal(result.status.proxies.length, 4);
-  assert.ok(result.status.proxies.every((proxy) => proxy.alive && proxy.exitIp));
+  const status = tool.getStatus(config);
+  assert.equal(status.proxies.length, 2);
+  assert.ok(status.proxies.some((proxy) => proxy.alive && proxy.exitIp));
   assert.equal(JSON.stringify(result).includes("api-key"), false);
 });
 
 test("a failed local proxy is visible and never assigned to a profile", async () => {
   const { tool, requests } = fixture({ probeFailure: true });
-  const result = await tool.checkAll(config);
-  assert.equal(result.errors.length, 4);
-  assert.ok(result.status.proxies.every((proxy) => proxy.alive === false && proxy.lastError === "proxy timeout"));
   await assert.rejects(tool.ensureForProfile({ config, profileId: "profile-a", row: { bang: "New York" } }), /proxy timeout/);
+  const result = await tool.checkAll(config);
+  assert.equal(result.errors.length, 2);
+  assert.ok(result.status.proxies.every((proxy) => proxy.alive === false && proxy.lastError === "proxy timeout"));
   assert.equal(requests.length, 0);
 });
 
