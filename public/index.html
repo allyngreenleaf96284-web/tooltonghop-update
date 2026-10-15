@@ -228,7 +228,7 @@
             <div class="state-proxy-actions">
               <button id="saveStateProxyBtn" type="button" class="ghost-btn">Lưu</button>
               <button id="applyStateProxyBtn" type="button" class="ghost-btn">Áp dụng ngay</button>
-              <button id="createNineProxyBtn" type="button" class="ghost-btn ninecloud-field">Tạo Proxy2Web</button>
+              <button id="createNineProxyBtn" type="button" class="ghost-btn ninecloud-field">Lấy proxy 9Proxy</button>
               <button id="checkStateProxyBtn" type="button" class="ghost-btn">Check ping</button>
               <button id="toggleStateProxyPanelBtn" type="button" class="ghost-btn">Mở rộng</button>
             </div>
@@ -240,19 +240,31 @@
                 <select id="stateProxyProvider">
                   <option value="clipproxy">ClipProxy</option>
                   <option value="proxypanel">ProxyPanel</option>
-                  <option value="nineproxy">9Proxy API</option>
+                  <option value="nineproxy">9Proxy local</option>
                 </select>
               </label>
               <label class="ninecloud-field">
-                9Proxy API key
-                <input id="nineCloudApiKey" type="password" autocomplete="new-password" placeholder="API key" />
+                IP local 9Proxy
+                <input id="nineCloudLocalHost" autocomplete="off" placeholder="192.168.100.28" />
               </label>
               <label class="ninecloud-field">
-                9Proxy sub-user
-                <input id="nineCloudUsername" autocomplete="off" placeholder="Username" />
+                Cổng API local
+                <input id="nineCloudApiPort" type="number" min="1" max="65535" step="1" placeholder="10100" />
               </label>
               <label class="ninecloud-field">
-                Giao thức 9Proxy
+                Cổng proxy đầu
+                <input id="nineCloudProxyPortStart" type="number" min="1" max="65535" step="1" placeholder="24584" />
+              </label>
+              <label class="ninecloud-field">
+                Số proxy mỗi bang
+                <input id="nineCloudPoolSize" type="number" min="1" max="20" step="1" placeholder="1" />
+              </label>
+              <label class="ninecloud-field wide-field">
+                ISP 9Proxy, cách nhau bằng dấu phẩy
+                <input id="nineCloudIsps" autocomplete="off" placeholder="Verizon, Verizon Business, T-mobile Usa, Inc." />
+              </label>
+              <label class="ninecloud-field">
+                Giao thức proxy
                 <select id="nineCloudProtocol">
                   <option value="http">HTTP</option>
                   <option value="socks5">SOCKS5</option>

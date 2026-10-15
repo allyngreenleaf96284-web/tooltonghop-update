@@ -315,7 +315,11 @@ async function loadConfig() {
   if ($("nineProxyPingUrl")) $("nineProxyPingUrl").value = config.nineProxyPingUrl || "http://api.ipify.org?format=json";
   if ($("stateProxyEnabled")) $("stateProxyEnabled").checked = Boolean(config.stateProxyEnabled);
   if ($("stateProxyProvider")) $("stateProxyProvider").value = ["proxypanel", "nineproxy"].includes(config.stateProxyProvider) ? config.stateProxyProvider : "clipproxy";
-  if ($("nineCloudUsername")) $("nineCloudUsername").value = config.nineCloudUsername || "";
+  if ($("nineCloudLocalHost")) $("nineCloudLocalHost").value = config.nineCloudLocalHost || "127.0.0.1";
+  if ($("nineCloudApiPort")) $("nineCloudApiPort").value = config.nineCloudApiPort || 10100;
+  if ($("nineCloudProxyPortStart")) $("nineCloudProxyPortStart").value = config.nineCloudProxyPortStart || 24584;
+  if ($("nineCloudPoolSize")) $("nineCloudPoolSize").value = config.nineCloudPoolSize || 1;
+  if ($("nineCloudIsps")) $("nineCloudIsps").value = Array.isArray(config.nineCloudIsps) ? config.nineCloudIsps.join(", ") : String(config.nineCloudIsps || "");
   if ($("nineCloudProtocol")) $("nineCloudProtocol").value = config.nineCloudProtocol || "http";
   if ($("proxyPanelBaseUrl")) $("proxyPanelBaseUrl").value = config.proxyPanelBaseUrl || "https://proxypanel.io/api/v1";
   if ($("proxyPanelApiKey")) $("proxyPanelApiKey").value = config.proxyPanelApiKey || "";
@@ -450,8 +454,11 @@ function readProxyConfigForm() {
     nineProxyPingUrl: $("nineProxyPingUrl")?.value || "http://api.ipify.org?format=json",
     stateProxyEnabled: Boolean($("stateProxyEnabled")?.checked),
     stateProxyProvider: ["proxypanel", "nineproxy"].includes($("stateProxyProvider")?.value) ? $("stateProxyProvider").value : "clipproxy",
-    nineCloudApiKey: $("nineCloudApiKey")?.value || "",
-    nineCloudUsername: $("nineCloudUsername")?.value || "",
+    nineCloudLocalHost: $("nineCloudLocalHost")?.value || "127.0.0.1",
+    nineCloudApiPort: Math.max(1, Math.min(65535, Number($("nineCloudApiPort")?.value || 10100))),
+    nineCloudProxyPortStart: Math.max(1, Math.min(65535, Number($("nineCloudProxyPortStart")?.value || 24584))),
+    nineCloudPoolSize: Math.max(1, Math.min(20, Number($("nineCloudPoolSize")?.value || 1))),
+    nineCloudIsps: $("nineCloudIsps")?.value || "",
     nineCloudProtocol: $("nineCloudProtocol")?.value || "http",
     proxyPanelBaseUrl: $("proxyPanelBaseUrl")?.value || "https://proxypanel.io/api/v1",
     proxyPanelApiKey: $("proxyPanelApiKey")?.value || "",
@@ -864,7 +871,7 @@ function renderStateProxyConfig(config = state.config || {}) {
   const enabled = Boolean(config.stateProxyEnabled);
   const provider = ["proxypanel", "nineproxy"].includes(config.stateProxyProvider) ? config.stateProxyProvider : "clipproxy";
   document.querySelectorAll(".ninecloud-field").forEach((el) => { el.style.display = provider === "nineproxy" ? "" : "none"; });
-  if ($("checkStateProxyBtn")) $("checkStateProxyBtn").textContent = provider === "nineproxy" ? "Kiểm tra API" : "Check ping";
+  if ($("checkStateProxyBtn")) $("checkStateProxyBtn").textContent = provider === "nineproxy" ? "Lấy & kiểm tra" : "Check ping";
   if ($("applyStateProxyBtn")) $("applyStateProxyBtn").style.display = provider === "nineproxy" ? "none" : "";
   if ($("createNineProxyBtn")) $("createNineProxyBtn").style.display = provider === "nineproxy" ? "" : "none";
   if ($("stateProxyPanel")) $("stateProxyPanel").classList.toggle("enabled", enabled);
@@ -899,10 +906,9 @@ function renderStateProxyConfig(config = state.config || {}) {
       : "Tắt - tool chạy theo proxy hiện có của profile";
     if (provider === "nineproxy") {
       const apiStatus = state.stateProxyStatus?.config?.stateProxyProvider === "nineproxy" ? state.stateProxyStatus.api : null;
-      if ($("nineCloudApiKey") && !$("nineCloudApiKey").value) $("nineCloudApiKey").placeholder = apiStatus?.keyConfigured ? "Đã lưu key" : "API key";
       $("stateProxySummary").textContent = apiStatus?.lastError || (apiStatus?.checkedAt
-        ? `9Proxy API: ${apiStatus.subUsers} sub-user, ${apiStatus.connections} cấu hình kết nối`
-        : "9Proxy API: chưa kiểm tra kết nối");
+        ? `9Proxy local: ${state.stateProxyStatus?.proxies?.length || 0} proxy trong pool`
+        : "9Proxy local: nhập IP local rồi bấm Lấy & kiểm tra");
     }
   }
   const asnList = $("clipProxyAsnList");
@@ -935,7 +941,7 @@ function renderStateProxyStatus(config = state.config || {}) {
   const proxies = data?.proxies || [];
   if (!proxies.length) {
     pool.innerHTML = config.stateProxyProvider === "nineproxy"
-      ? `<div class="muted">Chưa có kết nối 9Proxy khả dụng.</div>`
+      ? `<div class="muted">Chưa lấy proxy 9Proxy local. Bấm Lấy & kiểm tra để tạo pool theo các bang đã chọn.</div>`
       : `<div class="muted">Chưa có proxy trong pool. Tool sẽ lấy proxy khi chạy tới profile; Check ping chỉ kiểm tra proxy đã có.</div>`;
     return;
   }
@@ -1065,7 +1071,7 @@ async function checkStateProxyPool(options = {}) {
     const errorCount = Array.isArray(data.errors) ? data.errors.length : 0;
     if ($("stateProxySummary")) {
       $("stateProxySummary").textContent = data.status?.config?.stateProxyProvider === "nineproxy"
-        ? data.errors?.[0] || `9Proxy API: ${data.status.api.subUsers} sub-user, ${data.status.api.connections} cấu hình kết nối`
+        ? data.errors?.[0] || `9Proxy local: đã kiểm tra ${proxyCount} proxy.`
         : removed
         ? `Đã check ${checkedAttempts} proxy, xóa ${removed} proxy chết, còn ${proxyCount}.`
         : errorCount
@@ -1086,7 +1092,7 @@ async function createNineProxyConnections() {
   state.stateProxyStatus = data.status;
   renderStateProxyConfig(config);
   const created = Array.isArray(data.created) ? data.created : [];
-  setStatus(created.length ? `Đã tạo Proxy2Web cho: ${created.join(", ")}.` : "Các bang đã có Proxy2Web.");
+  setStatus(created.length ? `Đã lấy proxy 9Proxy cho: ${created.join(", ")}.` : "Đã lấy và kiểm tra proxy 9Proxy.");
 }
 
 async function applyStateProxyNow() {
