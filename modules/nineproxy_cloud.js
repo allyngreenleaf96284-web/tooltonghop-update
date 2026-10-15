@@ -112,6 +112,16 @@ function localApiUrl(config, state, port, quantity) {
   return url;
 }
 
+function localPortRangeUrl(config, portCount) {
+  const url = new URL(`http://${config.nineCloudLocalHost}:${config.nineCloudApiPort}/api/set_port_range`);
+  url.search = new URLSearchParams({
+    t: "2",
+    start_port: String(config.nineCloudProxyPortStart),
+    port_num: String(portCount)
+  }).toString();
+  return url;
+}
+
 function probeLocalProxy(proxy, timeoutMs) {
   const proxyUrl = `http://${proxy.host}:${proxy.port}`;
   return new Promise((resolve) => {
@@ -136,6 +146,7 @@ export function createNineCloudTool({ hideRequest, addRuntimeLog = () => {}, fet
   const leases = new Map();
   const locks = new Map();
   let snapshot = { checkedAt: 0, lastError: "", ready: false, requests: 0 };
+  let configuredPortRangeKey = "";
 
   function slotsFor(state) {
     if (!pool.has(state)) pool.set(state, []);
@@ -158,7 +169,24 @@ export function createNineCloudTool({ hideRequest, addRuntimeLog = () => {}, fet
   async function requestState(config, state) {
     const stateIndex = config.stateProxyStates.indexOf(state);
     const slotCount = Math.min(20, config.nineCloudPoolSize + config.nineCloudReserveSize);
-    const startPort = config.nineCloudProxyPortStart + Math.max(0, stateIndex) * 20;
+    const rangeCount = Math.max(1, config.stateProxyStates.length) * slotCount;
+    const rangeKey = `${config.nineCloudLocalHost}:${config.nineCloudApiPort}:${config.nineCloudProxyPortStart}:${rangeCount}`;
+    await withStateLock("__nineproxy_port_range__", async () => {
+      if (configuredPortRangeKey === rangeKey) return;
+      const rangeUrl = localPortRangeUrl(config, rangeCount);
+      let rangeResponse, rangePayload;
+      try {
+        rangeResponse = await fetchImpl(rangeUrl, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(config.nineCloudRequestTimeoutMs) });
+        rangePayload = await rangeResponse.json();
+      } catch {
+        throw fail(`9Proxy local: khong dat duoc dai ${rangeCount} port tu ${config.nineCloudProxyPortStart}. Kiem tra 9Proxy local API.`);
+      }
+      if (!rangeResponse.ok || rangePayload?.error === true) {
+        throw fail(`9Proxy local: khong dat duoc dai ${rangeCount} port tu ${config.nineCloudProxyPortStart}: ${String(rangePayload?.message || `API loi ${rangeResponse.status}`).slice(0, 160)}`);
+      }
+      configuredPortRangeKey = rangeKey;
+    });
+    const startPort = config.nineCloudProxyPortStart + Math.max(0, stateIndex) * slotCount;
     const url = localApiUrl(config, state, startPort, slotCount);
     let response, payload;
     try {

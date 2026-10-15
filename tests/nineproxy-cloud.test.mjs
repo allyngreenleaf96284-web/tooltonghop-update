@@ -50,8 +50,12 @@ test("local API requests the documented t=2 state and ISP parameters only when a
   assert.equal(calls.length, 0);
   assert.equal(result.errors.length, 0);
   await tool.ensureForProfile({ config, profileId: "profile-a", row: { bang: "New York" } });
-  assert.equal(calls.length, 1);
-  const ny = calls[0];
+  assert.equal(calls.length, 2);
+  const range = calls[0];
+  assert.equal(range.pathname, "/api/set_port_range");
+  assert.equal(range.searchParams.get("start_port"), "24584");
+  assert.equal(range.searchParams.get("port_num"), "8");
+  const ny = calls[1];
   assert.equal(ny.origin, "http://192.168.100.28:10100");
   assert.equal(ny.pathname, "/api/proxy");
   assert.equal(ny.searchParams.get("t"), "2");
@@ -93,6 +97,6 @@ test("local pool reuses healthy endpoints by usage, then replaces exhausted entr
   tool.release(first);
   assert.equal(tool.getStatus(shortUseConfig).proxies[0].usageCount, 1);
   const second = await tool.ensureForProfile({ config: shortUseConfig, profileId: "b", row: { bang: "New York" } });
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
   assert.equal(second.slotId, "New York|192.168.100.28:24584");
 });
