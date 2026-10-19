@@ -13,6 +13,7 @@ import { createToolLogin } from "./modules/tool_login.js";
 import { createDienMatKhau } from "./modules/dienmatkhau.js";
 import { createDangBai } from "./modules/dangbai.js";
 import { normalizeListingCondition } from "./modules/listing_condition.js";
+import { accountIdentityRecord, resolveFallbackAccountIdentity } from "./modules/account_identity.js";
 import { createTuongTac } from "./modules/tuongtac.js";
 import { createRenewDocLapTool } from "./modules/renewdoclap.js";
 import { createTaoPage } from "./modules/taopage.js";
@@ -1250,7 +1251,7 @@ async function saveConfigV2(input) {
     input.spreadsheetId,
     ...current.spreadsheetIds
   ]);
-  const wantedAccountSheets = input.accountSheets && typeof input.accountSheets === "object" ? input.accountSheets : current.accountSheets;
+  const wantedAccountSheets = { ...current.accountSheets, ...(input.accountSheets && typeof input.accountSheets === "object" ? input.accountSheets : {}) };
   const accountSheets = sanitizeAccountSheetAssignments(wantedAccountSheets, spreadsheetIds);
   const next = {
     ...current,
@@ -1638,7 +1639,7 @@ async function getHideAccount(config) {
     ...folderIds
   ].join("|"));
   const label = provider === "hide" ? "HideMyAcc" : "GPM Login";
-  return {
+  return resolveFallbackAccountIdentity({
     id: `${provider}:${fingerprint}`,
     email: `${label} (${folders.length} ${provider === "hide" ? "folder" : "group"})`,
     plan: "",
@@ -1646,8 +1647,10 @@ async function getHideAccount(config) {
     provider,
     providerLabel: label,
     fallback: true,
-    fingerprint
-  };
+    fingerprint,
+    baseUrl: base,
+    folderIds
+  }, config);
 }
 
 async function resolveAccountSheetConfig(config, options = {}) {
@@ -1678,11 +1681,7 @@ async function resolveAccountSheetConfig(config, options = {}) {
         lastHideAccountId: account.id,
         knownHideAccounts: {
           ...(config.knownHideAccounts || {}),
-          [account.id]: {
-            id: account.id,
-            email: account.email || "",
-            plan: account.plan || ""
-          }
+          [account.id]: accountIdentityRecord(account)
         }
       };
       await writeFile(configPath, JSON.stringify(next, null, 2), "utf8");
@@ -1691,7 +1690,7 @@ async function resolveAccountSheetConfig(config, options = {}) {
     }
   }
 
-  if (spreadsheetId && !account.fallback) {
+  if (spreadsheetId) {
     const existingAccountSheet = String(config.accountSheets?.[account.id] || "").trim();
     const existingKnown = config.knownHideAccounts?.[account.id] || {};
     const unchanged =
@@ -1699,7 +1698,9 @@ async function resolveAccountSheetConfig(config, options = {}) {
       existingAccountSheet === spreadsheetId &&
       String(config.lastHideAccountId || "").trim() === account.id &&
       String(existingKnown.email || "").trim() === String(account.email || "").trim() &&
-      String(existingKnown.plan || "").trim() === String(account.plan || "").trim();
+      String(existingKnown.plan || "").trim() === String(account.plan || "").trim() &&
+      String(existingKnown.baseUrl || "") === String(account.baseUrl || "") &&
+      JSON.stringify(existingKnown.folderIds) === JSON.stringify(accountIdentityRecord(account).folderIds);
     if (unchanged) {
       return {
         ...config,
@@ -1720,11 +1721,7 @@ async function resolveAccountSheetConfig(config, options = {}) {
       lastHideAccountId: account.id,
       knownHideAccounts: {
         ...(config.knownHideAccounts || {}),
-        [account.id]: {
-          id: account.id,
-          email: account.email || "",
-          plan: account.plan || ""
-        }
+        [account.id]: accountIdentityRecord(account)
       }
     };
     await writeFile(configPath, JSON.stringify(next, null, 2), "utf8");
