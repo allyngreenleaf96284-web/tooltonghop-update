@@ -12,6 +12,7 @@ import { createLamFull } from "./modules/lamfull.js";
 import { createToolLogin } from "./modules/tool_login.js";
 import { createDienMatKhau } from "./modules/dienmatkhau.js";
 import { createDangBai } from "./modules/dangbai.js";
+import { normalizeListingCondition } from "./modules/listing_condition.js";
 import { createTuongTac } from "./modules/tuongtac.js";
 import { createRenewDocLapTool } from "./modules/renewdoclap.js";
 import { createTaoPage } from "./modules/taopage.js";
@@ -124,6 +125,9 @@ const DEFAULT_CONFIG = {
   fourVPostPackageWeight: "2-5 lbs",
   fourVPostSuccessPrefix: "",
   postSuccessPrefix: "",
+  postCondition: "Used - Like New",
+  fourVPostCondition: "Used - Like New",
+  postThreeVFull: false,
   loginConcurrency: 4,
   loginUnknownRetryCount: 1,
   fullConcurrency: 4,
@@ -1042,6 +1046,9 @@ async function readConfig() {
     loaded.fourVPostPackageWeight = String(loaded.fourVPostPackageWeight || DEFAULT_CONFIG.fourVPostPackageWeight).trim() || DEFAULT_CONFIG.fourVPostPackageWeight;
     loaded.fourVPostSuccessPrefix = String(loaded.fourVPostSuccessPrefix || "");
     loaded.postSuccessPrefix = String(loaded.postSuccessPrefix || "");
+    loaded.postCondition = normalizeListingCondition(loaded.postCondition);
+    loaded.fourVPostCondition = normalizeListingCondition(loaded.fourVPostCondition);
+    loaded.postThreeVFull = loaded.postThreeVFull === true;
     loaded.loginConcurrency = clampConcurrency(loaded.loginConcurrency, DEFAULT_CONFIG.loginConcurrency, 4);
     loaded.loginUnknownRetryCount = Math.max(0, Math.min(3, Math.floor(Number(loaded.loginUnknownRetryCount ?? DEFAULT_CONFIG.loginUnknownRetryCount) || 0)));
     loaded.fullConcurrency = clampConcurrency(loaded.fullConcurrency, DEFAULT_CONFIG.fullConcurrency, 4);
@@ -1111,6 +1118,9 @@ async function saveConfig(input) {
     fourVPostPackageWeight: String(input.fourVPostPackageWeight !== undefined ? input.fourVPostPackageWeight : current.fourVPostPackageWeight || DEFAULT_CONFIG.fourVPostPackageWeight).trim() || DEFAULT_CONFIG.fourVPostPackageWeight,
     fourVPostSuccessPrefix: String(input.fourVPostSuccessPrefix !== undefined ? input.fourVPostSuccessPrefix : current.fourVPostSuccessPrefix || ""),
     postSuccessPrefix: String(input.postSuccessPrefix !== undefined ? input.postSuccessPrefix : current.postSuccessPrefix || ""),
+    postCondition: normalizeListingCondition(input.postCondition ?? current.postCondition),
+    fourVPostCondition: normalizeListingCondition(input.fourVPostCondition ?? current.fourVPostCondition),
+    postThreeVFull: (input.postThreeVFull ?? current.postThreeVFull) === true,
     loginConcurrency: clampConcurrency(input.loginConcurrency, current.loginConcurrency || DEFAULT_CONFIG.loginConcurrency, 4),
     loginUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.loginUnknownRetryCount ?? current.loginUnknownRetryCount ?? DEFAULT_CONFIG.loginUnknownRetryCount) || 0))),
     fullConcurrency: clampConcurrency(input.fullConcurrency, current.fullConcurrency || DEFAULT_CONFIG.fullConcurrency, 4),
@@ -1265,6 +1275,9 @@ async function saveConfigV2(input) {
     fourVPostPackageWeight: String(input.fourVPostPackageWeight !== undefined ? input.fourVPostPackageWeight : current.fourVPostPackageWeight || DEFAULT_CONFIG.fourVPostPackageWeight).trim() || DEFAULT_CONFIG.fourVPostPackageWeight,
     fourVPostSuccessPrefix: String(input.fourVPostSuccessPrefix !== undefined ? input.fourVPostSuccessPrefix : current.fourVPostSuccessPrefix || ""),
     postSuccessPrefix: String(input.postSuccessPrefix !== undefined ? input.postSuccessPrefix : current.postSuccessPrefix || ""),
+    postCondition: normalizeListingCondition(input.postCondition ?? current.postCondition),
+    fourVPostCondition: normalizeListingCondition(input.fourVPostCondition ?? current.fourVPostCondition),
+    postThreeVFull: (input.postThreeVFull ?? current.postThreeVFull) === true,
     loginConcurrency: clampConcurrency(input.loginConcurrency, current.loginConcurrency || DEFAULT_CONFIG.loginConcurrency, 4),
     loginUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.loginUnknownRetryCount ?? current.loginUnknownRetryCount ?? DEFAULT_CONFIG.loginUnknownRetryCount) || 0))),
     fullConcurrency: clampConcurrency(input.fullConcurrency, current.fullConcurrency || DEFAULT_CONFIG.fullConcurrency, 4),
@@ -3091,6 +3104,7 @@ const dienMatKhauModule = createDienMatKhau({
 });
 
 const dangBaiModule = createDangBai({
+  runFullProfile: lamFullModule.runProfile,
   getManager: getShippingFullManager,
   dangNhap: dangNhapModule,
   addRuntimeLog,

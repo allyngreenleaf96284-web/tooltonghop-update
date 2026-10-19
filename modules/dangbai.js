@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { readFile } from "node:fs/promises";
 import { buildStandardName, buildFullSuccessToken, buildMarketplaceIneligibleName, buildCaptchaProfileName } from "./profile_name.js";
 import { withFacebookLocale, isMarketplaceIneligibleError, isFacebookCaptchaError } from "./facebook_locale.js";
+import { chooseListingCondition, normalizeListingCondition } from "./listing_condition.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const US_LOCATION_FILE = path.resolve(__dirname, "../data/us_locations.txt");
@@ -176,6 +177,7 @@ export function createDangBai({
   allocateSellerInfoRow,
   updateSellerInfoUid,
   appendMarketplacePostResult = null,
+  runFullProfile = null,
   stateProxy,
   runtime,
   mode = "standard"
@@ -345,7 +347,7 @@ export function createDangBai({
     };
   }
 
-  function patchManager(manager) {
+  function patchManager(manager, condition) {
     if (typeof manager.setMarketplaceZoom === "function" && !manager.__toolDisableDomZoomPatched) {
       manager.setMarketplaceZoom = async function stableSetMarketplaceZoom(page) {
         return applyStableViewport(page, Number(this.__toolWorkerSlot || 0), Number(this.__toolWorkerTotal || 1));
@@ -381,11 +383,11 @@ export function createDangBai({
       };
       manager.__toolDescriptionPatchApplied = true;
     }
-    if (typeof manager.chooseConditionNew === "function" && !manager.__toolUsedLikeNewConditionPatched) {
-      manager.chooseConditionNew = async function chooseUsedLikeNewInstead(page) {
-        await ensureUsedLikeNewCondition(page);
+    if (typeof manager.chooseConditionNew === "function" && !manager.__toolListingConditionPatched) {
+      manager.chooseConditionNew = async function chooseConfiguredCondition(page) {
+        await chooseListingCondition(page, condition);
       };
-      manager.__toolUsedLikeNewConditionPatched = true;
+      manager.__toolListingConditionPatched = true;
     }
   }
 
@@ -1073,10 +1075,7 @@ export function createDangBai({
     markNoRollback();
     await manager.clickActionButton(page, "Publish");
     await waitForPublishSuccess(page);
-    if (barStatus !== "2v" && typeof manager.consumeUsedTitle === "function") {
-      manager.consumeUsedTitle(payload.titleFile, payload.title);
-    }
-    return { ok: true, detail: "Đã đăng bài thành công.", location: picked || target };
+    return { ok: true, detail: "Đã đăng bài thành công.", location: picked };
   }
 
   function marketplaceError(status, message) {
@@ -1113,73 +1112,6 @@ export function createDangBai({
     await manager.clickActionButton(page, label);
   }
 
-  async function ensureUsedLikeNewCondition(page) {
-    const clean = (value) => String(value || "")
-      .replace(/[–—]/g, "-")
-      .replace(/\s+/g, " ")
-      .trim()
-      .toLowerCase();
-    const wanted = "used - like new";
-    for (let recovery = 1; recovery <= 3; recovery += 1) {
-      const alreadySelected = await page.evaluate((value) => {
-        const cleanText = (text) => String(text || "").replace(/[–—]/g, "-").replace(/\s+/g, " ").trim().toLowerCase();
-        return Array.from(document.querySelectorAll("label[role='combobox'], [role='combobox']"))
-          .some((node) => cleanText(node.innerText || node.textContent || "").includes(value));
-      }, wanted).catch(() => false);
-      if (alreadySelected) return;
-
-      const opened = await page.evaluate(() => {
-        const visible = (node) => {
-          const rect = node?.getBoundingClientRect?.();
-          return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
-        };
-        const cleanText = (text) => String(text || "").replace(/\s+/g, " ").trim().toLowerCase();
-        const target = Array.from(document.querySelectorAll("label[role='combobox'], [role='combobox']"))
-          .find((node) => visible(node) && /^condition\b/.test(cleanText(node.innerText || node.textContent || "")));
-        if (!target) return false;
-        target.scrollIntoView({ block: "center", inline: "nearest" });
-        target.click();
-        return true;
-      }).catch(() => false);
-      if (!opened) {
-        await sleep(FOUR_V_UI_POLL_MS);
-        continue;
-      }
-
-      let clicked = false;
-      for (let waitAttempt = 1; waitAttempt <= Math.ceil(FOUR_V_UI_WAIT_MS / FOUR_V_UI_POLL_MS); waitAttempt += 1) {
-        clicked = await page.evaluate((value) => {
-          const cleanText = (text) => String(text || "").replace(/[–—]/g, "-").replace(/\s+/g, " ").trim().toLowerCase();
-          const visible = (node) => {
-            const rect = node?.getBoundingClientRect?.();
-            return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
-          };
-          const option = Array.from(document.querySelectorAll("[role='option'], [role='menuitem'], div, span"))
-            .find((node) => visible(node) && cleanText(node.innerText || node.textContent || "") === value);
-          if (!option) return false;
-          const target = option.closest?.("[role='option'], [role='menuitem'], [role='button'], button") || option;
-          target.click();
-          return true;
-        }, wanted).catch(() => false);
-        if (clicked) break;
-        await sleep(FOUR_V_UI_POLL_MS);
-      }
-      if (clicked) {
-        for (let waitAttempt = 1; waitAttempt <= Math.ceil(FOUR_V_UI_WAIT_MS / FOUR_V_UI_POLL_MS); waitAttempt += 1) {
-          const selected = await page.evaluate((value) => {
-            const cleanText = (text) => String(text || "").replace(/[–—]/g, "-").replace(/\s+/g, " ").trim().toLowerCase();
-            return Array.from(document.querySelectorAll("label[role='combobox'], [role='combobox']"))
-              .some((node) => cleanText(node.innerText || node.textContent || "").includes(value));
-          }, wanted).catch(() => false);
-          if (selected) return;
-          await sleep(FOUR_V_UI_POLL_MS);
-        }
-      }
-      await page.keyboard.press("Escape").catch(() => {});
-      await sleep(FOUR_V_UI_POLL_MS);
-    }
-    throw marketplaceError("loisp", "Khong chon duoc Condition = Used - Like New.");
-  }
 
   async function waitForStepOneUpload(page) {
     const attempts = Math.ceil(FOUR_V_UI_WAIT_MS / FOUR_V_UI_POLL_MS);
@@ -1904,7 +1836,7 @@ export function createDangBai({
 
   async function runOne(profileId, sheetRow, config, sheetSession, workerSlot = 0, workerTotal = 1) {
     const manager = getManager({ fresh: true });
-    patchManager(manager);
+    patchManager(manager, normalizeListingCondition(isFourVPost ? config.fourVPostCondition : config.postCondition));
     patchStableWindowTiling(manager, workerSlot, workerTotal);
     manager.saveConfig({
       dataRoot: isFourVPost ? config.fourVPostDataRoot : config.fullDataRoot,
@@ -2073,6 +2005,11 @@ export function createDangBai({
       if (!["2v", "3v"].includes(detectedBar)) {
         throw new Error(`Workflow dang bai chua ho tro ${detectedBar || "khong ro"} vach.`);
       }
+      if (detectedBar === "3v" && config.postThreeVFull === true) {
+        if (typeof runFullProfile !== "function") throw new Error("Chua cau hinh luong Full cho dang bai 3v.");
+        log(profileId, "chuyen lam full", "Da nhan dien 3v, chuyen sang luong tool Full.");
+        return { continueWithFull: true };
+      }
       const payload = await step(profileId, job, "lay payload dang bai", async () =>
         readListingDescription(await manager.getRandomListingPayload()), { timeoutMs: 30000 });
 
@@ -2151,6 +2088,9 @@ export function createDangBai({
     if (isFourVPost && !String(config.fourVPostSpreadsheetId || "").trim()) {
       throw new Error("Ban can nhap Sheet ghi UID va LINK SP cho dang bai 4v.");
     }
+    if (!isFourVPost && config.postThreeVFull === true && !String(config.sellerSpreadsheetId || "").trim()) {
+      throw new Error("Ban can nhap Seller Info Spreadsheet ID de lam Full khi gap 3v.");
+    }
     const sheetSession = await createSheetRowSession(config, ids);
     const concurrency = Math.min(clampToolConcurrency(config.postConcurrency), ids.length);
 
@@ -2207,7 +2147,14 @@ export function createDangBai({
           activeCount += 1;
           log(id, "worker", `worker ${workerSlot + 1}/${concurrency} start, active=${activeCount}, queue_con_lai=${Math.max(0, ids.length - cursor)}`);
           try {
-            await runOne(id, row, config, sheetSession, workerSlot, concurrency);
+            const outcome = await runOne(id, row, config, sheetSession, workerSlot, concurrency);
+            if (outcome?.continueWithFull && !runtime.stopRequested) {
+              job.finishedAt = "";
+              job.liveStatus = "3v - dang chuyen sang lam Full";
+              await runFullProfile(id, row, config, sheetSession, workerSlot, concurrency, {
+                condition: normalizeListingCondition(config.postCondition)
+              });
+            }
           } finally {
             activeCount = Math.max(0, activeCount - 1);
             log(id, "worker", `worker ${workerSlot + 1}/${concurrency} end, active=${activeCount}, queue_con_lai=${Math.max(0, ids.length - cursor)}`);

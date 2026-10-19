@@ -1106,6 +1106,18 @@
                 <input id="postSuccessPrefix" type="text" placeholder="ok-" />
               </label>
               <label>
+                Condition
+                <select id="postCondition">
+                  <option value="New">New</option>
+                  <option value="Used - Like New" selected>Used - Like New</option>
+                  <option value="Used - Good">Used - Good</option>
+                  <option value="Used - Fair">Used - Fair</option>
+                </select>
+              </label>
+              <label class="checkbox-label">
+                <input id="postThreeVFull" type="checkbox" /> Gặp 3v thì làm Full
+              </label>
+              <label>
                 Số luồng
                 <input id="postConcurrency" type="number" min="1" max="4" step="1" />
               </label>
@@ -1292,6 +1304,15 @@
                   <option value="2-5 lbs" selected>2-5 lbs</option>
                   <option value="5-10 lbs">5-10 lbs</option>
                   <option value="10-70 lbs">10-70 lbs</option>
+                </select>
+              </label>
+              <label>
+                Condition
+                <select id="fourVPostCondition">
+                  <option value="New">New</option>
+                  <option value="Used - Like New" selected>Used - Like New</option>
+                  <option value="Used - Good">Used - Good</option>
+                  <option value="Used - Fair">Used - Fair</option>
                 </select>
               </label>
               <button id="savePost4VConfig" class="primary action-wide" type="button">

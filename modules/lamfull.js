@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { buildFullSuccessToken, buildStandardName, buildMarketplaceIneligibleName, buildCaptchaProfileName } from "./profile_name.js";
 import { withFacebookLocale, isMarketplaceIneligibleError, assertMarketplaceAccess, isFacebookCaptchaError } from "./facebook_locale.js";
+import { chooseListingCondition } from "./listing_condition.js";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const US_STATES = new Set([
@@ -1112,10 +1113,13 @@ export function createLamFull({
     throw lastError || new Error("Khong the hoan tat full flow.");
   }
 
-  async function runOne(profileId, sheetRow, config, sheetSession, workerSlot = 0, workerTotal = 1) {
+  async function runOne(profileId, sheetRow, config, sheetSession, workerSlot = 0, workerTotal = 1, options = {}) {
     const manager = getManager({ fresh: true });
     const locationManager = getLocationManager({ fresh: true });
     patchManager(manager, locationManager);
+    if (options.condition) {
+      manager.chooseConditionNew = (page) => chooseListingCondition(page, options.condition);
+    }
     patchStableWindowTiling(manager, workerSlot, workerTotal);
     manager.saveConfig({
       dataRoot: config.fullDataRoot,
@@ -1457,7 +1461,7 @@ export function createLamFull({
     return manager.resumeCurrentJob?.() || { ok: true, count: 0 };
   }
 
-  return { runQueue, pauseCurrent, resumeCurrent };
+  return { runQueue, runProfile: runOne, pauseCurrent, resumeCurrent };
 }
 
 

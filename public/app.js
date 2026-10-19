@@ -273,6 +273,9 @@ async function loadConfig() {
   if ($("postPriceMin")) $("postPriceMin").value = config.fullPriceMin || "";
   if ($("postPriceMax")) $("postPriceMax").value = config.fullPriceMax || "";
   if ($("postSuccessPrefix")) $("postSuccessPrefix").value = config.postSuccessPrefix || "";
+  if ($("postCondition")) $("postCondition").value = config.postCondition || "Used - Like New";
+  if ($("fourVPostCondition")) $("fourVPostCondition").value = config.fourVPostCondition || "Used - Like New";
+  if ($("postThreeVFull")) $("postThreeVFull").checked = config.postThreeVFull === true;
   if ($("fourVPostDataRoot")) $("fourVPostDataRoot").value = config.fourVPostDataRoot || config.fullDataRoot || "E:\\dangbai";
   if ($("fourVPostSpreadsheetId")) $("fourVPostSpreadsheetId").value = config.fourVPostSpreadsheetId || "";
   if ($("fourVPostPriceMin")) $("fourVPostPriceMin").value = config.fourVPostPriceMin || 20;
@@ -387,6 +390,9 @@ async function saveConfig() {
       fourVPostPackageWeight: $("fourVPostPackageWeight")?.value || "2-5 lbs",
       fourVPostSuccessPrefix: $("fourVPostSuccessPrefix")?.value || "",
       postSuccessPrefix: $("postSuccessPrefix")?.value || "",
+      postCondition: $("postCondition")?.value || "Used - Like New",
+      fourVPostCondition: $("fourVPostCondition")?.value || "Used - Like New",
+      postThreeVFull: $("postThreeVFull")?.checked === true,
       checkConcurrency: Number($("checkConcurrency")?.value || 4),
       checkOrderSpreadsheetId: $("checkOrderSpreadsheetId")?.value || "",
       checkOrderSheetName: $("checkOrderSheetName")?.value || "check order",
@@ -3737,7 +3743,7 @@ if ($("selectAllPost4VRows")) $("selectAllPost4VRows").addEventListener("change"
   renderPost4VRows();
 });
 let post4VConfigSaveTimer = null;
-["fourVPostDataRoot", "fourVPostSuccessPrefix", "fourVPostSpreadsheetId", "fourVPostPriceMin", "fourVPostPriceMax", "fourVPostPackageWeight"].forEach((id) => {
+["fourVPostDataRoot", "fourVPostSuccessPrefix", "fourVPostSpreadsheetId", "fourVPostPriceMin", "fourVPostPriceMax", "fourVPostPackageWeight", "fourVPostCondition"].forEach((id) => {
   $(id)?.addEventListener("change", () => {
     window.clearTimeout(post4VConfigSaveTimer);
     post4VConfigSaveTimer = window.setTimeout(() => {
