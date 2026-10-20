@@ -133,6 +133,7 @@ const DEFAULT_CONFIG = {
   postThreeVFull: false,
   loginConcurrency: 4,
   loginUnknownRetryCount: 1,
+  loginThreeVFull: false,
   fullConcurrency: 4,
   fullUnknownRetryCount: 1,
   postConcurrency: 4,
@@ -1052,6 +1053,7 @@ async function readConfig() {
     loaded.postThreeVFull = loaded.postThreeVFull === true;
     loaded.loginConcurrency = clampConcurrency(loaded.loginConcurrency, DEFAULT_CONFIG.loginConcurrency, 4);
     loaded.loginUnknownRetryCount = Math.max(0, Math.min(3, Math.floor(Number(loaded.loginUnknownRetryCount ?? DEFAULT_CONFIG.loginUnknownRetryCount) || 0)));
+    loaded.loginThreeVFull = loaded.loginThreeVFull === true;
     loaded.fullConcurrency = clampConcurrency(loaded.fullConcurrency, DEFAULT_CONFIG.fullConcurrency, 4);
     loaded.fullUnknownRetryCount = Math.max(0, Math.min(3, Math.floor(Number(loaded.fullUnknownRetryCount ?? DEFAULT_CONFIG.fullUnknownRetryCount) || 0)));
     loaded.postConcurrency = clampConcurrency(loaded.postConcurrency, DEFAULT_CONFIG.postConcurrency, 4);
@@ -1121,6 +1123,7 @@ async function saveConfig(input) {
     postThreeVFull: (input.postThreeVFull ?? current.postThreeVFull) === true,
     loginConcurrency: clampConcurrency(input.loginConcurrency, current.loginConcurrency || DEFAULT_CONFIG.loginConcurrency, 4),
     loginUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.loginUnknownRetryCount ?? current.loginUnknownRetryCount ?? DEFAULT_CONFIG.loginUnknownRetryCount) || 0))),
+    loginThreeVFull: (input.loginThreeVFull ?? current.loginThreeVFull) === true,
     fullConcurrency: clampConcurrency(input.fullConcurrency, current.fullConcurrency || DEFAULT_CONFIG.fullConcurrency, 4),
     fullUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.fullUnknownRetryCount ?? current.fullUnknownRetryCount ?? DEFAULT_CONFIG.fullUnknownRetryCount) || 0))),
     postConcurrency: clampConcurrency(input.postConcurrency, current.postConcurrency || DEFAULT_CONFIG.postConcurrency, 4),
@@ -1279,6 +1282,7 @@ async function saveConfigV2(input) {
     postThreeVFull: (input.postThreeVFull ?? current.postThreeVFull) === true,
     loginConcurrency: clampConcurrency(input.loginConcurrency, current.loginConcurrency || DEFAULT_CONFIG.loginConcurrency, 4),
     loginUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.loginUnknownRetryCount ?? current.loginUnknownRetryCount ?? DEFAULT_CONFIG.loginUnknownRetryCount) || 0))),
+    loginThreeVFull: (input.loginThreeVFull ?? current.loginThreeVFull) === true,
     fullConcurrency: clampConcurrency(input.fullConcurrency, current.fullConcurrency || DEFAULT_CONFIG.fullConcurrency, 4),
     fullUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.fullUnknownRetryCount ?? current.fullUnknownRetryCount ?? DEFAULT_CONFIG.fullUnknownRetryCount) || 0))),
     postConcurrency: clampConcurrency(input.postConcurrency, current.postConcurrency || DEFAULT_CONFIG.postConcurrency, 4),
@@ -3081,6 +3085,7 @@ const lamFullModule = createLamFull({
 });
 
 const toolLoginModule = createToolLogin({
+  runFullProfile: lamFullModule.runProfile,
   getManager: getShippingFullManager,
   dangNhap: dangNhapModule,
   addRuntimeLog,
@@ -3551,6 +3556,7 @@ async function handleApi(req, res) {
       const config = forceSingleThreadForProxyPanel(await resolveAccountSheetConfig(await readConfig()));
       if (body.concurrency !== undefined) config.loginConcurrency = clampConcurrency(body.concurrency, config.loginConcurrency || DEFAULT_CONFIG.loginConcurrency, 4);
       if (body.loginUnknownRetryCount !== undefined) config.loginUnknownRetryCount = Math.max(0, Math.min(3, Math.floor(Number(body.loginUnknownRetryCount) || 0)));
+      if (body.loginThreeVFull !== undefined) config.loginThreeVFull = body.loginThreeVFull === true;
       if (stateProxyUsesProxyPanel(config)) config.loginConcurrency = 1;
       const data = await startAutoRetryBatch({
         runtime: toolRuntime,

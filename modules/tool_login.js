@@ -150,6 +150,7 @@ export function createToolLogin({
   addRuntimeLog,
   buildToolRow,
   createSheetRowSession,
+  runFullProfile = null,
   stateProxy,
   runtime
 }) {
@@ -289,6 +290,11 @@ export function createToolLogin({
 
       await step(profileId, job, "vao man hinh check vach", () => ensureMarketplaceCreatePageReady(manager, page, row), 150000);
       barStatus = await step(profileId, job, "check vach", () => readBar(manager, page), 45000);
+      if (barStatus === "3v" && config.loginThreeVFull === true) {
+        log(profileId, "chuyen lam full", "Da nhan dien 3v, chuyen sang luong tool Full.");
+        await writer.commit({ soVach: "3v", chiTiet: "3v - dang chuyen sang lam Full" });
+        return { continueWithFull: true };
+      }
 
       const tenChuan = buildStandardName({
         currentName,
@@ -355,6 +361,12 @@ export function createToolLogin({
     if (runtime.running) throw new Error("Dang co tool khac chay, vui long doi xong.");
     const ids = [...new Set((profileIds || []).map((id) => String(id || "").trim()).filter(Boolean))];
     if (!ids.length) throw new Error("Chua chon profile de chay.");
+    if (config.loginThreeVFull === true) {
+      if (typeof runFullProfile !== "function") throw new Error("Chua cau hinh luong Full cho Tool Login.");
+      if (!config.fullDataRoot || !config.fullPriceMin || !config.fullPriceMax || !config.sellerSpreadsheetId) {
+        throw new Error("Can dien thu muc dang bai, gia min/max va Seller Info Spreadsheet ID trong tool Full truoc khi bat lam Full cho 3v.");
+      }
+    }
     const sheetSession = await createSheetRowSession(config, ids);
     const concurrency = Math.min(clampConcurrency(config.loginConcurrency, 4), ids.length);
     for (const id of ids) {
@@ -379,11 +391,26 @@ export function createToolLogin({
               continue;
             }
             if (job) job.startedAt = new Date().toISOString();
-            await runOne(id, row, config, sheetSession, workerSlot, concurrency);
+            const outcome = await runOne(id, row, config, sheetSession, workerSlot, concurrency);
+            if (outcome?.continueWithFull && !runtime.stopRequested) {
+              job.finishedAt = "";
+              job.liveStatus = "3v - dang chuyen sang lam Full";
+              await runFullProfile(id, row, config, sheetSession, workerSlot, concurrency);
+            }
           }
         });
         await Promise.all(workers);
         await sheetSession.flushAll();
+        if (runtime.stopRequested) {
+          for (const id of ids) {
+            const job = runtime.jobs.get(id);
+            if (job && ["queued", "running"].includes(job.status)) {
+              job.status = "stopped";
+              job.liveStatus = "da dung han";
+              job.finishedAt = new Date().toISOString();
+            }
+          }
+        }
       } catch (error) {
         addRuntimeLog(`Loi queue tool login: ${error.message}`, "error", "", { tool: "tool login", step: "queue" });
       } finally {

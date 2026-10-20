@@ -980,7 +980,7 @@
             <div>
               <div class="eyebrow">Facebook Login</div>
               <h2>Tool Login</h2>
-              <p id="loginStatusText">Đăng nhập Facebook, giữ hoặc đổi bang Mỹ, sau đó check số vạch và dừng.</p>
+              <p id="loginStatusText">Đăng nhập Facebook, giữ hoặc đổi bang Mỹ, sau đó kiểm tra số vạch.</p>
             </div>
             <div class="actions">
               <button id="stopLoginBtn" class="ghost-btn danger-btn" type="button"><span>Dừng hẳn</span></button>
@@ -992,7 +992,7 @@
           <section class="tool-config-card">
             <div class="table-title">
               <span>Cấu hình Tool Login</span>
-              <span>Tool dừng ngay sau khi đã nhận diện 2v, 3v hoặc 4v.</span>
+              <span>Đăng nhập và kiểm tra số vạch.</span>
             </div>
             <div class="tool-config-grid login-config-grid">
               <label>
@@ -1002,6 +1002,9 @@
               <label>
                 Chạy lại lỗi chưa xác định
                 <input id="loginUnknownRetryCount" type="number" min="0" max="3" step="1" />
+              </label>
+              <label class="checkbox-label">
+                <input id="loginThreeVFull" type="checkbox" /> Gặp 3v thì làm Full
               </label>
               <details class="retry-policy">
                 <summary>Lỗi không chạy lại</summary>
