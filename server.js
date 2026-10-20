@@ -135,6 +135,7 @@ const DEFAULT_CONFIG = {
   fullUnknownRetryCount: 1,
   postConcurrency: 4,
   postUnknownRetryCount: 1,
+  fourVPostUnknownRetryCount: 1,
   checkConcurrency: 4,
   checkOrderSpreadsheetId: "",
   checkOrderSheetName: "check order",
@@ -1056,6 +1057,7 @@ async function readConfig() {
     loaded.fullUnknownRetryCount = Math.max(0, Math.min(3, Math.floor(Number(loaded.fullUnknownRetryCount ?? DEFAULT_CONFIG.fullUnknownRetryCount) || 0)));
     loaded.postConcurrency = clampConcurrency(loaded.postConcurrency, DEFAULT_CONFIG.postConcurrency, 4);
     loaded.postUnknownRetryCount = Math.max(0, Math.min(3, Math.floor(Number(loaded.postUnknownRetryCount ?? DEFAULT_CONFIG.postUnknownRetryCount) || 0)));
+    loaded.fourVPostUnknownRetryCount = Math.max(0, Math.min(3, Math.floor(Number(loaded.fourVPostUnknownRetryCount ?? DEFAULT_CONFIG.fourVPostUnknownRetryCount) || 0)));
     loaded.checkConcurrency = clampConcurrency(loaded.checkConcurrency, DEFAULT_CONFIG.checkConcurrency, 4);
     loaded.checkOrderSpreadsheetId = String(loaded.checkOrderSpreadsheetId || "").trim();
     loaded.checkOrderSheetName = String(loaded.checkOrderSheetName || DEFAULT_CONFIG.checkOrderSheetName).trim() || DEFAULT_CONFIG.checkOrderSheetName;
@@ -1128,6 +1130,7 @@ async function saveConfig(input) {
     fullUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.fullUnknownRetryCount ?? current.fullUnknownRetryCount ?? DEFAULT_CONFIG.fullUnknownRetryCount) || 0))),
     postConcurrency: clampConcurrency(input.postConcurrency, current.postConcurrency || DEFAULT_CONFIG.postConcurrency, 4),
     postUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.postUnknownRetryCount ?? current.postUnknownRetryCount ?? DEFAULT_CONFIG.postUnknownRetryCount) || 0))),
+    fourVPostUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.fourVPostUnknownRetryCount ?? current.fourVPostUnknownRetryCount ?? DEFAULT_CONFIG.fourVPostUnknownRetryCount) || 0))),
     checkConcurrency: clampConcurrency(input.checkConcurrency, current.checkConcurrency || DEFAULT_CONFIG.checkConcurrency),
     checkOrderSpreadsheetId: String(input.checkOrderSpreadsheetId !== undefined ? input.checkOrderSpreadsheetId : current.checkOrderSpreadsheetId || "").trim(),
     checkOrderSheetName: String(input.checkOrderSheetName !== undefined ? input.checkOrderSheetName : current.checkOrderSheetName || DEFAULT_CONFIG.checkOrderSheetName).trim() || DEFAULT_CONFIG.checkOrderSheetName,
@@ -1285,6 +1288,7 @@ async function saveConfigV2(input) {
     fullUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.fullUnknownRetryCount ?? current.fullUnknownRetryCount ?? DEFAULT_CONFIG.fullUnknownRetryCount) || 0))),
     postConcurrency: clampConcurrency(input.postConcurrency, current.postConcurrency || DEFAULT_CONFIG.postConcurrency, 4),
     postUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.postUnknownRetryCount ?? current.postUnknownRetryCount ?? DEFAULT_CONFIG.postUnknownRetryCount) || 0))),
+    fourVPostUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.fourVPostUnknownRetryCount ?? current.fourVPostUnknownRetryCount ?? DEFAULT_CONFIG.fourVPostUnknownRetryCount) || 0))),
     checkConcurrency: clampConcurrency(input.checkConcurrency, current.checkConcurrency || DEFAULT_CONFIG.checkConcurrency),
     checkOrderSpreadsheetId: String(input.checkOrderSpreadsheetId !== undefined ? input.checkOrderSpreadsheetId : current.checkOrderSpreadsheetId || "").trim(),
     checkOrderSheetName: String(input.checkOrderSheetName !== undefined ? input.checkOrderSheetName : current.checkOrderSheetName || DEFAULT_CONFIG.checkOrderSheetName).trim() || DEFAULT_CONFIG.checkOrderSheetName,
@@ -3605,7 +3609,8 @@ async function handleApi(req, res) {
         profileIds: body.profileIds || [],
         config,
         options: {},
-        addRuntimeLog
+        addRuntimeLog,
+        maxRetries: config.fourVPostUnknownRetryCount
       });
       return jsonResponse(res, 200, { ok: true, config, data });
     }

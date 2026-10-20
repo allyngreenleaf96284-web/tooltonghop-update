@@ -1315,6 +1315,10 @@
                   <option value="Used - Fair">Used - Fair</option>
                 </select>
               </label>
+              <label>
+                Chạy lại lỗi chưa xác định
+                <input id="fourVPostUnknownRetryCount" type="number" min="0" max="3" step="1" value="1" />
+              </label>
               <button id="savePost4VConfig" class="primary action-wide" type="button">
                 <span>Lưu cấu hình</span>
               </button>
@@ -1360,6 +1364,10 @@
             </div>
             <div id="post4vToolProgressList" class="tool-progress-list"></div>
           </section>
+          <details id="post4vRetryErrorsPanel" class="retry-error-panel hidden">
+            <summary>Danh sách lỗi chưa xác định <span id="post4vRetryErrorCount" class="chip">0</span></summary>
+            <div id="post4vRetryErrorsList" class="retry-error-list"></div>
+          </details>
 
           <section class="control-deck">
             <label class="search-panel">

@@ -10,7 +10,7 @@ const KNOWN_FAILURE_PATTERNS = [
   /het proxy|hết proxy|proxy.*(sai|loi|lỗi|failed|rejected|not active)/i,
   /chua nhap|chưa nhập|thieu cot|thiếu cột|thieu du lieu|thiếu dữ liệu|thieu cau hinh|thiếu cấu hình|khong tim thay description\.txt|không tìm thấy description\.txt|khong tim thay dong du lieu trong sheet|không tìm thấy dòng dữ liệu trong sheet/i,
   /limit reached|daily limit|not able to create new listings/i,
-  /4v|workflow.*chua ho tro|workflow.*chưa hỗ trợ|unsupported/i,
+  /workflow.*chua ho tro|workflow.*chưa hỗ trợ|unsupported/i,
   /seller info|offer shipping|loi login|lỗi login|loi bank|lỗi bank|loi ssn|lỗi ssn/i,
   /phien ban|phiên bản|about:blank|dung han|dừng hẳn|stopped/i
 ];

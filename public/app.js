@@ -300,6 +300,7 @@ async function loadConfig() {
   if ($("fullUnknownRetryCount")) $("fullUnknownRetryCount").value = Math.max(0, Math.min(3, Number(config.fullUnknownRetryCount ?? 1)));
   if ($("postConcurrency")) $("postConcurrency").value = config.postConcurrency || 4;
   if ($("postUnknownRetryCount")) $("postUnknownRetryCount").value = Math.max(0, Math.min(3, Number(config.postUnknownRetryCount ?? 1)));
+  if ($("fourVPostUnknownRetryCount")) $("fourVPostUnknownRetryCount").value = Math.max(0, Math.min(3, Number(config.fourVPostUnknownRetryCount ?? 1)));
   if ($("interactionConcurrency")) $("interactionConcurrency").value = config.interactionConcurrency || 4;
   if ($("pageConcurrency")) $("pageConcurrency").value = config.pageConcurrency || 4;
   if ($("avatarConcurrency")) $("avatarConcurrency").value = Math.max(1, Math.min(2, Number(config.avatarConcurrency || 2)));
@@ -410,6 +411,7 @@ async function saveConfig() {
       fullUnknownRetryCount: Math.max(0, Math.min(3, Number($("fullUnknownRetryCount")?.value || 0))),
       postConcurrency: Number($("postConcurrency")?.value || 4),
       postUnknownRetryCount: Math.max(0, Math.min(3, Number($("postUnknownRetryCount")?.value || 0))),
+      fourVPostUnknownRetryCount: Math.max(0, Math.min(3, Number($("fourVPostUnknownRetryCount")?.value || 0))),
       interactionConcurrency: Math.max(1, Math.min(4, Number($("interactionConcurrency")?.value || 4))),
       pageConcurrency: Number($("pageConcurrency")?.value || 4),
       avatarConcurrency: Math.max(1, Math.min(2, Number($("avatarConcurrency")?.value || 2))),
@@ -2317,7 +2319,9 @@ async function startDangBai4V(profileIds) {
     const concurrency = Math.max(1, Math.min(4, Number($("postConcurrency")?.value || 4)));
     const { data } = await api("/api/tools/dang-bai-4v", {
       method: "POST",
-      body: JSON.stringify({ profileIds, concurrency })
+      body: JSON.stringify({ profileIds, concurrency,
+        fourVPostUnknownRetryCount: Math.max(0, Math.min(3, Number($("fourVPostUnknownRetryCount")?.value || 0)))
+      })
     });
     state.post4VBatchIds = [...profileIds];
     primeToolProgress(profileIds, "bắt đầu: kiểm tra 4v", "post4v");
@@ -2920,6 +2924,12 @@ function renderToolProgress(data) {
     countLabel: `${post4VProgress.completed} / ${post4VProgress.total}`,
     textLabel: post4VProgress.summaryText,
     percent: post4VProgress.percent,
+    jobs: post4VProgress.jobs
+  });
+  renderRetryErrorPanel({
+    panelId: "post4vRetryErrorsPanel",
+    countId: "post4vRetryErrorCount",
+    listId: "post4vRetryErrorsList",
     jobs: post4VProgress.jobs
   });
   renderToolProgressPanel({
@@ -3743,7 +3753,7 @@ if ($("selectAllPost4VRows")) $("selectAllPost4VRows").addEventListener("change"
   renderPost4VRows();
 });
 let post4VConfigSaveTimer = null;
-["fourVPostDataRoot", "fourVPostSuccessPrefix", "fourVPostSpreadsheetId", "fourVPostPriceMin", "fourVPostPriceMax", "fourVPostPackageWeight", "fourVPostCondition"].forEach((id) => {
+["fourVPostDataRoot", "fourVPostSuccessPrefix", "fourVPostSpreadsheetId", "fourVPostPriceMin", "fourVPostPriceMax", "fourVPostPackageWeight", "fourVPostCondition", "fourVPostUnknownRetryCount"].forEach((id) => {
   $(id)?.addEventListener("change", () => {
     window.clearTimeout(post4VConfigSaveTimer);
     post4VConfigSaveTimer = window.setTimeout(() => {
