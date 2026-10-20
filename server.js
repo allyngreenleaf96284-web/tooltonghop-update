@@ -14,6 +14,7 @@ import { createDienMatKhau } from "./modules/dienmatkhau.js";
 import { createDangBai } from "./modules/dangbai.js";
 import { normalizeListingCondition } from "./modules/listing_condition.js";
 import { accountIdentityRecord, resolveFallbackAccountIdentity } from "./modules/account_identity.js";
+import { createConfigStore } from "./modules/config_store.js";
 import { createTuongTac } from "./modules/tuongtac.js";
 import { createRenewDocLapTool } from "./modules/renewdoclap.js";
 import { createTaoPage } from "./modules/taopage.js";
@@ -32,6 +33,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const publicDir = path.join(__dirname, "public");
 const configPath = path.join(__dirname, "config.json");
+const configStore = createConfigStore(configPath, { defaults: () => DEFAULT_CONFIG });
 const electronPopupWatchdogPath = path.join(__dirname, "scripts", "close-electron-error-popups.ps1");
 const updateVersionPath = path.join(__dirname, "data", "update-version.json");
 const updateBackupRoot = path.join(__dirname, "data", "update-backups");
@@ -399,12 +401,9 @@ function sanitizeAccountSheetAssignments(accountSheets = {}, spreadsheetIds = []
   const validSheets = new Set((spreadsheetIds || []).map((id) => String(id || "").trim()).filter(Boolean));
   const pairs = Object.entries(accountSheets || {})
     .map(([accountId, spreadsheetId]) => [String(accountId || "").trim(), String(spreadsheetId || "").trim()])
-    .filter(([accountId, spreadsheetId]) => accountId && !accountId.startsWith("local:") && validSheets.has(spreadsheetId));
-
-  const gpmSheets = new Set(pairs.filter(([accountId]) => accountId.startsWith("gpm:")).map(([, spreadsheetId]) => spreadsheetId));
+    .filter(([accountId, spreadsheetId]) => accountId && validSheets.has(spreadsheetId));
   const result = {};
   for (const [accountId, spreadsheetId] of pairs) {
-    if (accountId.startsWith("hide:") && gpmSheets.has(spreadsheetId)) continue;
     result[accountId] = spreadsheetId;
   }
   return result;
@@ -1023,8 +1022,7 @@ const MIME_TYPES = {
 };
 
 async function readConfig() {
-  try {
-    const loaded = mergeProxyPanelDefaults(mergeClipProxyDefaults(mergeProxyDefaults({ ...DEFAULT_CONFIG, ...JSON.parse(await readFile(configPath, "utf8")) })));
+    const loaded = mergeProxyPanelDefaults(mergeClipProxyDefaults(mergeProxyDefaults({ ...DEFAULT_CONFIG, ...await configStore.read() })));
     const bundledCredentialsPath = path.join(__dirname, "service_account.json");
     if ((!loaded.credentialsPath || !existsSync(String(loaded.credentialsPath))) && existsSync(bundledCredentialsPath)) {
       loaded.credentialsPath = bundledCredentialsPath;
@@ -1034,7 +1032,8 @@ async function readConfig() {
     loaded.hideBaseUrl = normalizeHideBaseUrl(loaded);
     loaded.spreadsheetIds = normalizeSpreadsheetIds([
       loaded.spreadsheetId,
-      ...(Array.isArray(loaded.spreadsheetIds) ? loaded.spreadsheetIds : [])
+      ...(Array.isArray(loaded.spreadsheetIds) ? loaded.spreadsheetIds : []),
+      ...Object.values(loaded.accountSheets && typeof loaded.accountSheets === "object" ? loaded.accountSheets : {})
     ], { rejectDuplicates: false });
     loaded.spreadsheetId = String(loaded.spreadsheetId || loaded.spreadsheetIds[0] || "").trim();
     loaded.accountSheets = loaded.accountSheets && typeof loaded.accountSheets === "object" ? loaded.accountSheets : {};
@@ -1090,10 +1089,6 @@ async function readConfig() {
     );
     loaded.headers = [...DEFAULT_CONFIG.headers, ...extraHeaders];
     return loaded;
-  } catch {
-    await writeFile(configPath, JSON.stringify(DEFAULT_CONFIG, null, 2), "utf8");
-    return { ...DEFAULT_CONFIG };
-  }
 }
 
 async function saveConfig(input) {
@@ -1173,9 +1168,9 @@ async function saveConfig(input) {
     || normalizeGpmBaseUrl(current) !== normalizeGpmBaseUrl(next)
     || normalizeHideBaseUrl(current) !== normalizeHideBaseUrl(next);
   next.fourVPostPriceMax = Math.max(next.fourVPostPriceMin, next.fourVPostPriceMax);
-  await writeFile(configPath, JSON.stringify(next, null, 2), "utf8");
+  const saved = await configStore.write(next);
   if (providerChanged) resetProfileManagers("profile-provider-changed");
-  return next;
+  return saved;
 }
 
 function normalizeSpreadsheetIds(input, options = {}) {
@@ -1332,9 +1327,9 @@ async function saveConfigV2(input) {
     || normalizeGpmBaseUrl(current) !== normalizeGpmBaseUrl(next)
     || normalizeHideBaseUrl(current) !== normalizeHideBaseUrl(next);
   next.fourVPostPriceMax = Math.max(next.fourVPostPriceMin, next.fourVPostPriceMax);
-  await writeFile(configPath, JSON.stringify(next, null, 2), "utf8");
+  const saved = await configStore.write(next, { replaceSheetRegistry: input.editSpreadsheetRegistry === true });
   if (providerChanged) resetProfileManagers("profile-provider-changed");
-  return next;
+  return saved;
 }
 
 function jsonResponse(res, status, payload) {
@@ -1688,8 +1683,7 @@ async function resolveAccountSheetConfig(config, options = {}) {
           [account.id]: accountIdentityRecord(account)
         }
       };
-      await writeFile(configPath, JSON.stringify(next, null, 2), "utf8");
-      config = next;
+      config = await configStore.write(next);
       clearManagedSheetCache("account-sheet-changed");
     }
   }
@@ -1728,8 +1722,7 @@ async function resolveAccountSheetConfig(config, options = {}) {
         [account.id]: accountIdentityRecord(account)
       }
     };
-    await writeFile(configPath, JSON.stringify(next, null, 2), "utf8");
-    config = next;
+    config = await configStore.write(next);
     clearManagedSheetCache("account-sheet-changed");
   }
 
@@ -3294,6 +3287,7 @@ async function runOnlineUpdate(input = {}) {
   if (!files.length) throw new Error("Manifest cap nhat khong co file.");
 
   const backupDir = path.join(updateBackupRoot, `${version}-${Date.now()}`);
+  await configStore.backup(path.join(backupDir, "config.json"));
   const results = [];
   let updated = 0;
   let skipped = 0;
@@ -3359,6 +3353,12 @@ async function handleApi(req, res) {
     }
     if (req.method === "POST" && url.pathname === "/api/config") {
       return jsonResponse(res, 200, { ok: true, config: await saveConfigV2(await parseBody(req)) });
+    }
+    if (req.method === "POST" && url.pathname === "/api/config/restore-sheets") {
+      if (toolRuntime.running || toolRuntime.batch?.active) throw new Error("Hay dung tool truoc khi khoi phuc Sheet.");
+      await configStore.restoreSheets();
+      clearManagedSheetCache("restore-sheet-config");
+      return jsonResponse(res, 200, { ok: true, config: await readConfig() });
     }
     if (req.method === "GET" && url.pathname === "/api/update/status") {
       return jsonResponse(res, 200, { ok: true, data: await readUpdateVersion() });

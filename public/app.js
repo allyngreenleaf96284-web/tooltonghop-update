@@ -71,6 +71,8 @@
   logToolFilter: "all",
   marketplaceCheckSheetLinks: [],
   config: null,
+  sheetRegistryRevision: 0,
+  sheetRegistrySavedRevision: 0,
   searchQuery: "",
   bulkSearchQuery: "",
   sortKey: "name",
@@ -369,6 +371,8 @@ async function loadConfig() {
 }
 
 async function saveConfig() {
+  if (!state.config) throw new Error("Cau hinh chua tai xong, vui long cho truoc khi luu.");
+  const sheetRevision = state.sheetRegistryRevision;
   const marketplaceCheckSheetLinks = currentMarketplaceSheetLinks();
   const { config } = await api("/api/config", {
     method: "POST",
@@ -378,6 +382,7 @@ async function saveConfig() {
       hideBaseUrl: $("hideBaseUrl")?.value || "http://127.0.0.1:2268",
       spreadsheetIds: state.config?.spreadsheetIds || [],
       accountSheets: state.config?.accountSheets || {},
+      editSpreadsheetRegistry: sheetRevision !== state.sheetRegistrySavedRevision,
       credentialsPath: $("credentialsPath").value,
       credentialSourceSpreadsheetId: $("credentialSourceSpreadsheetId")?.value || "",
       sellerSpreadsheetId: $("sellerSpreadsheetId").value,
@@ -435,6 +440,7 @@ async function saveConfig() {
     })
   });
   state.config = config;
+  state.sheetRegistrySavedRevision = sheetRevision;
   updateEngineUi();
   renderSpreadsheetList();
   setStatus("Đã lưu cấu hình.");
@@ -564,6 +570,7 @@ function updateSpreadsheetIdAt(index, value) {
     seen.add(id);
   }
   state.config.spreadsheetIds = compact;
+  state.sheetRegistryRevision += 1;
   renderSpreadsheetList();
 }
 
@@ -571,6 +578,7 @@ function deleteSpreadsheetIdAt(index) {
   const ids = [...(state.config?.spreadsheetIds || [])];
   const [removed] = ids.splice(index, 1);
   state.config.spreadsheetIds = ids;
+  state.sheetRegistryRevision += 1;
   const accountSheets = { ...(state.config?.accountSheets || {}) };
   for (const [accountId, sheetId] of Object.entries(accountSheets)) {
     if (sheetId === removed) delete accountSheets[accountId];
@@ -590,6 +598,7 @@ function addSpreadsheetId() {
   }
   ids.push(id);
   state.config.spreadsheetIds = ids;
+  state.sheetRegistryRevision += 1;
   input.value = "";
   renderSpreadsheetList();
 }
@@ -3443,6 +3452,21 @@ if ($("newStateProxyState")) $("newStateProxyState").addEventListener("keydown",
   }
 });
 if ($("manualRestartBtn")) $("manualRestartBtn").addEventListener("click", restartBackend);
+if ($("restoreSheetConfigBtn")) $("restoreSheetConfigBtn").addEventListener("click", async () => {
+  const button = $("restoreSheetConfigBtn");
+  button.disabled = true;
+  try {
+    const { config } = await api("/api/config/restore-sheets", { method: "POST", body: "{}" });
+    await loadConfig();
+    state.currentHideAccount = null;
+    state.currentSpreadsheetId = config.spreadsheetId || "";
+    state.sheetRegistryRevision = 0;
+    state.sheetRegistrySavedRevision = 0;
+    renderSpreadsheetList();
+    setStatus("Đã khôi phục link Sheet từ bản sao lưu trên máy này.");
+  } catch (error) { setStatus(error.message, true); }
+  finally { button.disabled = false; }
+});
 if ($("onlineUpdateBtn")) $("onlineUpdateBtn").addEventListener("click", updateOnline);
 $("addSpreadsheetIdBtn").addEventListener("click", addSpreadsheetId);
 $("newSpreadsheetId").addEventListener("keydown", (event) => {

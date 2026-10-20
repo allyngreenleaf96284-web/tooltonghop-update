@@ -1,4 +1,5 @@
 config.json
+config.json.*
 service_account.json
 *.env
 .env*
