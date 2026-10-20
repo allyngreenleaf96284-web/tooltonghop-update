@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { buildStandardName, buildFullSuccessToken, buildMarketplaceIneligibleName, buildCaptchaProfileName } from "./profile_name.js";
 import { withFacebookLocale, isMarketplaceIneligibleError, isFacebookCaptchaError } from "./facebook_locale.js";
 import { chooseListingCondition, normalizeListingCondition } from "./listing_condition.js";
+import { findPublishedListingLink } from "./listing_link.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const US_LOCATION_FILE = path.resolve(__dirname, "../data/us_locations.txt");
@@ -1709,101 +1710,6 @@ export function createDangBai({
     await sleep(600);
   }
 
-  async function findPublishedListingLink(page, title) {
-    const sellingUrl = withFacebookLocale("https://www.facebook.com/marketplace/you/selling");
-    await page.goto(sellingUrl, { waitUntil: "domcontentloaded", timeout: 90000 });
-    await page.waitForSelector("body", { timeout: 20000 }).catch(() => {});
-    await page.reload({ waitUntil: "domcontentloaded", timeout: 90000 }).catch(() => {});
-    for (let attempt = 1; attempt <= 5; attempt += 1) {
-      // Let a proxy-delayed Selling page render the matching listing before
-      // deciding that it is absent. Exit as soon as it is visible.
-      await page.waitForFunction((wantedTitle) => {
-        const wanted = String(wantedTitle || "").replace(/\s+/g, " ").trim().toLowerCase();
-        const text = String(document.body?.innerText || "").replace(/\s+/g, " ").toLowerCase();
-        return text.includes(wanted);
-      }, { timeout: FOUR_V_UI_WAIT_MS }, title).catch(() => {});
-      const directLink = await page.evaluate((wantedTitle) => {
-        const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
-        const wanted = clean(wantedTitle).toLowerCase();
-        const visible = (node) => {
-          const rect = node?.getBoundingClientRect?.();
-          return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
-        };
-        const candidates = Array.from(document.querySelectorAll("a[href*='/marketplace/item/']"))
-          .filter(visible)
-          .map((node) => {
-            let container = node;
-            for (let depth = 0; container && depth < 7; depth += 1, container = container.parentElement) {
-              const text = clean(container.innerText || container.textContent || "").toLowerCase();
-              if (text.includes(wanted)) break;
-            }
-            return { href: node.href, text: clean(container?.innerText || node.innerText || "").toLowerCase(), top: node.getBoundingClientRect().top };
-          })
-          .filter((item) => item.text.includes(wanted))
-          .sort((a, b) => a.top - b.top);
-        return candidates[0]?.href || "";
-      }, title).catch(() => "");
-      if (directLink) return withFacebookLocale(directLink);
-
-      // On the current Selling page Facebook renders a listing as buttons, not
-      // as an item anchor. The permanent link is available from its More menu.
-      const menuOpened = await page.evaluate((wantedTitle) => {
-        const clean = (value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
-        const visible = (node) => {
-          const rect = node?.getBoundingClientRect?.();
-          return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
-        };
-        const wanted = clean(wantedTitle);
-        const more = Array.from(document.querySelectorAll("button, [role='button'], [aria-label]"))
-          .find((node) => {
-            if (!visible(node)) return false;
-            const label = clean(node.getAttribute("aria-label") || "");
-            return label.startsWith("more options for") && label.includes(wanted);
-          });
-        if (!more) return false;
-        more.scrollIntoView({ block: "center", inline: "nearest" });
-        more.click();
-        return true;
-      }, title).catch(() => false);
-
-      if (menuOpened) {
-        // Proxy connections can render this menu slowly. Poll for up to 15
-        // seconds and click as soon as View listing exists; never reload early.
-        let viewOpened = false;
-        for (let menuWaitAttempt = 1; menuWaitAttempt <= Math.ceil(FOUR_V_UI_WAIT_MS / FOUR_V_UI_POLL_MS); menuWaitAttempt += 1) {
-          viewOpened = await page.evaluate(() => {
-            const clean = (value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
-            const visible = (node) => {
-              const rect = node?.getBoundingClientRect?.();
-              return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
-            };
-            const menus = Array.from(document.querySelectorAll("[role='menu'], [role='dialog'], [role='presentation']"))
-              .filter((node) => visible(node) && /view listing/i.test(node.innerText || node.textContent || ""));
-            const scope = menus[0] || document;
-            const item = Array.from(scope.querySelectorAll("button, a, [role='button'], [role='menuitem'], div, span"))
-              .find((node) => visible(node) && clean(node.innerText || node.textContent || "") === "view listing");
-            if (!item) return false;
-            const target = item.closest?.("a, button, [role='button'], [role='menuitem']") || item;
-            target.click();
-            return true;
-          }).catch(() => false);
-          if (viewOpened) break;
-          await sleep(FOUR_V_UI_POLL_MS);
-        }
-        if (viewOpened) {
-          await page.waitForFunction(
-            () => /\/marketplace\/item\/\d+/.test(String(window.location.pathname || "")),
-            { timeout: FOUR_V_UI_WAIT_MS }
-          ).catch(() => {});
-          const openedUrl = String(page.url?.() || "");
-          if (/\/marketplace\/item\/\d+/.test(openedUrl)) return withFacebookLocale(openedUrl);
-        }
-      }
-      await page.reload({ waitUntil: "domcontentloaded", timeout: 90000 }).catch(() => {});
-      await sleep(FOUR_V_UI_POLL_MS);
-    }
-    throw marketplaceError("loi link sp", `Da dang bai nhung khong tim thay link listing theo title: ${title}`);
-  }
 
   async function runFourVListing(manager, page, payload, row, profileId, config, markNoRollback = () => {}) {
     await manager.fillStepOne(page, payload);
