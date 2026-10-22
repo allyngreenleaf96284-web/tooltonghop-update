@@ -136,16 +136,30 @@ function buildSuccessPrefixProfileName(prefix, value) {
   return normalizeVietnameseText(base).startsWith(normalizeVietnameseText(label)) ? base : `${label}${base}`;
 }
 
-function buildStandardPostSuccessProfileName(prefix, value) {
-  const label = String(prefix || "").trim();
-  const cleanedName = stripRuntimeNamePrefixes(value);
-  // For 2v/3v posting, the v-marker is the canonical beginning of the name.
-  // Drop every temporary segment before it, just as 4v drops everything before
-  // the "full" segment.
+function standardPostNameBase(value) {
+  const name = String(value || "");
+  const fullIndex = name.search(/\bfull\b/i);
+  if (fullIndex >= 0) return { base: name.slice(fullIndex), hasFull: true };
+  const cleanedName = stripRuntimeNamePrefixes(name);
   const markerIndex = cleanedName.search(/\b\d+\s*v\b/i);
-  const base = (markerIndex >= 0 ? cleanedName.slice(markerIndex) : cleanedName) || "profile-tool";
+  return { base: (markerIndex >= 0 ? cleanedName.slice(markerIndex) : cleanedName) || "profile-tool", hasFull: false };
+}
+
+export function buildStandardPostSuccessProfileName(prefix, value, detectedBar = "") {
+  const label = String(prefix || "").trim();
+  let { base, hasFull } = standardPostNameBase(value);
+  const bar = String(detectedBar || "").trim().toLowerCase();
+  if (/^\d+v$/.test(bar)) base = base.replace(/\b\d+\s*v\b/i, bar);
   if (!label) return base;
+  if (hasFull) return `${label.replace(/-+$/, "")}--${base}`;
   return normalizeVietnameseText(base).startsWith(normalizeVietnameseText(label)) ? base : `${label}${base}`;
+}
+
+export function buildStandardPostErrorProfileName(status, value) {
+  const { base, hasFull } = standardPostNameBase(value);
+  if (!hasFull) return buildStatusProfileName(status, base);
+  const label = String(status || "").trim();
+  return label ? `${label.replace(/-+$/, "")}--${base}` : base;
 }
 
 function buildRuntimeProfileName({ status = "", tenChuan = "" }) {
@@ -1922,7 +1936,7 @@ export function createDangBai({
       const postResult = await step(profileId, job, `dang bai ${detectedBar}`, async () =>
         runPostListing(manager, page, payload, row, profileId, detectedBar, () => { noRollback = true; })
       , { timeoutMs: 480000 });
-      const tenChuan = buildStandardPostSuccessProfileName(config.postSuccessPrefix, currentName);
+      const tenChuan = buildStandardPostSuccessProfileName(config.postSuccessPrefix, currentName, detectedBar);
       nameAfterPublishedPost = tenChuan;
       await rename(manager, profileId, tenChuan);
       const update = {
@@ -1952,7 +1966,9 @@ export function createDangBai({
       if (!nameAfterPublishedPost || ["die cho", "capcha"].includes(mapped.status)) {
         // Keep the existing profile-name structure. Errors only replace the
         // leading runtime label, exactly like the 4v posting workflow.
-        const errorName = page?.__marketplaceAccess?.profileName || error?.captchaProfileName || buildStatusProfileName(mapped.status, currentName);
+        const errorName = page?.__marketplaceAccess?.profileName || error?.captchaProfileName || (isFourVPost
+          ? buildStatusProfileName(mapped.status, currentName)
+          : buildStandardPostErrorProfileName(mapped.status, currentName));
         await rename(manager, profileId, errorName);
         tenChuan = errorName;
       }

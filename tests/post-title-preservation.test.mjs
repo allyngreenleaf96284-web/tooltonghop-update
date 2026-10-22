@@ -30,7 +30,7 @@ test("2v posting preserves title.txt byte-for-byte and can reuse the title on th
   let consumed = 0, published = 0, stopped = 0;
   const titles = [], writes = [], logs = [];
   const runtime = { jobs: new Map(), running: false };
-  let name = "2v-61500000000000-Nuevo, California-tool";
+  let name = "Vip14-01-full 18/10 624446936-3v-61583080715416-Taylorsville, Georgia-tool";
   const manager = {
     saveConfig() {},
     async getProfileById() { return { name }; },
@@ -83,13 +83,15 @@ test("2v posting preserves title.txt byte-for-byte and can reuse the title on th
   });
   try {
     for (let run = 0; run < 2; run += 1) {
-      await posting.runQueue(["p1"], { fullDataRoot: folder, fullPriceMin: 20, fullPriceMax: 25, postConcurrency: 1 });
+      await posting.runQueue(["p1"], { fullDataRoot: folder, fullPriceMin: 20, fullPriceMax: 25, postConcurrency: 1, postSuccessPrefix: "db1" });
       for (let i = 0; i < 3000 && runtime.running; i += 1) await pause(10);
       assert.equal(runtime.running, false, JSON.stringify({ logs, job: runtime.jobs.get("p1") }));
       assert.equal(runtime.jobs.get("p1").status, "success", JSON.stringify(runtime.jobs.get("p1").result));
       assert.equal(runtime.jobs.get("p1").result.soVach, "2v");
       assert.deepEqual(await fs.readFile(titleFile), original);
       assert.equal(writes.at(-1).trangThai, "thành công");
+      assert.equal(name, "db1--full 18/10 624446936-2v-61583080715416-Taylorsville, Georgia-tool");
+      assert.equal(writes.at(-1).tenChuan, name);
     }
     assert.deepEqual(titles, ["Canonical product title", "Canonical product title"]);
     assert.equal(consumed, 0);
