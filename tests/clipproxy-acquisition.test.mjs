@@ -28,7 +28,7 @@ async function fixture(t, slots = [], overrides = {}) {
     hideRequest: async (c, endpoint, options = {}) => { if (options.method === "PUT") assignments.push(JSON.parse(JSON.parse(options.body).proxy)); return {}; },
     ...overrides
   });
-  return { tool, requests, probes, assignments, logs };
+  return { tool, requests, probes, assignments, logs, persistedPoolPath };
 }
 function acquire(tool, profileId = "p1") {
   return tool.ensureForProfile({ config, profileId, row: { raw: { bang: "New York" } } });
@@ -136,4 +136,28 @@ test("background Check ping skips proxies currently leased by running profiles",
   const result = await tool.checkAll(config);
   assert.equal(result.checkedAttempts, 0);
   assert.equal(probes.length, 0);
+});
+
+test("California -> New York -> California preserves both state pools, including across restart", async (t) => {
+  const { tool, requests, probes, persistedPoolPath } = await fixture(t, [
+    slot(443, { state: "California", region: "California" }), slot(444)
+  ]);
+  const forState = (target, bang, profileId) => target.ensureForProfile({ config, profileId, row: { raw: { bang } } });
+  const california = await forState(tool, "California", "ca1");
+  tool.release(california);
+  const newYork = await forState(tool, "New York", "ny1");
+  tool.release(newYork);
+  const californiaAgain = await forState(tool, "California", "ca2");
+  assert.equal(californiaAgain.slotId, california.slotId);
+  assert.notEqual(californiaAgain.slotId, newYork.slotId);
+  tool.release(californiaAgain);
+  assert.equal(requests.length, 0);
+  assert.equal(probes.length, 0);
+  assert.deepEqual(new Set(tool.getStatus(config).proxies.map((item) => item.state)), new Set(["California", "New York"]));
+  const restarted = createClipProxyTool({ persistedPoolPath, addRuntimeLog() {}, hideRequest: async () => ({}),
+    fetchText: async () => { throw new Error("Must reuse persisted pool"); },
+    probeTcp: async () => { throw new Error("Fresh pool requires no recheck"); }
+  });
+  assert.equal((await forState(restarted, "California", "ca3")).slotId, california.slotId);
+  assert.equal((await forState(restarted, "New York", "ny2")).slotId, newYork.slotId);
 });

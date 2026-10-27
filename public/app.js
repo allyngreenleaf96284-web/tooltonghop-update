@@ -660,6 +660,22 @@ function matchesProfileFilters(profile, query, bulkQuery, extra = []) {
   return terms.some((term) => haystack.includes(term));
 }
 
+function orderProfilesByPastedTerms(profiles, query, bulkQuery) {
+  const terms = [...new Set(parseBulkTerms([query, bulkQuery].filter(Boolean).join("\n")))];
+  if (terms.length < 2) return profiles;
+  const rankByTerm = new Map(terms.map((term, index) => [term, index]));
+  return profiles.map((profile, index) => {
+    const identifiers = [profile.uid, profile.id, profile.sheetData?.uid].map((value) => String(value || "").trim().toLowerCase());
+    let rank = Math.min(...identifiers.map((id) => rankByTerm.get(id) ?? Infinity));
+    if (rank === Infinity) {
+      const haystack = profileHaystack(profile);
+      const matched = terms.findIndex((term) => haystack.includes(term));
+      if (matched >= 0) rank = matched;
+    }
+    return { profile, index, rank };
+  }).sort((a, b) => a.rank - b.rank || a.index - b.index).map((item) => item.profile);
+}
+
 function updateSelectionSummary(summaryId, buttonId, selectedCount) {
   const summary = $(summaryId);
   if (summary) {
@@ -713,7 +729,7 @@ function visibleProfiles() {
   profiles = profiles.filter((profile) => matchesProfileFilters(profile, state.searchQuery, state.bulkSearchQuery));
 
   profiles.sort((a, b) => compareProfiles(a, b));
-  return profiles;
+  return orderProfilesByPastedTerms(profiles, state.searchQuery, state.bulkSearchQuery);
 }
 
 function compareProfiles(a, b) {
@@ -817,7 +833,7 @@ function passwordProfiles() {
   );
   profiles.sort((a, b) => (a.folderName || "").localeCompare(b.folderName || "", "vi", { sensitivity: "base" })
     || (a.name || "").localeCompare(b.name || "", "vi", { numeric: true, sensitivity: "base" }));
-  return profiles;
+  return orderProfilesByPastedTerms(profiles, state.passwordSearchQuery, state.passwordBulkSearchQuery);
 }
 
 function passwordMissing(profile) {
@@ -1659,7 +1675,7 @@ function notificationProfiles() {
   profiles = profiles.filter((profile) => matchesProfileFilters(profile, state.notificationSearchQuery, state.notificationBulkSearchQuery));
   profiles.sort((a, b) => (a.folderName || "").localeCompare(b.folderName || "", "vi", { sensitivity: "base" })
     || (a.name || "").localeCompare(b.name || "", "vi", { numeric: true, sensitivity: "base" }));
-  return profiles;
+  return orderProfilesByPastedTerms(profiles, state.notificationSearchQuery, state.notificationBulkSearchQuery);
 }
 
 function renderNotificationRows() {
@@ -1761,7 +1777,7 @@ function checkOrderProfiles() {
   profiles = profiles.filter((profile) => matchesProfileFilters(profile, state.checkOrderSearchQuery, state.checkOrderBulkSearchQuery));
   profiles.sort((a, b) => (a.folderName || "").localeCompare(b.folderName || "", "vi", { sensitivity: "base" })
     || (a.name || "").localeCompare(b.name || "", "vi", { numeric: true, sensitivity: "base" }));
-  return profiles;
+  return orderProfilesByPastedTerms(profiles, state.checkOrderSearchQuery, state.checkOrderBulkSearchQuery);
 }
 
 function renderCheckOrderRows() {
@@ -1921,7 +1937,7 @@ function fullProfiles() {
   profiles = profiles.filter((profile) => matchesProfileFilters(profile, state.fullSearchQuery, state.fullBulkSearchQuery));
   profiles.sort((a, b) => (a.folderName || "").localeCompare(b.folderName || "", "vi", { sensitivity: "base" })
     || (a.name || "").localeCompare(b.name || "", "vi", { numeric: true, sensitivity: "base" }));
-  return profiles;
+  return orderProfilesByPastedTerms(profiles, state.fullSearchQuery, state.fullBulkSearchQuery);
 }
 
 function renderFullRows() {
@@ -2026,7 +2042,7 @@ function loginProfiles() {
   profiles = profiles.filter((profile) => matchesProfileFilters(profile, state.loginSearchQuery, state.loginBulkSearchQuery));
   profiles.sort((a, b) => (a.folderName || "").localeCompare(b.folderName || "", "vi", { sensitivity: "base" })
     || (a.name || "").localeCompare(b.name || "", "vi", { numeric: true, sensitivity: "base" }));
-  return profiles;
+  return orderProfilesByPastedTerms(profiles, state.loginSearchQuery, state.loginBulkSearchQuery);
 }
 
 function renderLoginRows() {
@@ -2141,7 +2157,7 @@ function postProfiles() {
   profiles = profiles.filter((profile) => matchesProfileFilters(profile, state.postSearchQuery, state.postBulkSearchQuery));
   profiles.sort((a, b) => (a.folderName || "").localeCompare(b.folderName || "", "vi", { sensitivity: "base" })
     || (a.name || "").localeCompare(b.name || "", "vi", { numeric: true, sensitivity: "base" }));
-  return profiles;
+  return orderProfilesByPastedTerms(profiles, state.postSearchQuery, state.postBulkSearchQuery);
 }
 
 function renderPostRows() {
@@ -2241,7 +2257,7 @@ function post4VProfiles() {
   profiles = profiles.filter((profile) => matchesProfileFilters(profile, state.post4VSearchQuery, state.post4VBulkSearchQuery));
   profiles.sort((a, b) => (a.folderName || "").localeCompare(b.folderName || "", "vi", { sensitivity: "base" })
     || (a.name || "").localeCompare(b.name || "", "vi", { numeric: true, sensitivity: "base" }));
-  return profiles;
+  return orderProfilesByPastedTerms(profiles, state.post4VSearchQuery, state.post4VBulkSearchQuery);
 }
 
 function isPost4VError(profile) {
@@ -2374,7 +2390,7 @@ function interactionProfiles() {
   profiles = profiles.filter((profile) => matchesProfileFilters(profile, state.interactionSearchQuery, state.interactionBulkSearchQuery));
   profiles.sort((a, b) => (a.folderName || "").localeCompare(b.folderName || "", "vi", { sensitivity: "base" })
     || (a.name || "").localeCompare(b.name || "", "vi", { numeric: true, sensitivity: "base" }));
-  return profiles;
+  return orderProfilesByPastedTerms(profiles, state.interactionSearchQuery, state.interactionBulkSearchQuery);
 }
 
 function renderInteractionRows() {
@@ -2523,7 +2539,7 @@ function pageProfiles() {
   profiles = profiles.filter((profile) => matchesProfileFilters(profile, state.pageSearchQuery, state.pageBulkSearchQuery));
   profiles.sort((a, b) => (a.folderName || "").localeCompare(b.folderName || "", "vi", { sensitivity: "base" })
     || (a.name || "").localeCompare(b.name || "", "vi", { numeric: true, sensitivity: "base" }));
-  return profiles;
+  return orderProfilesByPastedTerms(profiles, state.pageSearchQuery, state.pageBulkSearchQuery);
 }
 
 function renderPageRows() {
@@ -2641,7 +2657,7 @@ function avatarProfiles() {
   profiles = profiles.filter((profile) => matchesProfileFilters(profile, state.avatarSearchQuery, state.avatarBulkSearchQuery));
   profiles.sort((a, b) => (a.folderName || "").localeCompare(b.folderName || "", "vi", { sensitivity: "base" })
     || (a.name || "").localeCompare(b.name || "", "vi", { numeric: true, sensitivity: "base" }));
-  return profiles;
+  return orderProfilesByPastedTerms(profiles, state.avatarSearchQuery, state.avatarBulkSearchQuery);
 }
 
 function renderAvatarRows() {
