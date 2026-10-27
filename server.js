@@ -47,7 +47,7 @@ const UPDATE_BLOCKED_PATTERNS = [
   /^logs\//i,
   /^node-runtime\//i,
   /^bundled-apps\//i,
-  /^data\/.*\.json$/i,
+  /^data\//i,
   /(^|\/)service_account\.json$/i,
   /(^|\/)\.env/i
 ];

@@ -6,6 +6,31 @@ import os from "node:os";
 import { createClipProxyTool } from "../modules/clipproxy.js";
 
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+test("nine California workers fall back quickly from a rejected batch while Texas stays cached", async (t) => {
+  const counts = [];
+  let nextPort = 500;
+  const { tool } = await fixture(t, [slot(443, { state: "Texas", region: "Texas" })], {
+    fetchText: async (url, budget) => {
+      const parsed = new URL(url);
+      assert.equal(parsed.searchParams.get("state"), "California");
+      assert.ok(budget <= 6000);
+      const count = Number(parsed.searchParams.get("num"));
+      counts.push(count);
+      if (count > 4) return JSON.stringify({ error: true, message: "not enough ports" });
+      return Array.from({ length: count }, () => `198.51.100.10:${nextPort++}:fixture:fixture`).join("\n");
+    },
+    fetchInfo: async () => ({ ok: true, ip: "198.51.100.20", pingMs: 281, region: "California", org: "AS21928" })
+  });
+  const run = (state, id) => tool.ensureForProfile({ config, profileId: id, row: { raw: { bang: state } } });
+  const texas = await run("Texas", "tx1");
+  tool.release(texas);
+  const leases = await Promise.all(Array.from({ length: 9 }, (_, i) => run("California", `ca${i}`)));
+  assert.deepEqual(counts.slice(0, 2), [9, 4]);
+  assert.equal(new Set(leases.map((lease) => lease.slotId)).size, 9);
+  const calls = counts.length;
+  assert.equal((await run("Texas", "tx2")).slotId, texas.slotId);
+  assert.equal(counts.length, calls);
+});
 const config = { stateProxyEnabled: true, browserApiProvider: "hide", clipProxyKey: "fixture", clipProxyGoodPingMs: 1500, clipProxyPingLimitMs: 3000, clipProxyPoolSize: 5, clipProxyMaxUse: 10, stateProxyStates: ["New York"] };
 function slot(port = 443, extra = {}) {
   const raw = `198.51.100.10:${port}:fixture:fixture`;

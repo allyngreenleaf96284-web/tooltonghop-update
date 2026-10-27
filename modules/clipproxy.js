@@ -324,7 +324,8 @@ function clipProxyRequestCounts(config) {
   const requested = Math.max(1, Math.min(10, config.clipProxyPoolSize || 1));
   // ClipProxy can temporarily have fewer ports than requested for a state/ASN.
   // Preserve the configured batch first, then gracefully back off before failing.
-  const fallbackCounts = Array.from({ length: requested - 1 }, (_, index) => requested - index - 1);
+  const fallbackCounts = [];
+  for (let count = Math.floor(requested / 2); count >= 1; count = Math.floor(count / 2)) fallbackCounts.push(count);
   return [...new Set([requested, ...fallbackCounts])];
 }
 
@@ -833,14 +834,16 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
         let text = "";
         try {
           log(`[clipproxy] lay proxy ${stateName}, ASN=${asn || "bat ky"}, so luong=${requestCount}, con ${Math.max(0, Math.ceil((deadline - Date.now()) / 1000))}s`, "info", profileId, stateName);
-          text = await fetchText(url, Math.max(1, Math.min(proxyConfig.clipProxyRequestTimeoutMs, 10000, deadline - Date.now())));
+          text = await fetchText(url, Math.max(1, Math.min(proxyConfig.clipProxyRequestTimeoutMs, 6000, deadline - Date.now())));
         } catch (error) {
           lastError = error;
+          log(`[clipproxy] ${stateName}: API khong phan hoi kip, num=${requestCount}; thu batch nho hon`, "info", profileId, stateName);
           continue;
         }
         const proxies = parseClipProxyTextAll(text);
         if (!proxies.length) {
           lastError = new Error(`ClipProxy khong tra proxy hop le${asn ? ` voi ${asn}` : " khi bo qua ASN"}: ${describeClipProxyResponse(text)}`);
+          log(`[clipproxy] ${stateName}: num=${requestCount} khong co proxy hop le; thu batch nho hon`, "info", profileId, stateName);
           continue;
         }
         const pending = proxies.filter((proxy) => !statePool(stateName).some((slot) =>
@@ -880,6 +883,10 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
         }));
         const verified = results.filter((result) => result.status === "fulfilled").map((result) => result.value);
         const usable = verified.filter((slot) => slot.alive && !isTooSlow(slot, proxyConfig));
+        if (!usable.length) {
+          const reasons = [...new Set(verified.map((slot) => slot.lastError || `ping ${slotPingMs(slot)}ms vuot nguong`))];
+          log(`[clipproxy] ${stateName}: API tra ${proxies.length}, kiem tra ${pending.length}, dat 0; ${reasons.join("; ") || "proxy dang duoc dung hoac kiem tra chua hoan tat"}`, "info", profileId, stateName);
+        }
         lastSlot = verified.at(-1) || lastSlot;
         if (usable.length) {
           const items = statePool(stateName);
