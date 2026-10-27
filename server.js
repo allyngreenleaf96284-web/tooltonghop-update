@@ -2967,6 +2967,7 @@ function mapErrorForSheet(error) {
   if (status === "loicapcha") return { renameStatus: "loicapcha", detail: message || "Facebook yeu cau reCAPTCHA khi dang nhap." };
   if (status === "biout") return { renameStatus: "biout", detail: message || "Nick bi out giua chung, tool da dung." };
   if (status === "hetproxy") return { renameStatus: "hetproxy", detail: message || "Hết proxy khi mở Facebook." };
+  if (status === "proxytimeout") return { renameStatus: "proxytimeout", detail: message };
   if (status === "thieubang") return { renameStatus: "thieubang", detail: message || "Chua gan bang trong Sheet." };
   if (status === "loipb") return { renameStatus: "loipb", detail: message || "Lỗi phiên bản browser profile." };
   const lower = message.toLowerCase();

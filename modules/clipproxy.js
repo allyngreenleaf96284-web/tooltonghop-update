@@ -794,7 +794,7 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
       while (!ready) {
         const reusable = onWait?.();
         if (reusable) return reusable;
-        if (Date.now() >= deadline) throw acquisitionTimeout();
+        if (Date.now() >= deadline) throw acquisitionTimeout("hang cho cung bang");
         await Promise.race([previous, wait(Math.max(1, Math.min(100, deadline - Date.now())))]);
       }
       if (Date.now() >= deadline) throw acquisitionTimeout();
@@ -805,9 +805,9 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
     }
   }
 
-  function acquisitionTimeout() {
-    const error = new Error(`ClipProxy: het ${Math.round(acquireTimeoutMs / 1000)} giay cho/lay proxy bang. Tool da dung cho de tranh treo luong.`);
-    error.status = "hetproxy";
+  function acquisitionTimeout(stage = "goi API/kiem tra ket noi") {
+    const error = new Error(`ClipProxy: qua thoi gian ${stage}; loi tam thoi, co the thu lai.`);
+    error.status = "proxytimeout";
     return error;
   }
 
@@ -831,6 +831,7 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
       for (const requestCount of clipProxyRequestCounts({ ...proxyConfig, clipProxyPoolSize: batchSize })) {
         if (Date.now() >= deadline) throw acquisitionTimeout();
         const url = buildClipProxyUrl(proxyConfig, stateName, requestCount, asn);
+        const requestStartedAt = Date.now();
         let text = "";
         try {
           log(`[clipproxy] lay proxy ${stateName}, ASN=${asn || "bat ky"}, so luong=${requestCount}, con ${Math.max(0, Math.ceil((deadline - Date.now()) / 1000))}s`, "info", profileId, stateName);
@@ -846,6 +847,7 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
           log(`[clipproxy] ${stateName}: num=${requestCount} khong co proxy hop le; thu batch nho hon`, "info", profileId, stateName);
           continue;
         }
+        log(`[clipproxy] ${stateName}: API tra ${proxies.length} proxy trong ${Date.now() - requestStartedAt}ms; bat dau kiem tra ket noi/IP/ASN`, "info", profileId, stateName);
         const pending = proxies.filter((proxy) => !statePool(stateName).some((slot) =>
           slot.raw === proxy.raw && (slot.inUse || slot.checking || isUsageExhausted(slot, proxyConfig))));
         // Keep and verify the entire num=N response. Returning after the first
@@ -996,7 +998,8 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
     const normalizedState = normalizeStateName(stateName);
     demand.set(normalizedState, (demand.get(normalizedState) || 0) + 1);
     try {
-    const deadline = Date.now() + acquireTimeoutMs;
+    // Waiting for another worker must not consume this worker's API budget.
+    const queueDeadline = Date.now() + acquireTimeoutMs * Math.max(1, demand.get(normalizedState) || 1);
     const takeReady = () => {
       const picked = selectAssignableSlot(statePool(normalizedState).filter((slot) => hasRecentHealthyCheck(slot, proxyConfig)), proxyConfig, normalizedState);
       if (!picked) return null;
@@ -1005,8 +1008,10 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
     };
     const ready = takeReady();
     if (ready) return ready;
-    if (locks.has(normalizedState)) log(`[clipproxy] cho luong cung bang ${normalizedState}, toi da ${Math.round(acquireTimeoutMs / 1000)}s; uu tien proxy pool duoc giai phong`, "info", profileId, normalizedState);
+    if (locks.has(normalizedState)) log(`[clipproxy] cho batch cung bang ${normalizedState}; thoi gian cho khong tru vao luot goi API`, "info", profileId, normalizedState);
     return await withStateLock(normalizedState, async () => {
+      let deadline = Date.now() + acquireTimeoutMs;
+      const cacheDeadline = Math.min(deadline, Date.now() + CLIP_PROXY_HEALTH_BUDGET_MS);
       const items = statePool(normalizedState);
       let lastError = null;
       const maxRetained = proxyConfig.clipProxyPoolSize + proxyConfig.clipProxyReserveSize;
@@ -1020,8 +1025,9 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
         const { slot } = picked;
         const canReuseImmediately = hasRecentHealthyCheck(slot, proxyConfig);
         if (!canReuseImmediately) {
+          if (Date.now() >= cacheDeadline) break;
           log(`[clipproxy] kiem tra lai proxy pool ${normalizedState}: ${slot.proxy.host}:${slot.proxy.port}, toi da ${CLIP_PROXY_HEALTH_BUDGET_MS / 1000}s`, "info", profileId, normalizedState);
-          await checkSlot(proxyConfig, slot, deadline);
+          await checkSlot(proxyConfig, slot, cacheDeadline);
         }
         if (shouldReplace(slot)) {
           dropSlot(normalizedState, slot.id);
@@ -1042,6 +1048,7 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
 
       // Only request a new proxy after every reusable entry has been exhausted,
       // removed, or failed its health check.
+      deadline = Date.now() + acquireTimeoutMs;
       for (let attempt = 1; attempt <= 4; attempt += 1) {
         try {
           const currentItems = statePool(normalizedState);
@@ -1065,11 +1072,14 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
           }
           return claimSlot(slot, profileId);
         } catch (error) {
+          if (error.status === "proxytimeout" && lastError) break;
           lastError = error;
+          if (Date.now() >= deadline) break;
+          if (attempt < 4) log(`[clipproxy] ${normalizedState}: thu lai lay proxy, luot ${attempt + 1}/4`, "info", profileId, normalizedState);
         }
       }
       throw lastError || new Error(`Khong lay duoc proxy bang ${normalizedState}.`);
-    }, { deadline, onWait: takeReady });
+    }, { deadline: queueDeadline, onWait: takeReady });
     } finally {
       const remaining = (demand.get(normalizedState) || 1) - 1;
       if (remaining > 0) demand.set(normalizedState, remaining);

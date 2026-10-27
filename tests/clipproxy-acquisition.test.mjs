@@ -6,6 +6,22 @@ import os from "node:os";
 import { createClipProxyTool } from "../modules/clipproxy.js";
 
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+test("queued worker receives a fresh API budget after the preceding worker finishes", async (t) => {
+  let calls = 0;
+  const budgets = [];
+  const { tool } = await fixture(t, [], { acquireTimeoutMs: 300,
+    fetchText: async (url, budget) => {
+      budgets.push(budget);
+      const port = 600 + calls++;
+      await pause(200);
+      return `198.51.100.10:${port}:fixture:fixture`;
+    }
+  });
+  const leases = await Promise.all([acquire(tool, "first"), acquire(tool, "second")]);
+  assert.equal(calls, 2);
+  assert.notEqual(leases[0].slotId, leases[1].slotId);
+  assert.ok(budgets.every((budget) => budget > 250), "queue time must not reduce API time");
+});
 test("nine California workers fall back quickly from a rejected batch while Texas stays cached", async (t) => {
   const counts = [];
   let nextPort = 500;
@@ -171,7 +187,7 @@ test("all API retries share a bounded budget", async (t) => {
     fetchText: async (url, timeoutMs) => { budgets.push(timeoutMs); await pause(timeoutMs); throw new Error("fixture API timeout"); }
   });
   const start = Date.now();
-  await assert.rejects(acquire(tool), (error) => error.status === "hetproxy");
+  await assert.rejects(acquire(tool), (error) => error.status === "proxytimeout");
   assert.ok(Date.now() - start < 800);
   assert.equal(assignments.length, 0);
   assert.ok(budgets.every((value) => value <= 120));
@@ -197,9 +213,9 @@ test("a waiting profile times out without losing the state lock or blocking late
   });
   const holder = acquire(tool, "holder").catch((error) => error);
   await started;
-  await assert.rejects(acquire(tool, "waiting"), (error) => error.status === "hetproxy");
+  await assert.rejects(acquire(tool, "waiting"), (error) => error.status === "proxytimeout");
   releaseApi();
-  assert.equal((await holder).status, "hetproxy");
+  assert.equal((await holder).status, "proxytimeout");
   const lease = await acquire(tool, "next");
   assert.equal(typeof lease.slotId, "string");
 });

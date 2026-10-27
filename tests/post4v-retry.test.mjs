@@ -4,6 +4,10 @@ import { isUnknownFailure, isRetryableFailure, startAutoRetryBatch } from "../mo
 
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const unknown = () => ({ status: "error", result: { trangThai: "lỗi", chiTiet: 'Loi o buoc "dang bai 4v shipping": Execution context was destroyed' } });
+test("temporary acquisition timeout can retry without treating permanent failures as retryable", () => {
+  assert.equal(isRetryableFailure({ status: "error", result: { trangThai: "proxytimeout" } }), true);
+  assert.equal(isRetryableFailure({ status: "error", result: { trangThai: "hetproxy" } }), false);
+});
 
 test("4v step labels do not hide unknown errors, while known failures stay excluded", () => {
   assert.equal(isUnknownFailure(unknown()), true);
