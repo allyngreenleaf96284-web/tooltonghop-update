@@ -6,7 +6,30 @@ import os from "node:os";
 import { createClipProxyTool } from "../modules/clipproxy.js";
 
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-test("empty ASN response immediately retries without the query filter and validates returned ASN", async (t) => {
+test("profile stays pending across failed rounds until a usable proxy arrives", async (t) => {
+  let calls = 0;
+  const { tool, assignments } = await fixture(t, [], {
+    retryUntilAvailable: true, acquisitionRetryDelayMs: 1,
+    fetchText: async () => ++calls <= 12 ? "" : "198.51.100.10:443:fixture:fixture"
+  });
+  const updates = [];
+  const result = await tool.ensureForProfile({ config: { ...config, clipProxyAsns: ["AS21928", "AS6167"] }, profileId: "same-profile", row: { raw: { bang: "New York" } }, log: (...args) => updates.push(args) });
+  assert.equal(calls, 13);
+  assert.equal(typeof result.slotId, "string");
+  assert.equal(assignments.length, 1);
+  assert.ok(updates.some((entry) => entry[1].includes("giu nguyen profile")));
+});
+
+test("manual stop interrupts indefinite acquisition during retry delay", async (t) => {
+  let stopped = false;
+  const { tool, assignments } = await fixture(t, [], {
+    retryUntilAvailable: true, acquisitionRetryDelayMs: 2000,
+    shouldStop: () => stopped, fetchText: async () => ""
+  });
+  await assert.rejects(tool.ensureForProfile({ config, profileId: "stop-me", row: { raw: { bang: "New York" } }, log: () => { stopped = true; } }), (error) => error.status === "stopped");
+  assert.equal(assignments.length, 0);
+});
+test("both configured ASNs are tried before requesting without the filter", async (t) => {
   const urls = [];
   const { tool, assignments } = await fixture(t, [], {
     fetchText: async (url) => {
@@ -15,10 +38,11 @@ test("empty ASN response immediately retries without the query filter and valida
       return parsed.searchParams.has("asn") ? "" : "198.51.100.10:443:fixture:fixture";
     }
   });
-  await acquire(tool);
-  assert.equal(urls.length, 2);
+  await tool.ensureForProfile({ config: { ...config, clipProxyAsn: "AS999", clipProxyAsns: ["AS21928", "AS6167"] }, profileId: "p1", row: { raw: { bang: "New York" } } });
+  assert.equal(urls.length, 3);
   assert.equal(urls[0].searchParams.get("asn"), "AS21928");
-  assert.equal(urls[1].searchParams.has("asn"), false);
+  assert.equal(urls[1].searchParams.get("asn"), "AS6167");
+  assert.equal(urls[2].searchParams.has("asn"), false);
   assert.equal(urls[0].searchParams.get("num"), urls[1].searchParams.get("num"));
   assert.equal(assignments.length, 1);
 });
@@ -90,6 +114,7 @@ async function fixture(t, slots = [], overrides = {}) {
   await fs.writeFile(persistedPoolPath, JSON.stringify({ proxies: slots }));
   const requests = [], probes = [], assignments = [], logs = [];
   const tool = createClipProxyTool({
+    retryUntilAvailable: false,
     persistedPoolPath, addRuntimeLog: (...args) => logs.push(args),
     fetchText: async (url) => { requests.push(url); return "198.51.100.10:445:fixture:fixture"; },
     probeTcp: async (proxy) => { probes.push(proxy.port); return { alive: true, pingMs: 281 }; },
@@ -209,14 +234,14 @@ test("recent cached proxies bypass a slow same-state health check without double
   assert.notEqual((await stale).slotId, held.slotId);
 });
 
-test("all API retries share a bounded budget", async (t) => {
+test("each ASN has a bounded budget before trying the next ASN", async (t) => {
   const budgets = [];
   const { tool, assignments } = await fixture(t, [], { acquireTimeoutMs: 120,
     fetchText: async (url, timeoutMs) => { budgets.push(timeoutMs); await pause(timeoutMs); throw new Error("fixture API timeout"); }
   });
   const start = Date.now();
   await assert.rejects(acquire(tool), (error) => error.status === "proxytimeout");
-  assert.ok(Date.now() - start < 800);
+  assert.ok(Date.now() - start < 1500);
   assert.equal(assignments.length, 0);
   assert.ok(budgets.every((value) => value <= 120));
 });
@@ -243,7 +268,9 @@ test("a waiting profile times out without losing the state lock or blocking late
   await started;
   await assert.rejects(acquire(tool, "waiting"), (error) => error.status === "proxytimeout");
   releaseApi();
-  assert.equal((await holder).status, "proxytimeout");
+  const recovered = await holder;
+  assert.equal(typeof recovered.slotId, "string");
+  tool.release(recovered);
   const lease = await acquire(tool, "next");
   assert.equal(typeof lease.slotId, "string");
 });

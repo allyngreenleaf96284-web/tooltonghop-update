@@ -91,8 +91,8 @@ function normalizeAsns(input, legacyAsn = "") {
     seen.add(asn);
     result.push(asn);
   };
-  add(legacyAsn);
   for (const item of source) add(item);
+  if (!result.length) add(legacyAsn);
   return result.length ? result : [...DEFAULT_CONFIG.clipProxyAsns];
 }
 
@@ -107,9 +107,7 @@ function shuffle(items) {
 
 function clipProxyAsnCandidates(config) {
   const asns = normalizeAsns(config.clipProxyAsns, config.clipProxyAsn);
-  const priority = "AS21928";
-  const rest = shuffle(asns.filter((asn) => asn !== priority));
-  return asns.includes(priority) ? [priority, ...rest, ""] : [...rest, ""];
+  return [...asns, ""];
 }
 
 export function normalizeClipProxyConfig(config = {}) {
@@ -595,6 +593,7 @@ function sameProxyValue(a, b) {
 export function createClipProxyTool({ hideRequest, addRuntimeLog,
   fetchText = fetchClipProxyText, probeTcp = measureTcp, fetchInfo = fetchIpInfoViaProxy,
   shouldStop = () => false,
+  retryUntilAvailable = true, acquisitionRetryDelayMs = 2000,
   persistedPoolPath = PERSISTED_POOL_PATH, acquireTimeoutMs = CLIP_PROXY_ACQUIRE_BUDGET_MS }) {
   const pool = new Map();
   const locks = new Map();
@@ -839,11 +838,16 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
     let lastSlot = null;
     let lastError = null;
     for (const asn of clipProxyAsnCandidates(proxyConfig)) {
+      // Each configured ASN gets a turn before the unfiltered fallback.
+      deadline = Date.now() + acquireTimeoutMs;
       const waitingCount = demand.get(stateName) || 1;
       const batchSize = waitingCount > 1 ? Math.min(10, waitingCount) : proxyConfig.clipProxyPoolSize;
       for (const requestCount of clipProxyRequestCounts({ ...proxyConfig, clipProxyPoolSize: batchSize })) {
         assertRunning();
-        if (Date.now() >= deadline) throw acquisitionTimeout();
+        if (Date.now() >= deadline) {
+          lastError = acquisitionTimeout();
+          break;
+        }
         const url = buildClipProxyUrl(proxyConfig, stateName, requestCount, asn);
         const requestStartedAt = Date.now();
         let text = "";
@@ -851,12 +855,6 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
           log(`[clipproxy] lay proxy ${stateName}, ASN=${asn || "bat ky"}, so luong=${requestCount}, con ${Math.max(0, Math.ceil((deadline - Date.now()) / 1000))}s`, "info", profileId, stateName);
           text = await fetchText(url, Math.max(1, Math.min(proxyConfig.clipProxyRequestTimeoutMs, 6000, deadline - Date.now())));
           assertRunning();
-          if (asn && !String(text || "").trim()) {
-            log(`[clipproxy] ${stateName}: API HTTP thanh cong nhung body rong voi asn=${asn}; thu ngay URL khong loc ASN, van kiem tra ASN tren IP thuc`, "info", profileId, stateName);
-            if (Date.now() >= deadline) throw acquisitionTimeout();
-            text = await fetchText(buildClipProxyUrl(proxyConfig, stateName, requestCount, ""), Math.max(1, Math.min(proxyConfig.clipProxyRequestTimeoutMs, 6000, deadline - Date.now())));
-            assertRunning();
-          }
         } catch (error) {
           if (error.status === "stopped") throw error;
           lastError = error;
@@ -866,6 +864,10 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
         const proxies = parseClipProxyTextAll(text);
         if (!proxies.length) {
           lastError = new Error(`ClipProxy khong tra proxy hop le${asn ? ` voi ${asn}` : " khi bo qua ASN"}: ${describeClipProxyResponse(text)}`);
+          if (!String(text || "").trim()) {
+            log(`[clipproxy] ${stateName}: ASN=${asn || "khong loc"} tra body rong; chuyen lua chon tiep theo`, "info", profileId, stateName);
+            break;
+          }
           log(`[clipproxy] ${stateName}: num=${requestCount} khong co proxy hop le; thu batch nho hon`, "info", profileId, stateName);
           continue;
         }
@@ -1147,7 +1149,24 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
       throw error;
     }
     const startedAt = Date.now();
-    const slot = await acquire(proxyConfig, bang, profileId);
+    let slot;
+    for (let round = 1; ; round += 1) {
+      assertRunning();
+      try {
+        slot = await acquire(proxyConfig, bang, profileId);
+        break;
+      } catch (error) {
+        if (error.status === "stopped" || !retryUntilAvailable || !proxyConfig.clipProxyKey) throw error;
+        const message = `chua lay duoc proxy ${bang}, vong ${round}; giu nguyen profile, thu lai sau ${acquisitionRetryDelayMs / 1000}s`;
+        log(`[clipproxy] ${message}`, "warn", profileId, bang);
+        runLog?.("gan proxy bang", message, "warn");
+        const resumeAt = Date.now() + acquisitionRetryDelayMs;
+        while (Date.now() < resumeAt) {
+          assertRunning();
+          await wait(Math.min(100, resumeAt - Date.now()));
+        }
+      }
+    }
     const acquiredAt = Date.now();
     try {
       await assignToProfile({ ...config, ...proxyConfig }, profileId, slot);
