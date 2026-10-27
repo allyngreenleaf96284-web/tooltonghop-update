@@ -324,7 +324,7 @@ function clipProxyRequestCounts(config) {
   const requested = Math.max(1, Math.min(10, config.clipProxyPoolSize || 1));
   // ClipProxy can temporarily have fewer ports than requested for a state/ASN.
   // Preserve the configured batch first, then gracefully back off before failing.
-  const fallbackCounts = [3, 2, 1].filter((count) => count < requested);
+  const fallbackCounts = Array.from({ length: requested - 1 }, (_, index) => requested - index - 1);
   return [...new Set([requested, ...fallbackCounts])];
 }
 
@@ -595,6 +595,7 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
   const pool = new Map();
   const locks = new Map();
   const cursors = new Map();
+  const demand = new Map();
 
   function log(message, type = "info", profileId = "", detail = "") {
     addRuntimeLog(message, type, profileId, { tool: "proxy theo bang", step: "clipproxy", detail });
@@ -824,7 +825,9 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
     let lastSlot = null;
     let lastError = null;
     for (const asn of clipProxyAsnCandidates(proxyConfig)) {
-      for (const requestCount of clipProxyRequestCounts(proxyConfig)) {
+      const waitingCount = demand.get(stateName) || 1;
+      const batchSize = waitingCount > 1 ? Math.min(10, waitingCount) : proxyConfig.clipProxyPoolSize;
+      for (const requestCount of clipProxyRequestCounts({ ...proxyConfig, clipProxyPoolSize: batchSize })) {
         if (Date.now() >= deadline) throw acquisitionTimeout();
         const url = buildClipProxyUrl(proxyConfig, stateName, requestCount, asn);
         let text = "";
@@ -840,8 +843,11 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
           lastError = new Error(`ClipProxy khong tra proxy hop le${asn ? ` voi ${asn}` : " khi bo qua ASN"}: ${describeClipProxyResponse(text)}`);
           continue;
         }
-        for (const proxy of proxies) {
-          if (statePool(stateName).some((slot) => slot.raw === proxy.raw && (slot.inUse || slot.checking))) continue;
+        const pending = proxies.filter((proxy) => !statePool(stateName).some((slot) =>
+          slot.raw === proxy.raw && (slot.inUse || slot.checking || isUsageExhausted(slot, proxyConfig))));
+        // Keep and verify the entire num=N response. Returning after the first
+        // good endpoint discarded the remaining ports and starved other workers.
+        const results = await Promise.allSettled(pending.map(async (proxy) => {
           const { checked, info } = await probeHealth(proxyConfig, proxy, deadline);
           const health = healthFromChecks({ ...proxyConfig, clipProxyAsn: asn || "" }, stateName, checked, info);
           const slot = {
@@ -870,8 +876,34 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
             inUse: false,
             assignedProfileId: ""
           };
-          lastSlot = slot;
-          if (slot.alive && !isTooSlow(slot, proxyConfig)) return slot;
+          return slot;
+        }));
+        const verified = results.filter((result) => result.status === "fulfilled").map((result) => result.value);
+        const usable = verified.filter((slot) => slot.alive && !isTooSlow(slot, proxyConfig));
+        lastSlot = verified.at(-1) || lastSlot;
+        if (usable.length) {
+          const items = statePool(stateName);
+          for (let index = items.length - 1; index >= 0; index -= 1) {
+            const item = items[index];
+            if (!item.inUse && !item.checking && (shouldReplace(item) || isUsageExhausted(item, proxyConfig))) items.splice(index, 1);
+          }
+          const retained = usable.map((slot) => {
+            const existing = items.find((item) => item.raw === slot.raw);
+            if (existing) {
+              if (existing.inUse || existing.checking || isUsageExhausted(existing, proxyConfig)) return null;
+              Object.assign(existing, slot, { id: existing.id, createdAt: existing.createdAt, usageCount: existing.usageCount });
+              return existing;
+            }
+            items.push(slot);
+            return slot;
+          }).filter(Boolean);
+          // Reserve one for the caller before making the other verified ports
+          // available to profiles waiting on this state's acquisition lock.
+          if (retained.length) {
+            claimSlot(retained[0], profileId);
+            log(`[clipproxy] ${stateName}: API tra ${proxies.length} proxy, da giu ${retained.length} proxy dat dieu kien trong pool`, "success", profileId, stateName);
+            return retained[0];
+          }
         }
         // The API did return a valid list. Trying a smaller batch would only
         // request another allocation, so move on to the next ASN instead.
@@ -955,6 +987,8 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
   async function acquire(config, stateName, profileId) {
     const proxyConfig = normalizeClipProxyConfig(config);
     const normalizedState = normalizeStateName(stateName);
+    demand.set(normalizedState, (demand.get(normalizedState) || 0) + 1);
+    try {
     const deadline = Date.now() + acquireTimeoutMs;
     const takeReady = () => {
       const picked = selectAssignableSlot(statePool(normalizedState).filter((slot) => hasRecentHealthyCheck(slot, proxyConfig)), proxyConfig, normalizedState);
@@ -965,7 +999,7 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
     const ready = takeReady();
     if (ready) return ready;
     if (locks.has(normalizedState)) log(`[clipproxy] cho luong cung bang ${normalizedState}, toi da ${Math.round(acquireTimeoutMs / 1000)}s; uu tien proxy pool duoc giai phong`, "info", profileId, normalizedState);
-    return withStateLock(normalizedState, async () => {
+    return await withStateLock(normalizedState, async () => {
       const items = statePool(normalizedState);
       let lastError = null;
       const maxRetained = proxyConfig.clipProxyPoolSize + proxyConfig.clipProxyReserveSize;
@@ -1018,8 +1052,10 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
             lastError = new Error(slot.lastError || "proxy moi ping cao");
             continue;
           }
-          if (replaceIndex >= 0) currentItems[replaceIndex] = slot;
-          else currentItems.push(slot);
+          if (!currentItems.includes(slot)) {
+            if (replaceIndex >= 0) currentItems[replaceIndex] = slot;
+            else currentItems.push(slot);
+          }
           return claimSlot(slot, profileId);
         } catch (error) {
           lastError = error;
@@ -1027,6 +1063,11 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
       }
       throw lastError || new Error(`Khong lay duoc proxy bang ${normalizedState}.`);
     }, { deadline, onWait: takeReady });
+    } finally {
+      const remaining = (demand.get(normalizedState) || 1) - 1;
+      if (remaining > 0) demand.set(normalizedState, remaining);
+      else demand.delete(normalizedState);
+    }
   }
   async function assignToProfile(config, profileId, slot) {
     const provider = String(config.browserApiProvider || "").toLowerCase();

@@ -34,6 +34,55 @@ function acquire(tool, profileId = "p1") {
   return tool.ensureForProfile({ config, profileId, row: { raw: { bang: "New York" } } });
 }
 
+for (const poolSize of [1, 4, 5]) {
+  test(`four concurrent workers share all four num=4 ports in one API call (pool setting ${poolSize})`, async (t) => {
+    const urls = [];
+    let checking = 0, peakChecking = 0;
+    const ports = [443, 444, 445, 446];
+    const { tool, assignments } = await fixture(t, [], { acquireTimeoutMs: 1000,
+      fetchText: async (url) => {
+        urls.push(new URL(url));
+        assert.equal(urls.length, 1, "the other workers must reuse this batch, not allocate again");
+        return ports.map((port) => `198.51.100.10:${port}:session-${port}:fixture`).join("\r\n");
+      },
+      probeTcp: async () => {
+        checking += 1;
+        peakChecking = Math.max(peakChecking, checking);
+        await pause(20);
+        checking -= 1;
+        return { alive: true, pingMs: 281 };
+      },
+      fetchInfo: async () => ({ ok: true, ip: "198.51.100.20", pingMs: 1741, region: "Arizona", org: "AS21928" })
+    });
+    const batchConfig = { ...config, clipProxyPoolSize: poolSize, stateProxyStates: ["Arizona"] };
+    const run = (profileId) => tool.ensureForProfile({ config: batchConfig, profileId, row: { raw: { bang: "Arizona" } } });
+    const leases = await Promise.all(["p1", "p2", "p3", "p4"].map(run));
+    assert.equal(urls.length, 1);
+    assert.equal(urls[0].searchParams.get("num"), "4");
+    assert.equal(urls[0].searchParams.get("state"), "Arizona");
+    assert.equal(urls[0].searchParams.get("asn"), "AS21928");
+    assert.equal(peakChecking, 4, "batch probes run in parallel");
+    assert.equal(new Set(leases.map((lease) => lease.slotId)).size, 4);
+    assert.deepEqual(new Set(assignments.map((proxy) => Number(proxy.port))), new Set(ports));
+    assert.equal(tool.getStatus(batchConfig).proxies.length, 4);
+    assert.ok(tool.getStatus(batchConfig).proxies.every((proxy) => proxy.inUse));
+    for (const lease of leases) tool.release(lease);
+    await run("p5");
+    assert.equal(urls.length, 1, "released batch ports remain reusable");
+  });
+}
+
+test("batch allocation retains every healthy returned port and excludes failed endpoints", async (t) => {
+  const { tool } = await fixture(t, [], {
+    fetchText: async () => [443, 444, 445, 446].map((port) => `198.51.100.10:${port}:u${port}:fixture`).join("\n"),
+    probeTcp: async (proxy) => ({ alive: Number(proxy.port) !== 444, pingMs: 281, error: "fixture failed port" })
+  });
+  await acquire(tool);
+  const proxies = tool.getStatus(config).proxies;
+  assert.equal(proxies.length, 3);
+  assert.equal(proxies.some((proxy) => Number(proxy.port) === 444), false);
+});
+
 test("a fresh healthy pool proxy is assigned immediately with no API or ipinfo calls", async (t) => {
   const { tool, requests, probes, assignments } = await fixture(t, [slot()]);
   const lease = await acquire(tool);
