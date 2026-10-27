@@ -3017,7 +3017,8 @@ function getToolStatusPayload() {
 
 const clipProxyTool = createClipProxyTool({
   hideRequest,
-  addRuntimeLog
+  addRuntimeLog,
+  shouldStop: () => Boolean(toolRuntime.stopRequested)
 });
 
 const proxyPanelTool = createProxyPanelTool({

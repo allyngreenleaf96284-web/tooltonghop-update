@@ -308,7 +308,9 @@ async function fetchClipProxyText(url, timeoutMs) {
     if (Date.now() >= deadline) break;
     try {
       lastText = await fetchWithTimeout(url, Math.max(1, deadline - Date.now()));
-      if (String(lastText || "").trim()) return lastText;
+      // Let allocation decide how to handle an empty successful response;
+      // retrying the same ASN query here hid the response for six seconds.
+      return lastText;
     } catch (error) {
       lastError = error;
     }
@@ -592,11 +594,18 @@ function sameProxyValue(a, b) {
 
 export function createClipProxyTool({ hideRequest, addRuntimeLog,
   fetchText = fetchClipProxyText, probeTcp = measureTcp, fetchInfo = fetchIpInfoViaProxy,
+  shouldStop = () => false,
   persistedPoolPath = PERSISTED_POOL_PATH, acquireTimeoutMs = CLIP_PROXY_ACQUIRE_BUDGET_MS }) {
   const pool = new Map();
   const locks = new Map();
   const cursors = new Map();
   const demand = new Map();
+  function assertRunning() {
+    if (!shouldStop()) return;
+    const error = new Error("Da dung han, huy lay proxy ClipProxy.");
+    error.status = "stopped";
+    throw error;
+  }
 
   function log(message, type = "info", profileId = "", detail = "") {
     addRuntimeLog(message, type, profileId, { tool: "proxy theo bang", step: "clipproxy", detail });
@@ -792,12 +801,14 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
       let ready = false;
       previous.then(() => { ready = true; });
       while (!ready) {
+        assertRunning();
         const reusable = onWait?.();
         if (reusable) return reusable;
         if (Date.now() >= deadline) throw acquisitionTimeout("hang cho cung bang");
         await Promise.race([previous, wait(Math.max(1, Math.min(100, deadline - Date.now())))]);
       }
       if (Date.now() >= deadline) throw acquisitionTimeout();
+      assertRunning();
       return await action();
     } finally {
       release();
@@ -812,11 +823,13 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
   }
 
   async function probeHealth(config, proxy, deadline) {
+    assertRunning();
     if (Date.now() >= deadline) throw acquisitionTimeout();
     const end = Math.min(deadline, Date.now() + CLIP_PROXY_HEALTH_BUDGET_MS);
     const checked = await probeTcp(proxy, Math.max(1, Math.min(config.clipProxyPingLimitMs, end - Date.now())));
     const info = checked.alive && Date.now() < end
       ? await fetchInfo(proxy, Math.max(1, Math.min(config.clipProxyInfoTimeoutMs, end - Date.now()))) : null;
+    assertRunning();
     return { checked, info };
   }
 
@@ -829,6 +842,7 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
       const waitingCount = demand.get(stateName) || 1;
       const batchSize = waitingCount > 1 ? Math.min(10, waitingCount) : proxyConfig.clipProxyPoolSize;
       for (const requestCount of clipProxyRequestCounts({ ...proxyConfig, clipProxyPoolSize: batchSize })) {
+        assertRunning();
         if (Date.now() >= deadline) throw acquisitionTimeout();
         const url = buildClipProxyUrl(proxyConfig, stateName, requestCount, asn);
         const requestStartedAt = Date.now();
@@ -836,7 +850,15 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
         try {
           log(`[clipproxy] lay proxy ${stateName}, ASN=${asn || "bat ky"}, so luong=${requestCount}, con ${Math.max(0, Math.ceil((deadline - Date.now()) / 1000))}s`, "info", profileId, stateName);
           text = await fetchText(url, Math.max(1, Math.min(proxyConfig.clipProxyRequestTimeoutMs, 6000, deadline - Date.now())));
+          assertRunning();
+          if (asn && !String(text || "").trim()) {
+            log(`[clipproxy] ${stateName}: API HTTP thanh cong nhung body rong voi asn=${asn}; thu ngay URL khong loc ASN, van kiem tra ASN tren IP thuc`, "info", profileId, stateName);
+            if (Date.now() >= deadline) throw acquisitionTimeout();
+            text = await fetchText(buildClipProxyUrl(proxyConfig, stateName, requestCount, ""), Math.max(1, Math.min(proxyConfig.clipProxyRequestTimeoutMs, 6000, deadline - Date.now())));
+            assertRunning();
+          }
         } catch (error) {
+          if (error.status === "stopped") throw error;
           lastError = error;
           log(`[clipproxy] ${stateName}: API khong phan hoi kip, num=${requestCount}; thu batch nho hon`, "info", profileId, stateName);
           continue;
@@ -884,6 +906,7 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
           return slot;
         }));
         const verified = results.filter((result) => result.status === "fulfilled").map((result) => result.value);
+        assertRunning();
         const usable = verified.filter((slot) => slot.alive && !isTooSlow(slot, proxyConfig));
         if (!usable.length) {
           const reasons = [...new Set(verified.map((slot) => slot.lastError || `ping ${slotPingMs(slot)}ms vuot nguong`))];
@@ -986,6 +1009,7 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
   }
 
   function claimSlot(slot, profileId) {
+    assertRunning();
     slot.inUse = true;
     slot.assignedProfileId = profileId;
     slot.lastAssignedAt = Date.now();
@@ -1072,6 +1096,7 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
           }
           return claimSlot(slot, profileId);
         } catch (error) {
+          if (error.status === "stopped") throw error;
           if (error.status === "proxytimeout" && lastError) break;
           lastError = error;
           if (Date.now() >= deadline) break;
@@ -1087,6 +1112,7 @@ export function createClipProxyTool({ hideRequest, addRuntimeLog,
     }
   }
   async function assignToProfile(config, profileId, slot) {
+    assertRunning();
     const provider = String(config.browserApiProvider || "").toLowerCase();
     const expectedRawProxy = proxyToGpmRaw(slot.proxy);
     const payload = provider === "hide"

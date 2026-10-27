@@ -6,6 +6,34 @@ import os from "node:os";
 import { createClipProxyTool } from "../modules/clipproxy.js";
 
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+test("empty ASN response immediately retries without the query filter and validates returned ASN", async (t) => {
+  const urls = [];
+  const { tool, assignments } = await fixture(t, [], {
+    fetchText: async (url) => {
+      const parsed = new URL(url);
+      urls.push(parsed);
+      return parsed.searchParams.has("asn") ? "" : "198.51.100.10:443:fixture:fixture";
+    }
+  });
+  await acquire(tool);
+  assert.equal(urls.length, 2);
+  assert.equal(urls[0].searchParams.get("asn"), "AS21928");
+  assert.equal(urls[1].searchParams.has("asn"), false);
+  assert.equal(urls[0].searchParams.get("num"), urls[1].searchParams.get("num"));
+  assert.equal(assignments.length, 1);
+});
+
+test("stop during API call prevents fallback, health checks and profile assignment", async (t) => {
+  let stopped = false, calls = 0;
+  const { tool, assignments, probes } = await fixture(t, [], {
+    shouldStop: () => stopped,
+    fetchText: async () => { calls++; stopped = true; return ""; }
+  });
+  await assert.rejects(acquire(tool), (error) => error.status === "stopped");
+  assert.equal(calls, 1);
+  assert.equal(assignments.length, 0);
+  assert.equal(probes.length, 0);
+});
 test("queued worker receives a fresh API budget after the preceding worker finishes", async (t) => {
   let calls = 0;
   const budgets = [];
