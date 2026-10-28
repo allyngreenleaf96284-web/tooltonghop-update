@@ -2789,6 +2789,10 @@ async function refreshToolStatus() {
 }
 
 function renderToolProgress(data) {
+  if ($("toggleLoginPause")) {
+    $("toggleLoginPause").textContent = data.loginPaused ? "Tiếp tục tất cả (F8)" : "Tạm dừng tất cả (F8)";
+    $("toggleLoginPause").disabled = !data.running || data.currentTool !== "tool login";
+  }
   state.logs = data.logs || [];
   state.runtimeJobsById = new Map((data.jobs || []).map((job) => [String(job.profileId || ""), job]));
   renderLogs();
@@ -3197,7 +3201,7 @@ function renderToolProgressPanel({
     </div>` : "";
   list.innerHTML = timeColumnHead + orderedJobs.slice(0, 80).map((job) => {
     const rawStatus = String(job.status || "queued").toLowerCase();
-    const displayStatus = job.phaseState === "retry_waiting" || rawStatus === "retry_waiting"
+    const displayStatus = job.loginPaused ? "tạm dừng" : job.phaseState === "retry_waiting" || rawStatus === "retry_waiting"
       ? "chờ chạy lại"
       : job.phaseState === "retry_failed"
         ? "retry vẫn lỗi"
@@ -3209,20 +3213,42 @@ function renderToolProgressPanel({
             ? "đang chạy"
             : rawStatus;
     const phaseText = job.phase === "retry" ? "lượt chạy lại" : "lượt đầu";
-    const timerEndsAt = showTimeColumn ? Number(job.twofaCountdownEndsAt || 0) : 0;
+    const timerEndsAt = showTimeColumn && !job.loginPaused ? Number(job.twofaCountdownEndsAt || 0) : 0;
     const timeCell = showTimeColumn
-      ? `<span class="tool-progress-time"${timerEndsAt ? ` data-login-twofa-ends-at="${escapeAttr(String(timerEndsAt))}"` : ""}>${timerEndsAt ? formatLoginTwofaCountdown(timerEndsAt) : ""}</span>`
+      ? `<span class="tool-progress-time"${timerEndsAt ? ` data-login-twofa-ends-at="${escapeAttr(String(timerEndsAt))}"` : ""}>${job.loginPaused && job.twofaCountdownEndsAt ? formatLoginTwofaCountdown(Date.now() + Math.max(0, job.twofaCountdownEndsAt - job.loginPausedAt)) : timerEndsAt ? formatLoginTwofaCountdown(timerEndsAt) : ""}</span>`
       : "";
     return `
     <div class="tool-progress-item${showTimeColumn ? " has-time-column" : ""}">
       <span>${escapeHtml(job.profileId || "")}</span>
       <span class="job-status ${escapeAttr(rawStatus)}">${escapeHtml(displayStatus)}</span>
       ${timeCell}
-      <span>${escapeHtml(`${phaseText}: ${job.liveStatus || ""}`)}</span>
+      <span>${escapeHtml(`${phaseText}: ${job.liveStatus || ""}`)}
+      ${job.tool === "tool login" && ["running", "queued"].includes(rawStatus) && job.loginPauseSupported !== false ? `<button type="button" data-login-pause-id="${escapeAttr(job.profileId)}">${job.loginLocalPaused ? "Tiếp tục nick" : "Tạm dừng nick"}</button>` : ""}</span>
     </div>
   `; }).join("");
   if (showTimeColumn) refreshLoginTwofaCountdowns();
 }
+
+let loginPauseRequestPending = false;
+async function toggleLoginPause(profileId = "") {
+  if (loginPauseRequestPending) return;
+  loginPauseRequestPending = true;
+  try {
+    await api("/api/tools/login/toggle-pause", { method: "POST", body: JSON.stringify({ profileId }) });
+    await refreshToolStatus();
+  } catch (error) { $("loginStatusText").textContent = error.message; }
+  finally { loginPauseRequestPending = false; }
+}
+$("toggleLoginPause")?.addEventListener("click", () => toggleLoginPause());
+document.addEventListener("click", (event) => {
+  const button = event.target.closest?.("[data-login-pause-id]");
+  if (button) void toggleLoginPause(button.dataset.loginPauseId);
+});
+document.addEventListener("keydown", (event) => {
+  if (event.code !== "F8" || event.repeat || $("toggleLoginPause")?.disabled) return;
+  event.preventDefault();
+  void toggleLoginPause();
+});
 
 function visibleLogs() {
   const query = state.logSearchQuery.trim().toLowerCase();

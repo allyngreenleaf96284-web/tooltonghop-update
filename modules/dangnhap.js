@@ -2510,6 +2510,7 @@ export function createDangNhap({ addRuntimeLog }) {
     try {
       return await performFacebookLogin(manager, page, row, profileId, updateLiveStatus, options);
     } catch (caught) {
+      if (options.isActive && !options.isActive()) throw caught;
       const failure = page.browser().__loginCaptcha?.error || caught;
       if (!isFacebookCaptchaError(failure)) throw failure;
       if (options.waitForManualCaptcha === true) {

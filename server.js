@@ -3006,6 +3006,7 @@ function getToolStatusPayload() {
     running: toolRuntime.running,
     stopRequested: toolRuntime.stopRequested,
     currentTool: toolRuntime.currentTool || "",
+    loginPaused: toolRuntime.loginPaused === true,
     batch: toolRuntime.batch || null,
     jobs: [...toolRuntime.jobs.values()],
     logs: toolRuntime.logs.slice(-1000),
@@ -3556,6 +3557,10 @@ async function handleApi(req, res) {
         maxRetries: config.fullUnknownRetryCount
       });
       return jsonResponse(res, 200, { ok: true, data });
+    }
+    if (req.method === "POST" && url.pathname === "/api/tools/login/toggle-pause") {
+      const body = await parseBody(req);
+      return jsonResponse(res, 200, { ok: true, data: toolLoginModule.togglePause(String(body.profileId || "")) });
     }
     if (req.method === "POST" && url.pathname === "/api/tools/login") {
       const body = await parseBody(req);

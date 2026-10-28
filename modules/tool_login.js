@@ -1,4 +1,5 @@
 import { buildStandardName } from "./profile_name.js";
+import { createLoginPause } from "./login_pause.js";
 import {
   buildRuntimeProfileName,
   ensureMarketplaceCreatePageReady,
@@ -154,6 +155,7 @@ export function createToolLogin({
   stateProxy,
   runtime
 }) {
+  const pauseControl = createLoginPause(runtime);
   function log(profileId, step, message, type = "info", detail = "") {
     addRuntimeLog(`[${profileId}] ${message}`, type, profileId, { tool: "tool login", step, detail });
   }
@@ -170,17 +172,8 @@ export function createToolLogin({
     }
     log(profileId, name, `bat dau: ${name}`);
     try {
-      const execution = Promise.resolve().then(action);
-      const result = timeoutMs
-        ? await Promise.race([
-          execution,
-          sleep(timeoutMs).then(() => {
-            const error = new Error(`buoc \"${name}\" treo qua ${Math.round(timeoutMs / 1000)}s`);
-            error.status = "loi";
-            throw error;
-          })
-        ])
-        : await execution;
+      const result = await pauseControl.run(profileId, action, timeoutMs,
+        ["dang nhap Facebook", "kiem tra va doi bang My", "vao man hinh check vach", "check vach"].includes(name));
       log(profileId, name, `xong: ${name}`, "success");
       return result;
     } catch (cause) {
@@ -265,8 +258,11 @@ export function createToolLogin({
         if (typeof manager.maximizeBrowserWindow === "function") await manager.maximizeBrowserWindow(browser, page).catch(() => {});
         await applyStableViewport(page, workerSlot, workerTotal);
       }, 120000);
+      await pauseControl.attach(page);
+      pauseControl.guard(manager, ["updateProfileName"]);
 
       await step(profileId, job, "dang nhap Facebook", () => dangNhap.ensureFacebookLogin(manager, page, row, profileId, (status, meta) => {
+        if (!pauseControl.isCurrent()) return;
         if (job) {
           job.liveStatus = status;
           updateTwofaCountdown(job, meta);
@@ -275,7 +271,9 @@ export function createToolLogin({
           log(profileId, "dang nhap Facebook", status);
         }
       }, { forceAccountLogin: true, waitForManualCaptcha: config.loginWaitForManualCaptcha === true,
-        shouldStop: () => Boolean(runtime.stopRequested) }), config.loginWaitForManualCaptcha === true ? 0 : 900000);
+        resumeAfterManualCaptcha: pauseControl.resuming(),
+        shouldStop: () => Boolean(runtime.stopRequested) || !pauseControl.isCurrent(),
+        isActive: pauseControl.isCurrent }), config.loginWaitForManualCaptcha === true ? 0 : 900000);
 
       currentName = await step(profileId, job, "quet ten profile", () => readProfileName(manager, profileId, currentName), 30000);
       const cleanedName = stripResolvedNamePrefixes(currentName);
@@ -369,6 +367,7 @@ export function createToolLogin({
       }
     }
     const sheetSession = await createSheetRowSession(config, ids);
+    pauseControl.reset();
     const concurrency = Math.min(clampConcurrency(config.loginConcurrency, 4), ids.length);
     for (const id of ids) {
       runtime.jobs.set(id, { profileId: id, tool: "tool login", status: "queued", liveStatus: `dang cho ${concurrency} luong`, logs: [], startedAt: "", finishedAt: "", result: null, sheetWriteError: "" });
@@ -382,6 +381,7 @@ export function createToolLogin({
         const nextId = () => !runtime.stopRequested && cursor < ids.length ? ids[cursor++] : "";
         const workers = Array.from({ length: concurrency }, async (_, workerSlot) => {
           for (;;) {
+            while (runtime.loginPaused && !runtime.stopRequested) await sleep(100);
             const id = nextId();
             if (!id) break;
             const job = runtime.jobs.get(id);
@@ -394,6 +394,9 @@ export function createToolLogin({
             if (job) job.startedAt = new Date().toISOString();
             const outcome = await runOne(id, row, config, sheetSession, workerSlot, concurrency);
             if (outcome?.continueWithFull && !runtime.stopRequested) {
+              await pauseControl.gate(id);
+              job.loginPauseSupported = false;
+              job.loginPaused = false;
               job.finishedAt = "";
               job.liveStatus = "3v - dang chuyen sang lam Full";
               await runFullProfile(id, row, config, sheetSession, workerSlot, concurrency);
@@ -415,6 +418,7 @@ export function createToolLogin({
       } catch (error) {
         addRuntimeLog(`Loi queue tool login: ${error.message}`, "error", "", { tool: "tool login", step: "queue" });
       } finally {
+        pauseControl.reset();
         runtime.running = false;
         runtime.stopRequested = false;
         runtime.currentTool = "";
@@ -423,5 +427,5 @@ export function createToolLogin({
     return { started: ids.length, concurrency };
   }
 
-  return { runQueue };
+  return { runQueue, togglePause: pauseControl.toggle };
 }
