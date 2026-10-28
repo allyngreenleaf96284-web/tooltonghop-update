@@ -143,6 +143,10 @@ export function createLoginPause(runtime, { onChange = () => {} } = {}) {
     guard(page.mouse, ["click", "down", "up", "move", "wheel"]);
   }
   return { toggle, run, gate, attach, guard, setLocal,
+    // Browser bindings may inherit the expired context that opened the browser.
+    // Human commands must not reuse that automation token. This does not resume
+    // the worker or disable guards on its stale operations.
+    runManual: (action) => context.run(undefined, action),
     finish: (id) => { record(id).finished = true; for (const notify of record(id).listeners) notify(); },
     resuming: () => context.getStore()?.resumed === true,
     isCurrent: () => context.getStore()?.valid !== false,

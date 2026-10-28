@@ -4,7 +4,10 @@ import { readFileSync } from "node:fs";
 const dialogScript = readFileSync(new URL("../public/login-operator-dialog.js", import.meta.url), "utf8");
 export function createLoginOperator(runtime, pauseControl) {
   const profiles = new Map();
-  async function request(id, input = {}) {
+  function request(id, input = {}) {
+    return pauseControl.runManual(() => performRequest(id, input));
+  }
+  async function performRequest(id, input) {
     const state = profiles.get(id);
     if (!state || state.done || state.job.status !== "running") throw new Error("Profile nay khong con trong luong Tool Login.");
     pauseControl.setLocal(id, true);
