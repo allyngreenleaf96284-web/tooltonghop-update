@@ -300,6 +300,7 @@ async function loadConfig() {
   if ($("loginConcurrency")) $("loginConcurrency").value = config.loginConcurrency || 4;
   if ($("loginUnknownRetryCount")) $("loginUnknownRetryCount").value = Math.max(0, Math.min(3, Number(config.loginUnknownRetryCount ?? 1)));
   if ($("loginThreeVFull")) $("loginThreeVFull").checked = config.loginThreeVFull === true;
+  if ($("loginWaitForManualCaptcha")) $("loginWaitForManualCaptcha").checked = config.loginWaitForManualCaptcha === true;
   if ($("fullUnknownRetryCount")) $("fullUnknownRetryCount").value = Math.max(0, Math.min(3, Number(config.fullUnknownRetryCount ?? 1)));
   if ($("postConcurrency")) $("postConcurrency").value = config.postConcurrency || 4;
   if ($("postUnknownRetryCount")) $("postUnknownRetryCount").value = Math.max(0, Math.min(3, Number(config.postUnknownRetryCount ?? 1)));
@@ -414,6 +415,7 @@ async function saveConfig() {
       loginConcurrency: Number($("loginConcurrency")?.value || 4),
       loginUnknownRetryCount: Math.max(0, Math.min(3, Number($("loginUnknownRetryCount")?.value || 0))),
       loginThreeVFull: $("loginThreeVFull")?.checked === true,
+      loginWaitForManualCaptcha: $("loginWaitForManualCaptcha")?.checked === true,
       fullConcurrency: Number($("fullConcurrency")?.value || 4),
       fullUnknownRetryCount: Math.max(0, Math.min(3, Number($("fullUnknownRetryCount")?.value || 0))),
       postConcurrency: Number($("postConcurrency")?.value || 4),
@@ -2110,7 +2112,8 @@ async function startToolLogin(profileIds) {
         profileIds,
         concurrency,
         loginUnknownRetryCount: Math.max(0, Math.min(3, Number($("loginUnknownRetryCount")?.value || 0))),
-        loginThreeVFull: $("loginThreeVFull")?.checked === true
+        loginThreeVFull: $("loginThreeVFull")?.checked === true,
+        loginWaitForManualCaptcha: $("loginWaitForManualCaptcha")?.checked === true
       })
     });
     primeToolProgress(profileIds, "bắt đầu: đăng nhập Facebook", "login");

@@ -85,8 +85,34 @@ export async function assertNoLoginCaptcha(page, step = "login: kiem tra captcha
   error.code = "LOGIN_CAPTCHA";
   error.retryable = true;
   error.step = step;
+  error.page = page;
   browser.__loginCaptcha = { error };
   throw error;
+}
+
+export async function waitForManualLoginCaptcha(page, {
+  shouldStop = () => false, onProgress = () => {}, pollMs = 1000,
+  detect = hasLoginCaptchaChallenge,
+  ready = () => page.evaluate(() => /(^|\.)facebook\.com$/i.test(location.hostname)
+    && document.readyState !== "loading" && Boolean(document.body?.innerText?.trim()))
+} = {}) {
+  let clearSamples = 0;
+  const startedAt = Date.now();
+  while (true) {
+    if (shouldStop() || page.isClosed?.()) {
+      const error = new Error("Da dung cho nguoi dung giai CAPTCHA.");
+      error.status = "stopped";
+      throw error;
+    }
+    onProgress(`Chờ bạn giải CAPTCHA trên cửa sổ này (${Math.floor((Date.now() - startedAt) / 1000)}s)`, { twofaActive: false });
+    try {
+      clearSamples = await ready() && !await detect(page) ? clearSamples + 1 : 0;
+    } catch { clearSamples = 0; }
+    // Ignore transient blank documents during navigation. Never interact with
+    // the challenge: only the user completes it in the existing browser.
+    if (clearSamples >= 3) return;
+    await sleep(pollMs);
+  }
 }
 
 export function facebookLoginPlan(state, { forceAccountLogin = false } = {}) {
@@ -2353,7 +2379,7 @@ export function createDangNhap({ addRuntimeLog }) {
         updateLiveStatus(error.message);
         logLogin(profileId, "die cho", error.message, "error");
       });
-    await loginStep(profileId, updateLiveStatus, "login: vao facebook.com", "dang vao facebook.com", async () => {
+    if (!options.resumeAfterManualCaptcha) await loginStep(profileId, updateLiveStatus, "login: vao facebook.com", "dang vao facebook.com", async () => {
       await gotoWithFallback(manager, page, "https://www.facebook.com/", row, 3);
       await page.waitForSelector("body", { timeout: 10000 }).catch(() => {});
       await throwIfCaptchaChallenge(page, "login: vao facebook.com");
@@ -2373,8 +2399,9 @@ export function createDangNhap({ addRuntimeLog }) {
       return state;
     });
 
-    const plan = facebookLoginPlan(currentState, { forceAccountLogin });
-    if (plan !== "session") {
+    const plan = options.resumeAfterManualCaptcha && currentState.credentialStep === "twofa"
+      ? "twofa" : facebookLoginPlan(currentState, { forceAccountLogin });
+    if (plan !== "session" && plan !== "twofa") {
       await loginStep(profileId, updateLiveStatus, "login: don mat khau Chrome", "dang don mat khau Facebook cu trong Chrome", async () => {
         const result = await prepareFacebookPasswordManager(page, updateLiveStatus);
         logLogin(profileId, "login: don mat khau Chrome", `Da xoa ${result.deleted} tai khoan Facebook da luu va tat de nghi luu mat khau.`, "success");
@@ -2384,7 +2411,10 @@ export function createDangNhap({ addRuntimeLog }) {
       });
     }
     let loginSource = "login";
-    if (plan === "session") {
+    if (plan === "twofa") {
+      await completeTwofaIfNeeded(manager, page, row, updateLiveStatus);
+      loginSource = "account";
+    } else if (plan === "session") {
       updateLiveStatus("dang nhap Facebook da co san, giu nguyen session");
       logLogin(profileId, "login: session co san", "dang nhap Facebook da co san, giu nguyen session", "success");
       loginSource = "session";
@@ -2476,11 +2506,23 @@ export function createDangNhap({ addRuntimeLog }) {
       };
       manager.__captchaRenamePatched = true;
     }
+    for (;;) {
     try {
       return await performFacebookLogin(manager, page, row, profileId, updateLiveStatus, options);
     } catch (caught) {
       const failure = page.browser().__loginCaptcha?.error || caught;
       if (!isFacebookCaptchaError(failure)) throw failure;
+      if (options.waitForManualCaptcha === true) {
+        const challengePage = failure?.page || page;
+        await waitForManualLoginCaptcha(challengePage, {
+          shouldStop: options.shouldStop, onProgress: updateLiveStatus
+        });
+        delete challengePage.browser().__loginCaptcha;
+        page = challengePage;
+        options = { ...options, resumeAfterManualCaptcha: true };
+        updateLiveStatus("CAPTCHA đã hết, tiếp tục đăng nhập", { twofaActive: false });
+        continue;
+      }
       const error = failure instanceof Error ? failure : new Error(String(failure || "loi dang nhap"));
       error.status = "capcha";
       error.code = "LOGIN_CAPTCHA";
@@ -2502,6 +2544,7 @@ export function createDangNhap({ addRuntimeLog }) {
       updateLiveStatus("capcha: Facebook yeu cau xac minh not a robot, chuyen sang danh sach chay lai", { twofaActive: false });
       logLogin(profileId, "capcha", error.message, "error");
       throw error;
+    }
     }
   }
 

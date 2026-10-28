@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { after, before, test } from "node:test";
-import { createDangNhap, facebookLoginPlan, readLoginCaptchaChallenge, hasLoginCaptchaChallenge, assertNoLoginCaptcha, chooseAuthenticationAppTwofa, submitTwofaCode } from "../modules/dangnhap.js";
+import { createDangNhap, facebookLoginPlan, readLoginCaptchaChallenge, hasLoginCaptchaChallenge, assertNoLoginCaptcha, chooseAuthenticationAppTwofa, submitTwofaCode, waitForManualLoginCaptcha } from "../modules/dangnhap.js";
 import { buildCaptchaProfileName } from "../modules/profile_name.js";
 import { createLamFull, mapFullError, buildRuntimeProfileName, stripResolvedNamePrefixes } from "../modules/lamfull.js";
 import { isRetryableFailure, isUnknownFailure, startAutoRetryBatch } from "../modules/batch_retry.js";
@@ -45,6 +45,61 @@ function managerFixture(name = "Full 15/7-61500000000000-Arizona-tool") {
     sendLog() {}
   };
 }
+
+for (const nextScreen of ["session", "twofa"]) test(`manual CAPTCHA option resumes ${nextScreen} in the same browser without renaming`, async () => {
+  const { context, page, visits } = await fixture("<p>I'm not a robot</p>", { captchaRedirect: true });
+  const manager = managerFixture();
+  const login = createDangNhap({ addRuntimeLog() {} });
+  let waiting, finished = false;
+  const reached = new Promise((resolve) => { waiting = resolve; });
+  const work = login.ensureFacebookLogin(manager, page, { raw: { "2fa": "JBSWY3DPEHPK3PXP" } }, "p1", (status) => {
+    if (status.startsWith("Chờ bạn giải CAPTCHA")) waiting();
+  }, { forceAccountLogin: true, waitForManualCaptcha: true }).finally(() => { finished = true; });
+  try {
+    await reached;
+    await pause(120);
+    assert.equal(finished, false);
+    assert.equal(page.isClosed(), false);
+    assert.deepEqual(manager.updates, []);
+    const visitsBefore = visits.length;
+    // Simulate the post-verification page; no real CAPTCHA is solved in tests.
+    if (nextScreen === "session") {
+      await page.setCookie({ name: "c_user", value: "61500000000000", domain: ".facebook.com", path: "/", secure: true });
+      await page.evaluate(() => { history.replaceState(null, "", "/"); document.body.innerHTML = "<h1>Home</h1>"; });
+    } else {
+      await page.evaluate(() => {
+        history.replaceState(null, "", "/two_step_verification/two_factor/");
+        document.body.innerHTML = '<label>Code<input autocomplete="one-time-code"></label><button>Continue</button>';
+        document.querySelector("button").onclick = () => {
+          document.cookie = "c_user=61500000000000; path=/; secure";
+          history.replaceState(null, "", "/"); document.body.innerHTML = "<h1>Home</h1>";
+        };
+      });
+    }
+    const result = await work;
+    assert.equal(result.ok, true);
+    assert.equal(result.source, nextScreen === "session" ? "session" : "account");
+    assert.deepEqual(manager.updates, []);
+    assert.equal(visits.slice(visitsBefore).some((url) => url === "/?locale=en_US" || url.startsWith("/login")), false);
+  } finally { delete browser.__loginCaptcha; await context.close(); }
+});
+
+test("manual CAPTCHA wait is isolated per worker and stops without needing a solved challenge", async () => {
+  const solved = [false, false, false, true];
+  const done = [];
+  let stopped = false;
+  const tasks = solved.map((_, index) => waitForManualLoginCaptcha({ isClosed: () => false }, {
+    shouldStop: () => stopped, pollMs: 5, ready: async () => true,
+    detect: async () => !solved[index]
+  }).then(() => { done.push(index); return "done"; }, (error) => error.status));
+  await tasks[3];
+  assert.deepEqual(done, [3]);
+  solved[1] = true;
+  await tasks[1];
+  assert.deepEqual(done, [3, 1]);
+  stopped = true;
+  assert.deepEqual(await Promise.all(tasks), ["stopped", "done", "stopped", "done"]);
+});
 
 test("account-only login reuses an authenticated session instead of clearing cookies or opening login/password-manager pages", async () => {
   const { context, page, visits } = await fixture("<h1>Home</h1>");
