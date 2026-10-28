@@ -2524,6 +2524,7 @@ export function createDangNhap({ addRuntimeLog }) {
         updateLiveStatus("CAPTCHA đã hết, tiếp tục đăng nhập", { twofaActive: false });
         continue;
       }
+      if (options.holdErrorsForOperator === true) throw failure;
       const error = failure instanceof Error ? failure : new Error(String(failure || "loi dang nhap"));
       error.status = "capcha";
       error.code = "LOGIN_CAPTCHA";

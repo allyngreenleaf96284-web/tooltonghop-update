@@ -78,3 +78,61 @@ test("Login validates Full settings only when the 3v Full option is enabled", as
     createSheetRowSession: async () => { throw new Error("unexpected Sheet access"); }, runFullProfile: async () => {} });
   await assert.rejects(login.runQueue(["p1"], { loginThreeVFull: true }), /Seller Info Spreadsheet ID/);
 });
+
+test("Login holds an errored worker, other workers continue, and F9 saves its name to Sheet before advancing", async () => {
+  const browser = await puppeteer.launch({ executablePath: process.env.CHROME_PATH || "C:/Program Files/Google/Chrome/Application/chrome.exe", headless: true });
+  const runtime = { jobs: new Map(), running: false };
+  const pages = new Map(), names = new Map(["p1", "p2", "p3"].map((id) => [id, `61594499510154-Nuevo, California-${id}`]));
+  const writes = [], closed = [];
+  const sheet = { rows: new Map([...names].map(([id, name]) => [id, { "tên profile hiện tại": name }])),
+    async updateOne(id, update) { writes.push({ id, update }); }, async flushAll() {} };
+  const login = createToolLogin({
+    getManager: () => {
+      let ownId;
+      return {
+        async getProfileById(id) { return { name: names.get(id), browserType: "chrome" }; },
+        async updateProfileName(id, value) { names.set(id, value); },
+        async connectBrowser(id) {
+          ownId = id;
+          const page = await browser.newPage(); pages.set(id, page);
+          await page.setRequestInterception(true);
+          page.on("request", (request) => void request.respond({ status: 200, contentType: "text/html", body: '<h1>Item for sale</h1><p>Preview</p><button role="button" aria-label="Location: Nuevo, California">Nuevo, California</button><input aria-label="Title"><button>Next</button>' }).catch(() => {}));
+          return { newPage: async () => page, disconnect: async () => {} };
+        },
+        async gotoWithRetry(page, url) { await page.goto(url); },
+        async detectInitialMarketplaceState() { return { kind: "progress", totalSteps: 3 }; },
+        async stopHideMyAccProfile(id) { closed.push(id || ownId); }
+      };
+    },
+    dangNhap: { ensureFacebookLogin: async (manager, page, row, id) => { if (id === "p1") throw Object.assign(Error("fixture needs user attention"), { status: "stopped" }); return { ok: true }; } },
+    addRuntimeLog() {}, buildToolRow: () => ({ uid: "61594499510154", raw: {} }),
+    createSheetRowSession: async () => sheet, runtime, stateProxy: { ensureForProfile: async () => null }
+  });
+  const until = async (check) => {
+    for (let i = 0; i < 1500; i++) { if (check()) return; await pause(10); }
+    throw Error("fixture timed out");
+  };
+  try {
+    await login.runQueue(["p1", "p2", "p3"], { loginConcurrency: 2 });
+    await until(() => runtime.jobs.get("p1")?.loginNeedsAttention && runtime.jobs.get("p3")?.status === "success");
+    assert.equal(runtime.jobs.get("p1").status, "running");
+    assert.equal(closed.includes("p1"), false);
+    assert.ok(writes.some(({ id, update }) => id === "p1" && update.trangThai === "chờ xử lý"));
+    const page = pages.get("p1");
+    await page.keyboard.press("F9");
+    await page.waitForSelector("#tool-login-operator-dialog input:not(:disabled)");
+    await page.waitForFunction(() => !document.querySelector("#tool-login-operator-dialog button").disabled);
+    await page.$eval("#tool-login-operator-dialog input", (input) => { input.value = "operator-note-p1"; });
+    await page.click("#tool-login-operator-dialog button");
+    await until(() => !runtime.running);
+    assert.equal(runtime.jobs.get("p1").status, "skipped");
+    assert.equal(runtime.jobs.get("p1").manualHandled, true);
+    assert.equal(names.get("p1"), "operator-note-p1");
+    assert.equal(closed.filter((id) => id === "p1").length, 1);
+    assert.ok(writes.some(({ id, update }) => id === "p1" && update["tên profile hiện tại"] === "operator-note-p1"));
+    assert.equal(runtime.jobs.get("p2").status, "success");
+  } finally {
+    runtime.stopRequested = true;
+    await browser.close();
+  }
+});

@@ -1,7 +1,7 @@
 {
   "name": "Tool Tong Hop Full",
   "channel": "full",
-  "version": "2026.10.28.2",
+  "version": "2026.10.28.3",
   "rawBase": "https://raw.githubusercontent.com/allyngreenleaf96284-web/tooltonghop-update/main",
   "createdAt": "2026-09-17T00:00:00.000Z",
   "files": [
@@ -52,8 +52,8 @@
     },
     {
       "path": "modules/dangnhap.js",
-      "sha256": "1c7793cfaca41aaa72eaa7b25448844ce34cbe49db4f9da42c055f9e986535d4",
-      "size": 127640
+      "sha256": "a8ab84a93925e6de5a63902ef22ad93aa9a660319cdeb3f9ebc18d2654a7326f",
+      "size": 127705
     },
     {
       "path": "modules/dienmatkhau.js",
@@ -82,8 +82,8 @@
     },
     {
       "path": "modules/tool_login.js",
-      "sha256": "fef7980a578e60a49071f80291c515b942cc2da7da3c942d17ba23b0743a9502",
-      "size": 18039
+      "sha256": "916ffd60b0fa8ee703d7fba6d62c260de8f5f26a529e536398d8937e507c9c2f",
+      "size": 21191
     },
     {
       "path": "modules/marketplace_link_order.js",
@@ -132,13 +132,13 @@
     },
     {
       "path": "public/app.js",
-      "sha256": "dbfdc1de9029bc2a3a0ec4dde10a8a6519de34615e66cd730c924809603ef98b",
-      "size": 187845
+      "sha256": "fb3a26c8ad8ca6e40c3177080a38e153ce77c00bf0e2c1dff44a2eefdcbb72e4",
+      "size": 189265
     },
     {
       "path": "public/index.html",
-      "sha256": "500a95e9c7653e2fd5cb8c22b3a00556d932ec4d3dbf458f43e3b987e3c07d9a",
-      "size": 103928
+      "sha256": "cc9e33315729d2956a1e4234bd2dee7fd9afa3d451858f21e8330f600e1e6405",
+      "size": 104108
     },
     {
       "path": "public/styles.css",
@@ -157,13 +157,23 @@
     },
     {
       "path": "server.js",
-      "sha256": "ebce0d872b69f61f5f831ae367abbecf068459643edede79b5778c163118074d",
-      "size": 172850
+      "sha256": "eb3e91fe211d7b50925dcdbd03e7070a7b230fd3a0694dc239ed673108385cdb",
+      "size": 173241
     },
     {
       "path": "modules/login_pause.js",
-      "size": 5976,
-      "sha256": "4c64c2f7dacfa14dd299bb7258432c88ba28011a48d41f766d69ec86275bab7b"
+      "size": 6570,
+      "sha256": "f56c605035ea7f52ab29e92cc59384a4ca1402515ff2d61409fa24da0e98a809"
+    },
+    {
+      "path": "modules/login_operator.js",
+      "size": 3819,
+      "sha256": "dc9de9ca107ab4b7bd78c85a6f3be54b7f7b0f221c7a182fb2d255e3e44d251f"
+    },
+    {
+      "path": "public/login-operator-dialog.js",
+      "size": 2469,
+      "sha256": "70af3c675f3de3613754287de021376ce4285552ea0a7d1fc13d422b65b3c124"
     }
   ]
 }

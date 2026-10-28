@@ -1,7 +1,7 @@
 import { buildStandardName } from "./profile_name.js";
 import { createLoginPause } from "./login_pause.js";
+import { createLoginOperator } from "./login_operator.js";
 import {
-  buildRuntimeProfileName,
   ensureMarketplaceCreatePageReady,
   ensureUsMarketplaceLocation,
   mapFullError,
@@ -33,21 +33,23 @@ function expandSheetUpdate(update) {
   return next;
 }
 
-function createDeferredSheetWriter(sheetSession, profileId) {
-  let pending = null;
+export function createLiveSheetWriter(sheetSession, profileId) {
+  let tail = Promise.resolve();
   return {
-    async update(update) {
-      pending = { ...(pending || {}), ...expandSheetUpdate(update) };
+    update(update) {
+      const work = tail.then(() => {
+        if (sheetSession.rows instanceof Map && !sheetSession.rows.has(profileId)) throw new Error("Khong tim thay dong profile trong Sheet; can nap lai du lieu Sheet.");
+        return sheetSession.updateOne(profileId, expandSheetUpdate(update));
+      });
+      tail = work.catch(() => {});
+      return work;
     },
     async commit(update = null) {
-      const finalUpdate = update ? { ...(pending || {}), ...expandSheetUpdate(update) } : pending;
-      pending = null;
-      if (!finalUpdate) return 0;
-      return sheetSession.updateOne(profileId, finalUpdate);
+      if (update) await this.update(update);
+      await tail;
+      await sheetSession.flushAll();
     },
-    discard() {
-      pending = null;
-    }
+    discard() {}
   };
 }
 
@@ -155,12 +157,19 @@ export function createToolLogin({
   stateProxy,
   runtime
 }) {
-  const pauseControl = createLoginPause(runtime);
+  const pauseControl = createLoginPause(runtime, { onChange: (id, job) => {
+    const live = operator.get(id);
+    if (!live || live.done || job.manualHandled) return;
+    void live.writer.update({ trangThai: job.loginNeedsAttention ? "chờ xử lý" : job.loginPaused ? "tạm dừng" : "đang chạy", chiTiet: job.liveStatus }).catch((error) => { job.sheetWriteError = error.message; });
+  } });
+  const operator = createLoginOperator(runtime, pauseControl);
   function log(profileId, step, message, type = "info", detail = "") {
     addRuntimeLog(`[${profileId}] ${message}`, type, profileId, { tool: "tool login", step, detail });
   }
 
   async function step(profileId, job, name, action, timeoutMs = 0) {
+    let resumedFromError = false;
+    for (;;) {
     if (runtime.stopRequested) {
       const error = new Error("Da nhan lenh dung han.");
       error.status = "stopped";
@@ -172,16 +181,27 @@ export function createToolLogin({
     }
     log(profileId, name, `bat dau: ${name}`);
     try {
+      const live = operator.get(profileId);
+      await live?.writer.update({ Tool: "tool login", trangThai: "đang chạy", chiTiet: name });
       const result = await pauseControl.run(profileId, action, timeoutMs,
-        ["dang nhap Facebook", "kiem tra va doi bang My", "vao man hinh check vach", "check vach"].includes(name));
+        ["dang nhap Facebook", "kiem tra va doi bang My", "vao man hinh check vach", "check vach"].includes(name), resumedFromError);
       log(profileId, name, `xong: ${name}`, "success");
       return result;
     } catch (cause) {
       const error = cause instanceof Error ? cause : new Error(String(cause || "loi khong ro"));
+      if (error.code === "LOGIN_MANUAL_DONE" || (error.status === "stopped" && runtime.stopRequested)) throw error;
       error.step = error.step || name;
       error.message = `Loi o buoc \"${name}\": ${error.message}`;
       log(profileId, name, error.message, "error");
-      throw error;
+      job.loginNeedsAttention = true;
+      job.liveStatus = `Chờ bạn xử lý — ${error.message}`;
+      clearTwofaCountdown(job);
+      pauseControl.setLocal(profileId, true);
+      await operator.get(profileId)?.writer.commit({ trangThai: "chờ xử lý", chiTiet: error.message }).catch((sheetError) => { job.sheetWriteError = sheetError.message; });
+      await pauseControl.gate(profileId);
+      job.loginNeedsAttention = false;
+      resumedFromError = true;
+    }
     }
   }
 
@@ -221,20 +241,49 @@ export function createToolLogin({
     const row = buildToolRow(profileId, sheetRow);
     const uid = profileUid(row, profileId);
     const job = runtime.jobs.get(profileId);
-    const writer = createDeferredSheetWriter(sheetSession, profileId);
+    const writer = createLiveSheetWriter(sheetSession, profileId);
     let browser = null;
     let page = null;
     let proxyLease = null;
     let currentName = String(sheetRow["tên profile hiện tại"] || sheetRow["ten profile hien tai"] || profileId).trim();
-    let originalName = currentName;
     let barStatus = "";
     const location = { initial: "", current: "" };
+    let renameTail = Promise.resolve();
+    const updateProfileName = manager.updateProfileName.bind(manager);
+    manager.updateProfileName = (id, name, ...args) => {
+      const work = renameTail.then(async () => {
+        if (!pauseControl.isCurrent()) throw Object.assign(new Error("Thao tac doi ten cu da bi huy."), { code: "LOGIN_PAUSED" });
+        const result = await updateProfileName(id, name, ...args);
+        let actual;
+        for (let attempt = 0; attempt < 5; attempt++) {
+          actual = await manager.getProfileById(id);
+          if (actual?.name === name) break;
+          if (attempt < 4) await sleep(300);
+        }
+        if (typeof actual?.name !== "string") throw new Error("Khong doc lai duoc ten profile sau khi doi ten.");
+        if (actual.name !== name) throw new Error("GPM/HideMyAcc chua luu dung ten yeu cau.");
+        if (String(id) === String(profileId)) {
+          currentName = actual.name; job.currentName = actual.name;
+          await writer.update({ "tên profile hiện tại": actual.name, tenChuan: actual.name });
+        }
+        return result;
+      });
+      renameTail = work.catch(() => {});
+      return work;
+    };
+    pauseControl.guard(manager, ["updateProfileName"]);
+    operator.register(profileId, { manager, writer, job, renameIdle: () => renameTail });
 
     try {
       job.status = "running";
-      const profileInfo = await step(profileId, job, "kiem tra profile", () => manager.getProfileById(profileId), 30000);
+      const profileInfo = await step(profileId, job, "kiem tra profile", async () => {
+        const profile = await manager.getProfileById(profileId);
+        if (!profile) throw new Error("Khong doc duoc profile tu GPM/HideMyAcc.");
+        return profile;
+      }, 30000);
       currentName = String(profileInfo?.name || currentName).trim();
-      originalName = currentName;
+      job.currentName = currentName;
+      await writer.update({ "tên profile hiện tại": currentName });
       const browserType = String(profileInfo?.browserType || "").toLowerCase();
       const browserSource = String(profileInfo?.browserSource || "").toLowerCase();
       if ((browserType && browserType !== "chrome") || browserSource === "ghosty") {
@@ -259,7 +308,7 @@ export function createToolLogin({
         await applyStableViewport(page, workerSlot, workerTotal);
       }, 120000);
       await pauseControl.attach(page);
-      pauseControl.guard(manager, ["updateProfileName"]);
+      await operator.attach(page, profileId);
 
       await step(profileId, job, "dang nhap Facebook", () => dangNhap.ensureFacebookLogin(manager, page, row, profileId, (status, meta) => {
         if (!pauseControl.isCurrent()) return;
@@ -267,10 +316,15 @@ export function createToolLogin({
           job.liveStatus = status;
           updateTwofaCountdown(job, meta);
         }
+        const stableStatus = String(status || "").replace(/\d+/g, "#");
+        if (job.lastSheetLoginStatus !== stableStatus) {
+          job.lastSheetLoginStatus = stableStatus;
+          void writer.update({ trangThai: "đang chạy", chiTiet: status }).catch((error) => { job.sheetWriteError = error.message; });
+        }
         if (!String(status || "").startsWith("2FA: đang chờ") && !String(status || "").startsWith("2FA: đã chờ")) {
           log(profileId, "dang nhap Facebook", status);
         }
-      }, { forceAccountLogin: true, waitForManualCaptcha: config.loginWaitForManualCaptcha === true,
+      }, { forceAccountLogin: true, holdErrorsForOperator: true, waitForManualCaptcha: config.loginWaitForManualCaptcha === true,
         resumeAfterManualCaptcha: pauseControl.resuming(),
         shouldStop: () => Boolean(runtime.stopRequested) || !pauseControl.isCurrent(),
         isActive: pauseControl.isCurrent }), config.loginWaitForManualCaptcha === true ? 0 : 900000);
@@ -311,47 +365,48 @@ export function createToolLogin({
         tenChuan
       };
       if (location.initial) update.diaChiBanDau = location.initial;
-      await writer.commit(update);
+      await step(profileId, job, "luu ket qua vao Sheet", () => writer.commit(update));
       job.status = "success";
       job.result = update;
       job.liveStatus = `da xong ${barStatus}`;
       return update;
     } catch (error) {
+      if (error.code === "LOGIN_MANUAL_DONE" || job.manualHandled) {
+        job.status = "skipped";
+        job.liveStatus = "Đã xử lý thủ công";
+        return { manualHandled: true };
+      }
       const mapped = mapFullError(page?.__marketplaceAccess?.error || error);
-      if (mapped.status === "stopped") {
+      if (mapped.status === "stopped" && runtime.stopRequested) {
         writer.discard();
-        await rename(manager, profileId, originalName).catch(() => {});
         job.status = "stopped";
         job.liveStatus = "da dung han";
         return { stopped: true };
       }
-      const tenChuan = page?.__marketplaceAccess?.profileName || error?.captchaProfileName || buildStandardName({
-        currentName,
-        sheetRow,
-        uid,
-        soVach: stableBarValue(currentName, sheetRow, barStatus),
-        location: location.current || location.initial
-      });
-      await rename(manager, profileId, buildRuntimeProfileName({ status: mapped.status, tenChuan })).catch(() => {});
       const update = {
         Tool: "tool login",
-        trangThai: ["die cho", "capcha"].includes(mapped.status) ? mapped.status : "loi",
+        trangThai: "chờ xử lý",
         soVach: stableBarValue(currentName, sheetRow, barStatus),
         chiTiet: mapped.detail,
-        tenChuan
+        "tên profile hiện tại": currentName
       };
       if (location.initial) update.diaChiBanDau = location.initial;
-      await writer.commit(update);
-      job.status = "error";
+      await writer.commit(update).catch((sheetError) => { job.sheetWriteError = sheetError.message; });
+      job.loginNeedsAttention = true;
       job.liveStatus = mapped.detail;
       job.result = update;
       log(profileId, error.step || "loi tong", `loi tool login: ${mapped.detail}`, "error");
-      return update;
+      pauseControl.setLocal(profileId, true);
+      while (!job.manualHandled && !runtime.stopRequested) await sleep(100);
+      job.status = job.manualHandled ? "skipped" : "stopped";
+      return job.manualHandled ? { manualHandled: true } : { stopped: true };
     } finally {
+      const closedByOperator = operator.get(profileId)?.closedByOperator;
+      operator.remove(profileId);
       try { if (page && !page.isClosed()) await page.close({ runBeforeUnload: false }); } catch {}
       try { if (browser) await browser.disconnect(); } catch {}
       try { stateProxy?.release?.(proxyLease); } catch {}
-      await manager.stopHideMyAccProfile(profileId).catch(() => {});
+      if (!closedByOperator) await manager.stopHideMyAccProfile(profileId).catch(() => {});
       if (job) job.finishedAt = new Date().toISOString();
     }
   }
@@ -385,12 +440,7 @@ export function createToolLogin({
             const id = nextId();
             if (!id) break;
             const job = runtime.jobs.get(id);
-            const row = sheetSession.rows.get(id);
-            if (!row) {
-              const update = { Tool: "tool login", trangThai: "loi", chiTiet: "Khong tim thay dong du lieu trong Sheet theo id Hide." };
-              if (job) Object.assign(job, { status: "error", liveStatus: update.chiTiet, finishedAt: new Date().toISOString(), result: update });
-              continue;
-            }
+            const row = sheetSession.rows.get(id) || {};
             if (job) job.startedAt = new Date().toISOString();
             const outcome = await runOne(id, row, config, sheetSession, workerSlot, concurrency);
             if (outcome?.continueWithFull && !runtime.stopRequested) {
@@ -427,5 +477,5 @@ export function createToolLogin({
     return { started: ids.length, concurrency };
   }
 
-  return { runQueue, togglePause: pauseControl.toggle };
+  return { runQueue, togglePause: pauseControl.toggle, manualProfile: operator.request };
 }

@@ -1009,7 +1009,7 @@
               <label class="checkbox-label">
                 <input id="loginWaitForManualCaptcha" type="checkbox" /> Chờ người dùng giải CAPTCHA
               </label>
-              <p class="muted">Bật: giữ cửa sổ gặp CAPTCHA, giải xong tự tiếp tục; các luồng khác vẫn chạy. Tắt: xử lý lỗi như hiện tại. Bấm Dừng hẳn để kết thúc chờ.</p>
+              <p class="muted">Bật: giữ cửa sổ gặp CAPTCHA, giải xong tự tiếp tục; các luồng khác vẫn chạy. Tắt: dừng tại lỗi để bạn kiểm tra, bấm Tiếp tục nick hoặc F9 để xử lý. Dừng hẳn sẽ kết thúc chờ.</p>
               <details class="retry-policy">
                 <summary>Lỗi không chạy lại</summary>
                 <span>CP282, CP956, checkpoint, captcha, bị out, hết proxy, lỗi profile browser, login, thiếu cấu hình hoặc dừng thủ công.</span>
@@ -1027,7 +1027,7 @@
 
           <section id="loginToolProgressPanel" class="tool-progress hidden">
             <button id="toggleLoginPause" type="button">Tạm dừng tất cả (F8)</button>
-            <small>F8 trong cửa sổ tool hoặc trang Facebook đang chạy. Tiếp tục tất cả vẫn giữ những profile bạn đã tạm dừng riêng. Áp dụng cho luồng Login, trước khi chuyển sang làm Full.</small>
+            <small>F8: tạm dừng/tiếp tục. F9 trong cửa sổ profile: sửa tên và đóng riêng nick đó. Trong bảng, chọn một dòng rồi bấm F9 hoặc “Sửa tên & đóng”. Lỗi sẽ giữ cửa sổ chờ bạn xử lý. Áp dụng cho Login, trước khi chuyển sang Full.</small>
             <div class="tool-progress-title"><span>Tiến độ Tool Login</span><span id="loginToolProgressState" class="chip">idle</span></div>
             <div class="tool-progress-summary">
               <div class="tool-progress-meta"><strong id="loginToolProgressCount">0 / 0</strong><span id="loginToolProgressText">Chưa có batch đang chạy.</span></div>
@@ -2313,6 +2313,7 @@
         </section>
       </main>
     </div>
+    <script src="/login-operator-dialog.js"></script>
     <script src="/app.js?v=online-update-20260831-1"></script>
   </body>
 </html>

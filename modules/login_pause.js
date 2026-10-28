@@ -4,7 +4,7 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const interrupted = () => Object.assign(new Error("Tool Login tam dung; doc lai trang khi tiep tuc."), { code: "LOGIN_PAUSED" });
 const stopped = () => Object.assign(new Error("Da dung han Tool Login."), { status: "stopped" });
 
-export function createLoginPause(runtime) {
+export function createLoginPause(runtime, { onChange = () => {} } = {}) {
   const context = new AsyncLocalStorage();
   const records = new Map();
   const wrapped = new WeakSet();
@@ -14,6 +14,14 @@ export function createLoginPause(runtime) {
     return records.get(id);
   };
   const paused = (id) => all || record(id).local;
+  const completed = (id) => {
+    if (record(id).finished) throw Object.assign(new Error("Da xu ly thu cong profile."), { code: "LOGIN_MANUAL_DONE" });
+  };
+  function setLocal(id, value) {
+    record(id).local = Boolean(value);
+    publish(id);
+    if (paused(id)) for (const notify of record(id).listeners) notify();
+  }
   function publish(id) {
     const job = runtime.jobs.get(id);
     if (!job) return;
@@ -25,6 +33,7 @@ export function createLoginPause(runtime) {
       if (job.twofaCountdownEndsAt) job.twofaCountdownEndsAt += elapsed;
       job.loginPausedAt = 0;
     }
+    onChange(id, job);
   }
   function toggle(id = "") {
     if (!runtime.running || runtime.currentTool !== "tool login") return { paused: false };
@@ -41,7 +50,9 @@ export function createLoginPause(runtime) {
     return { paused: id ? paused(id) : all };
   }
   async function gate(id) {
+    completed(id);
     while (paused(id)) {
+      completed(id);
       if (runtime.stopRequested) throw stopped();
       await delay(100);
     }
@@ -50,12 +61,13 @@ export function createLoginPause(runtime) {
   function assertCurrent() {
     const token = context.getStore();
     if (!token) return;
+    completed(token.id);
     if (!token.valid) throw interrupted();
     if (runtime.stopRequested) throw stopped();
     if (token.restartable && paused(token.id)) throw interrupted();
   }
-  async function run(id, action, timeoutMs = 0, restartable = false) {
-    let remaining = timeoutMs, resumed = false;
+  async function run(id, action, timeoutMs = 0, restartable = false, initiallyResumed = false) {
+    let remaining = timeoutMs, resumed = initiallyResumed;
     for (;;) {
       await gate(id);
       const token = { id, valid: true, resumed, restartable };
@@ -130,7 +142,8 @@ export function createLoginPause(runtime) {
     guard(page.keyboard, ["type", "press", "down", "up", "sendCharacter"]);
     guard(page.mouse, ["click", "down", "up", "move", "wheel"]);
   }
-  return { toggle, run, gate, attach, guard,
+  return { toggle, run, gate, attach, guard, setLocal,
+    finish: (id) => { record(id).finished = true; for (const notify of record(id).listeners) notify(); },
     resuming: () => context.getStore()?.resumed === true,
     isCurrent: () => context.getStore()?.valid !== false,
     reset: () => { all = false; records.clear(); runtime.loginPaused = false; }

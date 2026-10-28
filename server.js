@@ -2716,6 +2716,7 @@ async function createSheetRowSession(config, profileIds) {
     ["so vach", ["soVach", "số vạch", "so vach"]],
     ["dia chi ban dau", ["diaChiBanDau", "địa chỉ ban đầu", "dia chi ban dau"]],
     ["ten chuan", ["tenChuan", "tên chuẩn", "ten chuan"]],
+    ["ten profile hien tai", ["tên profile hiện tại", "ten profile hien tai", "currentName"]],
     ["so luong page", ["soLuongPage", "số lượng page", "so luong page"]],
     ["bang", ["bang", "proxy"]]
   ]);
@@ -2872,7 +2873,7 @@ async function createSheetRowSession(config, profileIds) {
           waiters.forEach((waiter) => waiter.resolve(true));
           return true;
         } catch (error) {
-          for (const [id, row] of batchRows) this.pending.set(id, row);
+          for (const [id, row] of batchRows) if (!this.pending.has(id)) this.pending.set(id, row);
           const waiters = this.waiters.splice(0);
           waiters.forEach((waiter) => waiter.reject(error));
           throw error;
@@ -3557,6 +3558,10 @@ async function handleApi(req, res) {
         maxRetries: config.fullUnknownRetryCount
       });
       return jsonResponse(res, 200, { ok: true, data });
+    }
+    if (req.method === "POST" && url.pathname === "/api/tools/login/manual-profile") {
+      const body = await parseBody(req);
+      return jsonResponse(res, 200, { ok: true, data: await toolLoginModule.manualProfile(String(body.profileId || ""), body) });
     }
     if (req.method === "POST" && url.pathname === "/api/tools/login/toggle-pause") {
       const body = await parseBody(req);

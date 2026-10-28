@@ -3201,7 +3201,7 @@ function renderToolProgressPanel({
     </div>` : "";
   list.innerHTML = timeColumnHead + orderedJobs.slice(0, 80).map((job) => {
     const rawStatus = String(job.status || "queued").toLowerCase();
-    const displayStatus = job.loginPaused ? "tạm dừng" : job.phaseState === "retry_waiting" || rawStatus === "retry_waiting"
+    const displayStatus = job.manualHandled ? "đã xử lý thủ công" : job.loginNeedsAttention ? "chờ bạn xử lý" : job.loginPaused ? "tạm dừng" : job.phaseState === "retry_waiting" || rawStatus === "retry_waiting"
       ? "chờ chạy lại"
       : job.phaseState === "retry_failed"
         ? "retry vẫn lỗi"
@@ -3218,18 +3218,27 @@ function renderToolProgressPanel({
       ? `<span class="tool-progress-time"${timerEndsAt ? ` data-login-twofa-ends-at="${escapeAttr(String(timerEndsAt))}"` : ""}>${job.loginPaused && job.twofaCountdownEndsAt ? formatLoginTwofaCountdown(Date.now() + Math.max(0, job.twofaCountdownEndsAt - job.loginPausedAt)) : timerEndsAt ? formatLoginTwofaCountdown(timerEndsAt) : ""}</span>`
       : "";
     return `
-    <div class="tool-progress-item${showTimeColumn ? " has-time-column" : ""}">
-      <span>${escapeHtml(job.profileId || "")}</span>
+    <div class="tool-progress-item${showTimeColumn ? " has-time-column" : ""}"${job.tool === "tool login" ? ` data-login-profile-row="${escapeAttr(job.profileId)}" tabindex="0"` : ""}>
+      <span>${escapeHtml(job.profileId || "")}${job.currentName ? `<br><small>${escapeHtml(job.currentName)}</small>` : ""}</span>
       <span class="job-status ${escapeAttr(rawStatus)}">${escapeHtml(displayStatus)}</span>
       ${timeCell}
       <span>${escapeHtml(`${phaseText}: ${job.liveStatus || ""}`)}
-      ${job.tool === "tool login" && ["running", "queued"].includes(rawStatus) && job.loginPauseSupported !== false ? `<button type="button" data-login-pause-id="${escapeAttr(job.profileId)}">${job.loginLocalPaused ? "Tiếp tục nick" : "Tạm dừng nick"}</button>` : ""}</span>
+      ${job.tool === "tool login" && ["running", "queued"].includes(rawStatus) && job.loginPauseSupported !== false ? `<button type="button" data-login-pause-id="${escapeAttr(job.profileId)}">${job.loginLocalPaused ? "Tiếp tục nick" : "Tạm dừng nick"}</button>${rawStatus === "running" ? `<button type="button" data-login-manual-id="${escapeAttr(job.profileId)}">Sửa tên & đóng (F9)</button>` : ""}` : ""}</span>
     </div>
   `; }).join("");
   if (showTimeColumn) refreshLoginTwofaCountdowns();
 }
 
 let loginPauseRequestPending = false;
+let selectedLoginProfile = "";
+function openLoginManualProfile(profileId) {
+  if (!profileId) { $("loginStatusText").textContent = "Hãy chọn một dòng profile đang chạy trước khi bấm F9."; return; }
+  window.openLoginOperatorDialog(async (input) => {
+    const { data } = await api("/api/tools/login/manual-profile", { method: "POST", body: JSON.stringify({ ...input, profileId }) });
+    await refreshToolStatus();
+    return data;
+  });
+}
 async function toggleLoginPause(profileId = "") {
   if (loginPauseRequestPending) return;
   loginPauseRequestPending = true;
@@ -3241,10 +3250,20 @@ async function toggleLoginPause(profileId = "") {
 }
 $("toggleLoginPause")?.addEventListener("click", () => toggleLoginPause());
 document.addEventListener("click", (event) => {
+  const row = event.target.closest?.("[data-login-profile-row]");
+  if (row) selectedLoginProfile = row.dataset.loginProfileRow;
+  const manual = event.target.closest?.("[data-login-manual-id]");
+  if (manual) openLoginManualProfile(manual.dataset.loginManualId);
   const button = event.target.closest?.("[data-login-pause-id]");
   if (button) void toggleLoginPause(button.dataset.loginPauseId);
 });
 document.addEventListener("keydown", (event) => {
+  if (event.code === "F9" && !event.repeat && !$("toggleLoginPause")?.disabled) {
+    event.preventDefault();
+    const row = event.target.closest?.("[data-login-profile-row]");
+    openLoginManualProfile(row?.dataset.loginProfileRow || selectedLoginProfile);
+    return;
+  }
   if (event.code !== "F8" || event.repeat || $("toggleLoginPause")?.disabled) return;
   event.preventDefault();
   void toggleLoginPause();
