@@ -7,12 +7,20 @@ test("session reads fresh Sheet and writes only changed cells, preserving extern
   const source = await readFile(new URL("../server.js", import.meta.url), "utf8");
   const start = source.indexOf("async function createSheetRowSession(");
   const end = source.indexOf("\nasync function ", start + 1);
-  const headers = ["id hide", "password", "bang", "status", "name"];
+  const headers = [" ID GPM ", "password", "bang", "status", "name"];
   const remote = ["p1", "new password entered directly in Sheet", "Texas", "old", "old name"];
   let fresh = false;
+  const normalizeProfileIdText = (value) => String(value || "").replace(/[\s\u200b-\u200d\ufeff]+/g, "");
+  const normalizeHeaderName = (value) => String(value).trim().toLowerCase();
+  const helperStart = source.indexOf("function sheetProfileId(");
+  const sheetProfileId = vm.runInNewContext(`(${source.slice(helperStart, start)})`, { normalizeProfileIdText, normalizeHeaderName });
+  assert.equal(sheetProfileId({ " ID GPM ": " p\u200b1 " }), "p1");
+  assert.equal(sheetProfileId({ "id hide": "", "ID GPM": "p1" }), "p1");
+  assert.equal(sheetProfileId({ "id hide": "p1", "ID GPM": "p2" }), "");
   const context = {
+    normalizeProfileIdText, sheetProfileId,
     readManagedSheetData: async (_, options) => { fresh = options.forceRefresh; return { client: {}, headers,
-      data: new Map([["Profiles", { headers, rows: [{ "id hide": "p1", password: "stale", bang: "California", status: "old", name: "old name" }] }]]) }; },
+      data: new Map([["Profiles", { headers, rows: [{ " ID GPM ": " p\u200b1 ", password: "stale", bang: "California", status: "old", name: "old name" }] }]]) }; },
     ensureRequiredHeadersForSession: async () => {}, DEFAULT_CONFIG: { headers },
     normalizeHeaderName: (value) => value, preserveStableSheetFields() {},
     objectToRow: (cols, row) => cols.map((key) => row[key] ?? ""),

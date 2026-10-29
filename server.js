@@ -2147,7 +2147,7 @@ async function ensureRequiredHeadersForSession(client, data, requiredHeaders, to
   const wantedTitles = new Set([...touchedTitles].filter(Boolean));
   for (const [title, sheet] of data) {
     if (!wantedTitles.has(title)) continue;
-    const currentHeaders = [...(sheet.headers || [])].filter(Boolean);
+    const currentHeaders = [...(sheet.headers || [])];
     const normalized = new Set(currentHeaders.map((header) => normalizeHeaderName(header)));
     const missing = [];
     for (const header of requiredHeaders || []) {
@@ -2714,9 +2714,18 @@ async function getRowsByProfileIds(config, profileIds, options = {}) {
   return rows;
 }
 
+function sheetProfileId(row) {
+  const keys = new Set(["id hide", "id gpm", "profile id", "id profile"]);
+  const ids = Object.entries(row || {})
+    .filter(([key]) => keys.has(normalizeHeaderName(key)))
+    .map(([, value]) => normalizeProfileIdText(value)).filter(Boolean);
+  return new Set(ids).size === 1 ? ids[0] : "";
+}
+
 async function createSheetRowSession(config, profileIds) {
   const { client, data, headers } = await readManagedSheetData(config, { forceRefresh: true, source: "tool-start" });
-  const wanted = new Set(profileIds.map((id) => String(id || "").trim()).filter(Boolean));
+  const requestedIds = new Map(profileIds.map((id) => [normalizeProfileIdText(id), String(id || "").trim()]).filter(([id]) => id));
+  const wanted = new Set(requestedIds.keys());
   const rows = new Map();
   const canonicalFieldMap = new Map([
     ["trang thai", ["trangThai", "trạng thái", "trang thai"]],
@@ -2731,15 +2740,17 @@ async function createSheetRowSession(config, profileIds) {
 
   const touchedTitles = new Set();
   for (const [sheetTitle, sheet] of data) {
-    if ((sheet.rows || []).some((row) => wanted.has(String(row["id hide"] || "").trim()))) touchedTitles.add(sheetTitle);
+    if ((sheet.rows || []).some((row) => wanted.has(sheetProfileId(row)))) touchedTitles.add(sheetTitle);
   }
   await ensureRequiredHeadersForSession(client, data, config.headers || DEFAULT_CONFIG.headers, touchedTitles);
 
   for (const [sheetTitle, sheet] of data) {
     sheet.rows.forEach((row, index) => {
-      const id = String(row["id hide"] || "").trim();
+      const id = sheetProfileId(row);
       if (!wanted.has(id)) return;
-      rows.set(id, {
+      const requestedId = requestedIds.get(id);
+      if (rows.has(requestedId)) throw new Error(`Profile ${requestedId} co nhieu dong trong Spreadsheet ${config.spreadsheetId}; can xu ly dong trung truoc khi ghi.`);
+      rows.set(requestedId, {
         ...row,
         _sheetTitle: sheetTitle,
         _rowNumber: index + 2,
@@ -2789,6 +2800,12 @@ async function createSheetRowSession(config, profileIds) {
         for (const key of keys) delete normalizedUpdate[key];
       }
       const next = { ...current, ...normalizedUpdate };
+      // Apply spelling/case variants to the actual existing column as well.
+      for (const header of current._headers || headers) {
+        if (!header) continue;
+        const entry = Object.entries(normalizedUpdate).find(([key]) => normalizeHeaderName(key) === normalizeHeaderName(header));
+        if (entry && entry[1] !== undefined && entry[1] !== null) next[header] = entry[1];
+      }
       for (const [normalizedField, aliases] of canonicalFieldMap.entries()) {
         const incoming = aliases
           .map((key) => normalizedUpdate[key])

@@ -102,9 +102,9 @@ export function createDienMatKhau({
         if (!row) {
           skipped += 1;
           processed += 1;
-          job.status = "done";
+          job.status = "error";
           job.liveStatus = `khong tim thay dong sheet (${processed}/${ids.length})`;
-          log(profileId, "tim dong sheet", "khong tim thay dong sheet de cap nhat", "warn");
+          log(profileId, "tim dong sheet", `khong tim thay dong profile ${profileId} trong Spreadsheet ${config.spreadsheetId}; kiem tra cot ID profile va Sheet dang gan cho tai khoan`, "error");
           continue;
         }
 
@@ -148,10 +148,7 @@ export function createDienMatKhau({
         if (!hasValue(current2fa) && hasValue(found.twofa)) update["2fa"] = found.twofa;
         if (!hasValue(currentCookie) && hasValue(found.cookie)) update.cookie = found.cookie;
 
-        const current = sheetSession.rows.get(profileId);
-        const next = { ...current, ...update };
-        sheetSession.rows.set(profileId, next);
-        sheetSession.pending.set(profileId, next);
+        await sheetSession.updateOne(profileId, update);
         updated += 1;
         processed += 1;
         job.status = "done";
