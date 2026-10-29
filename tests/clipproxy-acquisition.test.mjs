@@ -306,3 +306,15 @@ test("California -> New York -> California preserves both state pools, including
   assert.equal((await forState(restarted, "California", "ca3")).slotId, california.slotId);
   assert.equal((await forState(restarted, "New York", "ny2")).slotId, newYork.slotId);
 });
+
+test("F10 acquisition excludes the previous proxy while retaining it for other profiles", async (t) => {
+  const { tool, requests } = await fixture(t, [slot(443), slot(444)]);
+  const first = await acquire(tool, "p1");
+  tool.release(first);
+  const second = await tool.ensureForProfile({ config, profileId: "p1", row: { raw: { bang: "New York" } }, previousLease: first });
+  assert.notEqual(second.raw, first.raw);
+  assert.notEqual(second.slotId, first.slotId);
+  assert.equal(requests.length, 0);
+  const another = await acquire(tool, "p2");
+  assert.equal(another.raw, first.raw);
+});

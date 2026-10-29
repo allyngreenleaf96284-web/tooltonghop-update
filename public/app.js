@@ -3223,7 +3223,7 @@ function renderToolProgressPanel({
       <span class="job-status ${escapeAttr(rawStatus)}">${escapeHtml(displayStatus)}</span>
       ${timeCell}
       <span>${escapeHtml(`${phaseText}: ${job.liveStatus || ""}`)}
-      ${job.tool === "tool login" && ["running", "queued"].includes(rawStatus) && job.loginPauseSupported !== false ? `<button type="button" data-login-pause-id="${escapeAttr(job.profileId)}">${job.loginLocalPaused ? "Tiếp tục nick" : "Tạm dừng nick"}</button>${job.loginNeedsAttention ? `<button type="button" data-login-retry-id="${escapeAttr(job.profileId)}">Chạy lại</button>` : ""}${rawStatus === "running" ? `<button type="button" data-login-manual-id="${escapeAttr(job.profileId)}">Sửa tên & đóng (F9)</button>` : ""}` : ""}</span>
+      ${job.tool === "tool login" && ["running", "queued"].includes(rawStatus) && job.loginPauseSupported !== false ? `<button type="button" data-login-pause-id="${escapeAttr(job.profileId)}">${job.loginLocalPaused ? "Tiếp tục nick" : "Tạm dừng nick"}</button>${rawStatus === "running" ? `<button type="button" data-login-retry-id="${escapeAttr(job.profileId)}">Chạy lại (F10)</button>` : ""}${rawStatus === "running" ? `<button type="button" data-login-manual-id="${escapeAttr(job.profileId)}">Sửa tên & đóng (F9)</button>` : ""}` : ""}</span>
     </div>
   `; }).join("");
   if (showTimeColumn) refreshLoginTwofaCountdowns();
@@ -3231,6 +3231,18 @@ function renderToolProgressPanel({
 
 let loginPauseRequestPending = false;
 let selectedLoginProfile = "";
+const loginRetryPending = new Set();
+async function retryLoginProfile(profileId) {
+  if (!profileId) { $("loginStatusText").textContent = "Chọn dòng nick cần chạy lại rồi bấm F10."; return; }
+  if (loginRetryPending.has(profileId)) return;
+  loginRetryPending.add(profileId);
+  try {
+    await api("/api/tools/login/retry-profile", { method: "POST", body: JSON.stringify({ profileId }) });
+    await refreshToolStatus();
+  } catch (error) { $("loginStatusText").textContent = error.message; }
+  finally { loginRetryPending.delete(profileId); }
+}
+
 function openLoginManualProfile(profileId) {
   if (!profileId) { $("loginStatusText").textContent = "Hãy chọn một dòng profile đang chạy trước khi bấm F9."; return; }
   window.openLoginOperatorDialog(async (input) => {
@@ -3253,19 +3265,19 @@ document.addEventListener("click", (event) => {
   const row = event.target.closest?.("[data-login-profile-row]");
   if (row) selectedLoginProfile = row.dataset.loginProfileRow;
   const retry = event.target.closest?.("[data-login-retry-id]");
-  if (retry && !retry.disabled) {
-    retry.disabled = true;
-    api("/api/tools/login/retry-profile", { method: "POST", body: JSON.stringify({ profileId: retry.dataset.loginRetryId }) })
-      .then(() => refreshToolStatus())
-      .catch((error) => { $("loginStatusText").textContent = error.message; })
-      .finally(() => { retry.disabled = false; });
-  }
+  if (retry) void retryLoginProfile(retry.dataset.loginRetryId);
   const manual = event.target.closest?.("[data-login-manual-id]");
   if (manual) openLoginManualProfile(manual.dataset.loginManualId);
   const button = event.target.closest?.("[data-login-pause-id]");
   if (button) void toggleLoginPause(button.dataset.loginPauseId);
 });
 document.addEventListener("keydown", (event) => {
+  if (event.code === "F10" && !event.repeat && !$("toggleLoginPause")?.disabled) {
+    event.preventDefault();
+    const row = event.target.closest?.("[data-login-profile-row]");
+    void retryLoginProfile(row?.dataset.loginProfileRow || selectedLoginProfile);
+    return;
+  }
   if (event.code === "F9" && !event.repeat && !$("toggleLoginPause")?.disabled) {
     event.preventDefault();
     const row = event.target.closest?.("[data-login-profile-row]");

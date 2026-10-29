@@ -10,6 +10,7 @@ export function createLoginOperator(runtime, pauseControl) {
   async function performRequest(id, input) {
     const state = profiles.get(id);
     if (!state || state.done || state.job.status !== "running") throw new Error("Profile nay khong con trong luong Tool Login.");
+    if (state.job.loginRetryRequested) throw new Error("Profile dang khoi dong lai bang F10.");
     pauseControl.setLocal(id, true);
     if (input.action === "open") {
       if (state.saving) throw new Error("Dang luu profile nay.");

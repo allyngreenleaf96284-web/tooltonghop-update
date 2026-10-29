@@ -15,6 +15,7 @@ export function createLoginPause(runtime, { onChange = () => {} } = {}) {
   };
   const paused = (id) => all || record(id).local;
   const completed = (id) => {
+    if (record(id).retry) throw Object.assign(new Error("Khoi dong lai profile bang F10."), { code: "LOGIN_RETRY" });
     if (record(id).finished) throw Object.assign(new Error("Da xu ly thu cong profile."), { code: "LOGIN_MANUAL_DONE" });
   };
   function setLocal(id, value) {
@@ -77,7 +78,7 @@ export function createLoginPause(runtime, { onChange = () => {} } = {}) {
         const work = context.run(token, action);
         const races = [work];
         if (restartable) races.push(new Promise((_, reject) => {
-          notify = () => { token.valid = false; reject(interrupted()); };
+          notify = () => { token.valid = false; try { completed(id); reject(interrupted()); } catch (error) { reject(error); } };
           record(id).listeners.add(notify);
         }));
         if (remaining > 0) races.push(new Promise((_, reject) => {
@@ -143,6 +144,8 @@ export function createLoginPause(runtime, { onChange = () => {} } = {}) {
     guard(page.mouse, ["click", "down", "up", "move", "wheel"]);
   }
   return { toggle, run, gate, attach, guard, setLocal,
+    requestRetry: (id) => { record(id).retry = true; for (const notify of record(id).listeners) notify(); },
+    resetProfile: (id) => { records.delete(id); publish(id); },
     // Browser bindings may inherit the expired context that opened the browser.
     // Human commands must not reuse that automation token. This does not resume
     // the worker or disable guards on its stale operations.

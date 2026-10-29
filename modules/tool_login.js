@@ -163,6 +163,7 @@ export function createToolLogin({
     void live.writer.update({ trangThai: job.loginNeedsAttention ? "chờ xử lý" : job.loginPaused ? "tạm dừng" : "đang chạy", chiTiet: job.liveStatus }).catch((error) => { job.sheetWriteError = error.message; });
   } });
   const operator = createLoginOperator(runtime, pauseControl);
+  const restartLeases = new Map();
   function log(profileId, step, message, type = "info", detail = "") {
     addRuntimeLog(`[${profileId}] ${message}`, type, profileId, { tool: "tool login", step, detail });
   }
@@ -189,7 +190,7 @@ export function createToolLogin({
       return result;
     } catch (cause) {
       const error = cause instanceof Error ? cause : new Error(String(cause || "loi khong ro"));
-      if (error.code === "LOGIN_MANUAL_DONE" || (error.status === "stopped" && runtime.stopRequested)) throw error;
+      if (error.code === "LOGIN_RETRY" || error.code === "LOGIN_MANUAL_DONE" || (error.status === "stopped" && runtime.stopRequested)) throw error;
       error.step = error.step || name;
       error.message = `Loi o buoc \"${name}\": ${error.message}`;
       log(profileId, name, error.message, "error");
@@ -272,7 +273,7 @@ export function createToolLogin({
       return work;
     };
     pauseControl.guard(manager, ["updateProfileName"]);
-    operator.register(profileId, { manager, writer, job, renameIdle: () => renameTail });
+    operator.register(profileId, { manager, writer, job, proxyEnabled: config.stateProxyEnabled !== false, renameIdle: () => renameTail });
 
     try {
       job.status = "running";
@@ -293,12 +294,13 @@ export function createToolLogin({
       }
 
       await writer.update({ Tool: "tool login", trangThai: "", chiTiet: "dang dang nhap va check vach" });
-      proxyLease = await step(profileId, job, "gan proxy bang", () => stateProxy?.ensureForProfile?.({
+      proxyLease = await step(profileId, job, "gan proxy bang", async () => (proxyLease = await stateProxy?.ensureForProfile?.({
         config,
         profileId,
         row,
+        previousLease: restartLeases.get(profileId),
         log: (stepName, message, type = "info") => log(profileId, stepName, message, type)
-      }), 0);
+      })), 0);
 
       await step(profileId, job, "mo profile", async () => {
         browser = await manager.connectBrowser(profileId);
@@ -309,6 +311,18 @@ export function createToolLogin({
       }, 120000);
       await pauseControl.attach(page);
       await operator.attach(page, profileId);
+      await page.exposeFunction("__toolLoginRetry", () => pauseControl.runManual(() => retryProfile(profileId)));
+      const installRetry = () => {
+        if (window.__toolLoginF10Installed) return;
+        window.__toolLoginF10Installed = true;
+        addEventListener("keydown", (event) => {
+          if (event.code !== "F10" || event.repeat) return;
+          event.preventDefault(); event.stopImmediatePropagation();
+          window.__toolLoginRetry().catch((error) => alert(error.message));
+        }, true);
+      };
+      await page.evaluateOnNewDocument(installRetry);
+      await page.evaluate(installRetry);
 
       await step(profileId, job, "dang nhap Facebook", () => dangNhap.ensureFacebookLogin(manager, page, row, profileId, (status, meta) => {
         if (!pauseControl.isCurrent()) return;
@@ -371,6 +385,10 @@ export function createToolLogin({
       job.liveStatus = `da xong ${barStatus}`;
       return update;
     } catch (error) {
+      if (error.code === "LOGIN_RETRY" || job.loginRetryRequested) {
+        restartLeases.set(profileId, proxyLease || restartLeases.get(profileId));
+        return { retryCurrent: true };
+      }
       if (error.code === "LOGIN_MANUAL_DONE" || job.manualHandled) {
         job.status = "skipped";
         job.liveStatus = "Đã xử lý thủ công";
@@ -401,8 +419,7 @@ export function createToolLogin({
       while (!job.manualHandled && !runtime.stopRequested && !job.loginRetryRequested) await sleep(100);
       job.loginOuterError = false;
       if (job.loginRetryRequested && !runtime.stopRequested) {
-        job.loginRetryRequested = false;
-        job.loginNeedsAttention = false;
+        restartLeases.set(profileId, proxyLease || restartLeases.get(profileId));
         return { retryCurrent: true };
       }
       job.status = job.manualHandled ? "skipped" : "stopped";
@@ -412,8 +429,20 @@ export function createToolLogin({
       operator.remove(profileId);
       try { if (page && !page.isClosed()) await page.close({ runBeforeUnload: false }); } catch {}
       try { if (browser) await browser.disconnect(); } catch {}
+      if (!closedByOperator) {
+        for (;;) {
+          try {
+            const closed = await manager.stopHideMyAccProfile(profileId);
+            if (closed === false || closed?.success === false) throw new Error("GPM chua dong duoc profile.");
+            break;
+          } catch (error) {
+            if (!job.loginRetryRequested || runtime.stopRequested) break;
+            job.liveStatus = `F10: chờ đóng profile cũ — ${error.message}`;
+            await sleep(1000);
+          }
+        }
+      }
       try { stateProxy?.release?.(proxyLease); } catch {}
-      if (!closedByOperator) await manager.stopHideMyAccProfile(profileId).catch(() => {});
       if (job) job.finishedAt = new Date().toISOString();
     }
   }
@@ -430,6 +459,7 @@ export function createToolLogin({
     }
     const sheetSession = await createSheetRowSession(config, ids);
     pauseControl.reset();
+    restartLeases.clear();
     const concurrency = Math.min(clampConcurrency(config.loginConcurrency, 4), ids.length);
     for (const id of ids) {
       runtime.jobs.set(id, { profileId: id, tool: "tool login", status: "queued", liveStatus: `dang cho ${concurrency} luong`, logs: [], startedAt: "", finishedAt: "", result: null, sheetWriteError: "" });
@@ -451,6 +481,12 @@ export function createToolLogin({
             if (job) job.startedAt = new Date().toISOString();
             let outcome;
             do {
+              if (outcome?.retryCurrent) {
+                pauseControl.resetProfile(id);
+                job.loginRetryRequested = false;
+                job.loginNeedsAttention = false;
+                clearTwofaCountdown(job);
+              }
               job.finishedAt = "";
               outcome = await runOne(id, sheetSession.rows.get(id) || row, config, sheetSession, workerSlot, concurrency);
             } while (outcome?.retryCurrent && !runtime.stopRequested);
@@ -491,14 +527,15 @@ export function createToolLogin({
   function retryProfile(profileId) {
     const job = runtime.jobs.get(profileId);
     if (!runtime.running || runtime.stopRequested || job?.tool !== "tool login" ||
-        job.status !== "running" || !job.loginNeedsAttention || job.manualHandled || job.loginPauseSupported === false) {
-      throw new Error("Chi chay lai profile Login dang cho xu ly loi.");
+        job.status !== "running" || job.manualHandled || job.loginPauseSupported === false) {
+      throw new Error("Profile khong dang o luong Tool Login.");
     }
+    if (operator.get(profileId)?.proxyEnabled === false) throw new Error("Can bat Proxy theo bang de F10 doi proxy va chay lai.");
     if (job.loginRetryRequested) return { retrying: true };
-    if (job.loginOuterError) job.loginRetryRequested = true;
-    job.loginNeedsAttention = false;
-    job.liveStatus = "Đang chạy lại bước lỗi";
-    pauseControl.setLocal(profileId, false);
+    if (operator.get(profileId)?.saving) throw new Error("Dang luu ten F9; hay doi luu xong.");
+    job.loginRetryRequested = true;
+    job.liveStatus = "F10: đóng nick, đổi proxy và chạy lại từ đầu";
+    pauseControl.requestRetry(profileId);
     return { retrying: true };
   }
 

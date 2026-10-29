@@ -82,3 +82,22 @@ test("F8 toggles all workers in a profile page and survives navigation", async (
     assert.equal(runtime.loginPaused, false);
   } finally { await browser.close(); }
 });
+
+test("F10 interrupts an active browser step and keeps its stale commands blocked after reset", async () => {
+  const runtime = { running: true, currentTool: "tool login", jobs: new Map([["a", { tool: "tool login", status: "running" }]]) };
+  const control = createLoginPause(runtime);
+  let release, entered, clicks = 0;
+  const ready = new Promise((resolve) => { entered = resolve; });
+  const gate = new Promise((resolve) => { release = resolve; });
+  const page = control.guard({ async click() { clicks++; } }, ["click"]);
+  const work = control.run("a", async () => { entered(); await gate; await page.click(); }, 0, true);
+  await ready;
+  control.requestRetry("a");
+  await assert.rejects(work, (error) => error.code === "LOGIN_RETRY");
+  control.resetProfile("a");
+  release();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(clicks, 0);
+  await control.run("a", () => page.click(), 0, true);
+  assert.equal(clicks, 1);
+});

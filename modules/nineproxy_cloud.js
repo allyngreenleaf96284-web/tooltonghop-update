@@ -315,7 +315,7 @@ export function createNineCloudTool({ hideRequest, addRuntimeLog = () => {}, fet
     return { checked: current.proxies.length, checkedAttempts: current.proxies.length, errors, status: current };
   }
 
-  async function ensureForProfile({ config = {}, profileId, row = {}, log } = {}) {
+  async function ensureForProfile({ config = {}, profileId, row = {}, log, previousLease } = {}) {
     if (!config.stateProxyEnabled || config.stateProxyProvider !== "nineproxy") return null;
     const safe = normalizeNineCloudConfig(config);
     const state = stateCodes.get(nineCloudStateCode(rowState(row)));
@@ -324,10 +324,10 @@ export function createNineCloudTool({ hideRequest, addRuntimeLog = () => {}, fet
     const slot = await withStateLock(state, async () => {
       const existing = slotsFor(state);
       let items = existing.length ? existing : await requestState(safe, state);
-      let candidate = items.filter((item) => isAssignable(safe, item)).sort((a, b) => Number(a.usageCount || 0) - Number(b.usageCount || 0) || Number(a.pingMs || Infinity) - Number(b.pingMs || Infinity))[0];
+      let candidate = items.filter((item) => item.id !== previousLease?.slotId && isAssignable(safe, item)).sort((a, b) => Number(a.usageCount || 0) - Number(b.usageCount || 0) || Number(a.pingMs || Infinity) - Number(b.pingMs || Infinity))[0];
       if (!candidate && items.length && items.every((item) => !item.inUse && (item.alive === false || isExpired(safe, item) || isUsageExhausted(safe, item) || isCooling(item)))) {
         items = await requestState(safe, state);
-        candidate = items.find((item) => !item.inUse && item.alive !== false);
+        candidate = items.find((item) => item.id !== previousLease?.slotId && !item.inUse && item.alive !== false);
       }
       if (!candidate) {
         const failed = items.find((item) => !item.inUse && item.lastError);
