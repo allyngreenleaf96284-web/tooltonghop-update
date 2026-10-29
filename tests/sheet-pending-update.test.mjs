@@ -14,12 +14,14 @@ test("failed Sheet flush preserves a newer name queued while the old request was
   });
   let rejectWrite, started;
   const entered = new Promise((resolve) => { started = resolve; });
-  const session = { pending: new Map([["p1", { name: "old", _sheetTitle: "Profiles", _rowNumber: 2 }]]), waiters: [],
+  const session = { pending: new Map([["p1", { name: "old", _dirtyCells: { 3: "old status", 4: "old" }, _sheetTitle: "Profiles", _rowNumber: 2 }]]), waiters: [],
     writeBatchWithRetry: () => { started(); return new Promise((resolve, reject) => { rejectWrite = reject; }); } };
   const work = method.call(session);
   await entered;
-  session.pending.set("p1", { name: "operator name", _sheetTitle: "Profiles", _rowNumber: 2 });
+  session.pending.set("p1", { name: "operator name", _dirtyCells: { 4: "operator name" }, _sheetTitle: "Profiles", _rowNumber: 2 });
   rejectWrite(Error("network failed"));
   await assert.rejects(work, /network failed/);
   assert.equal(session.pending.get("p1").name, "operator name");
+  assert.equal(session.pending.get("p1")._dirtyCells[3], "old status");
+  assert.equal(session.pending.get("p1")._dirtyCells[4], "operator name");
 });

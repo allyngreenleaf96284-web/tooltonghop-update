@@ -3223,7 +3223,7 @@ function renderToolProgressPanel({
       <span class="job-status ${escapeAttr(rawStatus)}">${escapeHtml(displayStatus)}</span>
       ${timeCell}
       <span>${escapeHtml(`${phaseText}: ${job.liveStatus || ""}`)}
-      ${job.tool === "tool login" && ["running", "queued"].includes(rawStatus) && job.loginPauseSupported !== false ? `<button type="button" data-login-pause-id="${escapeAttr(job.profileId)}">${job.loginLocalPaused ? "Tiếp tục nick" : "Tạm dừng nick"}</button>${rawStatus === "running" ? `<button type="button" data-login-manual-id="${escapeAttr(job.profileId)}">Sửa tên & đóng (F9)</button>` : ""}` : ""}</span>
+      ${job.tool === "tool login" && ["running", "queued"].includes(rawStatus) && job.loginPauseSupported !== false ? `<button type="button" data-login-pause-id="${escapeAttr(job.profileId)}">${job.loginLocalPaused ? "Tiếp tục nick" : "Tạm dừng nick"}</button>${job.loginNeedsAttention ? `<button type="button" data-login-retry-id="${escapeAttr(job.profileId)}">Chạy lại</button>` : ""}${rawStatus === "running" ? `<button type="button" data-login-manual-id="${escapeAttr(job.profileId)}">Sửa tên & đóng (F9)</button>` : ""}` : ""}</span>
     </div>
   `; }).join("");
   if (showTimeColumn) refreshLoginTwofaCountdowns();
@@ -3252,6 +3252,14 @@ $("toggleLoginPause")?.addEventListener("click", () => toggleLoginPause());
 document.addEventListener("click", (event) => {
   const row = event.target.closest?.("[data-login-profile-row]");
   if (row) selectedLoginProfile = row.dataset.loginProfileRow;
+  const retry = event.target.closest?.("[data-login-retry-id]");
+  if (retry && !retry.disabled) {
+    retry.disabled = true;
+    api("/api/tools/login/retry-profile", { method: "POST", body: JSON.stringify({ profileId: retry.dataset.loginRetryId }) })
+      .then(() => refreshToolStatus())
+      .catch((error) => { $("loginStatusText").textContent = error.message; })
+      .finally(() => { retry.disabled = false; });
+  }
   const manual = event.target.closest?.("[data-login-manual-id]");
   if (manual) openLoginManualProfile(manual.dataset.loginManualId);
   const button = event.target.closest?.("[data-login-pause-id]");

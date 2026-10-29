@@ -889,6 +889,14 @@ function patchProfileManager(manager, toolName = "he thong") {
     if (actualName && actualName !== nextName) {
       throw new Error(`${providerDisplayName(config)} chua doi ten profile. expected=${nextName}, actual=${actualName}`);
     }
+    // Update the latest matching session, never an old session from another account.
+    const sheetConfig = toolRuntime.running ? await resolveAccountSheetConfig(config) : config;
+    const session = toolRuntime.running && [...(toolRuntime.sheetSessions || [])].reverse().find((item) =>
+      item.spreadsheetId === sheetConfig.spreadsheetId && item.rows.has(String(profileId)));
+    if (session) {
+      await session.updateOne(profileId, { "tên profile hiện tại": actualName || nextName });
+      await session.flushAll();
+    }
     return true;
   };
 
@@ -2707,7 +2715,7 @@ async function getRowsByProfileIds(config, profileIds, options = {}) {
 }
 
 async function createSheetRowSession(config, profileIds) {
-  const { client, data, headers } = await readManagedSheetData(config);
+  const { client, data, headers } = await readManagedSheetData(config, { forceRefresh: true, source: "tool-start" });
   const wanted = new Set(profileIds.map((id) => String(id || "").trim()).filter(Boolean));
   const rows = new Map();
   const canonicalFieldMap = new Map([
@@ -2741,6 +2749,7 @@ async function createSheetRowSession(config, profileIds) {
   }
 
   const session = {
+    spreadsheetId: config.spreadsheetId,
     rows,
     pending: new Map(),
     flushTimer: null,
@@ -2799,7 +2808,12 @@ async function createSheetRowSession(config, profileIds) {
         return 0;
       }
       rows.set(String(profileId || "").trim(), next);
-      this.pending.set(String(profileId || "").trim(), next);
+      const id = String(profileId || "").trim();
+      const cells = { ...(this.pending.get(id)?._dirtyCells || {}) };
+      nextValues.forEach((value, index) => {
+        if (String(value ?? "") !== String(currentValues[index] ?? "")) cells[index] = value;
+      });
+      this.pending.set(id, { ...next, _dirtyCells: cells });
       this.flushSoon();
       return 1;
     },
@@ -2859,11 +2873,13 @@ async function createSheetRowSession(config, profileIds) {
       this.flushing = (async () => {
         const batchRows = [...this.pending.entries()];
         this.pending.clear();
-        const data = batchRows.map(([, row]) => {
-          const range = `'${row._sheetTitle.replace(/'/g, "''")}'!A${row._rowNumber}`;
-          const rowHeaders = Array.isArray(row._headers) && row._headers.length ? row._headers : headers;
-          return { range, values: [objectToRow(rowHeaders, row)] };
-        });
+        // Write only changed cells; a cached row must never overwrite credentials
+        // or location edited in Sheets while the worker was running.
+        const data = batchRows.flatMap(([, row]) => Object.entries(row._dirtyCells || {}).map(([index, value]) => {
+          let n = Number(index) + 1, column = "";
+          while (n > 0) { n--; column = String.fromCharCode(65 + n % 26) + column; n = Math.floor(n / 26); }
+          return { range: `'${row._sheetTitle.replace(/'/g, "''")}'!${column}${row._rowNumber}`, values: [[value]] };
+        }));
         try {
           const token = await getGoogleAccessToken(config.credentialsPath);
           const client = new SheetsClient(config, token);
@@ -2873,7 +2889,10 @@ async function createSheetRowSession(config, profileIds) {
           waiters.forEach((waiter) => waiter.resolve(true));
           return true;
         } catch (error) {
-          for (const [id, row] of batchRows) if (!this.pending.has(id)) this.pending.set(id, row);
+          for (const [id, row] of batchRows) {
+            const newer = this.pending.get(id);
+            this.pending.set(id, newer ? { ...newer, _dirtyCells: { ...row._dirtyCells, ...newer._dirtyCells } } : row);
+          }
           const waiters = this.waiters.splice(0);
           waiters.forEach((waiter) => waiter.reject(error));
           throw error;
@@ -3562,6 +3581,10 @@ async function handleApi(req, res) {
     if (req.method === "POST" && url.pathname === "/api/tools/login/manual-profile") {
       const body = await parseBody(req);
       return jsonResponse(res, 200, { ok: true, data: await toolLoginModule.manualProfile(String(body.profileId || ""), body) });
+    }
+    if (req.method === "POST" && url.pathname === "/api/tools/login/retry-profile") {
+      const body = await parseBody(req);
+      return jsonResponse(res, 200, { ok: true, data: toolLoginModule.retryProfile(String(body.profileId || "")) });
     }
     if (req.method === "POST" && url.pathname === "/api/tools/login/toggle-pause") {
       const body = await parseBody(req);

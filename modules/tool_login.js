@@ -298,7 +298,7 @@ export function createToolLogin({
         profileId,
         row,
         log: (stepName, message, type = "info") => log(profileId, stepName, message, type)
-      }), 180000);
+      }), 0);
 
       await step(profileId, job, "mo profile", async () => {
         browser = await manager.connectBrowser(profileId);
@@ -391,13 +391,20 @@ export function createToolLogin({
         "tên profile hiện tại": currentName
       };
       if (location.initial) update.diaChiBanDau = location.initial;
-      await writer.commit(update).catch((sheetError) => { job.sheetWriteError = sheetError.message; });
+      job.loginOuterError = true;
       job.loginNeedsAttention = true;
       job.liveStatus = mapped.detail;
       job.result = update;
       log(profileId, error.step || "loi tong", `loi tool login: ${mapped.detail}`, "error");
       pauseControl.setLocal(profileId, true);
-      while (!job.manualHandled && !runtime.stopRequested) await sleep(100);
+      await writer.commit(update).catch((sheetError) => { job.sheetWriteError = sheetError.message; });
+      while (!job.manualHandled && !runtime.stopRequested && !job.loginRetryRequested) await sleep(100);
+      job.loginOuterError = false;
+      if (job.loginRetryRequested && !runtime.stopRequested) {
+        job.loginRetryRequested = false;
+        job.loginNeedsAttention = false;
+        return { retryCurrent: true };
+      }
       job.status = job.manualHandled ? "skipped" : "stopped";
       return job.manualHandled ? { manualHandled: true } : { stopped: true };
     } finally {
@@ -442,7 +449,11 @@ export function createToolLogin({
             const job = runtime.jobs.get(id);
             const row = sheetSession.rows.get(id) || {};
             if (job) job.startedAt = new Date().toISOString();
-            const outcome = await runOne(id, row, config, sheetSession, workerSlot, concurrency);
+            let outcome;
+            do {
+              job.finishedAt = "";
+              outcome = await runOne(id, sheetSession.rows.get(id) || row, config, sheetSession, workerSlot, concurrency);
+            } while (outcome?.retryCurrent && !runtime.stopRequested);
             if (outcome?.continueWithFull && !runtime.stopRequested) {
               await pauseControl.gate(id);
               job.loginPauseSupported = false;
@@ -477,5 +488,19 @@ export function createToolLogin({
     return { started: ids.length, concurrency };
   }
 
-  return { runQueue, togglePause: pauseControl.toggle, manualProfile: operator.request };
+  function retryProfile(profileId) {
+    const job = runtime.jobs.get(profileId);
+    if (!runtime.running || runtime.stopRequested || job?.tool !== "tool login" ||
+        job.status !== "running" || !job.loginNeedsAttention || job.manualHandled || job.loginPauseSupported === false) {
+      throw new Error("Chi chay lai profile Login dang cho xu ly loi.");
+    }
+    if (job.loginRetryRequested) return { retrying: true };
+    if (job.loginOuterError) job.loginRetryRequested = true;
+    job.loginNeedsAttention = false;
+    job.liveStatus = "Đang chạy lại bước lỗi";
+    pauseControl.setLocal(profileId, false);
+    return { retrying: true };
+  }
+
+  return { runQueue, retryProfile, togglePause: pauseControl.toggle, manualProfile: operator.request };
 }

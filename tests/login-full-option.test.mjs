@@ -136,3 +136,111 @@ test("Login holds an errored worker, other workers continue, and F9 saves its na
     await browser.close();
   }
 });
+
+test("Login retries a proxy failure before opening a browser without restarting other workers", async () => {
+  const browser = await puppeteer.launch({ executablePath: process.env.CHROME_PATH || "C:/Program Files/Google/Chrome/Application/chrome.exe", headless: true });
+  const runtime = { jobs: new Map(), running: false };
+  const pages = new Map(), names = new Map(["p1", "p2", "p3"].map((id) => [id, `61594499510154-Nuevo, California-${id}`]));
+  const writes = [], closed = [];
+  let attempts = 0;
+  const sheet = { rows: new Map([...names].map(([id, name]) => [id, { "tên profile hiện tại": name }])),
+    async updateOne(id, update) { writes.push({ id, update }); }, async flushAll() {} };
+  const login = createToolLogin({
+    getManager: () => {
+      let ownId;
+      return {
+        async getProfileById(id) { return { name: names.get(id), browserType: "chrome" }; },
+        async updateProfileName(id, value) { names.set(id, value); },
+        async connectBrowser(id) {
+          ownId = id;
+          const page = await browser.newPage(); pages.set(id, page);
+          await page.setRequestInterception(true);
+          page.on("request", (request) => void request.respond({ status: 200, contentType: "text/html", body: '<h1>Item for sale</h1><p>Preview</p><button role="button" aria-label="Location: Nuevo, California">Nuevo, California</button><input aria-label="Title"><button>Next</button>' }).catch(() => {}));
+          return { newPage: async () => page, disconnect: async () => {} };
+        },
+        async gotoWithRetry(page, url) { await page.goto(url); },
+        async detectInitialMarketplaceState() { return { kind: "progress", totalSteps: 3 }; },
+        async stopHideMyAccProfile(id) { closed.push(id || ownId); }
+      };
+    },
+    dangNhap: { ensureFacebookLogin: async (manager, page, row, id) => { return { ok: true }; } },
+    addRuntimeLog() {}, buildToolRow: () => ({ uid: "61594499510154", raw: {} }),
+    createSheetRowSession: async () => sheet, runtime, stateProxy: { ensureForProfile: async ({ profileId }) => { if (profileId === "p1" && ++attempts === 1) throw Error("proxy allocation failed"); return null; } }
+  });
+  const until = async (check) => {
+    for (let i = 0; i < 1500; i++) { if (check()) return; await pause(10); }
+    throw Error("fixture timed out");
+  };
+  try {
+    await login.runQueue(["p1", "p2", "p3"], { loginConcurrency: 2 });
+    await until(() => runtime.jobs.get("p1")?.loginNeedsAttention && runtime.jobs.get("p3")?.status === "success");
+    assert.equal(runtime.jobs.get("p1").status, "running");
+    assert.equal(closed.includes("p1"), false);
+    assert.ok(writes.some(({ id, update }) => id === "p1" && update.trangThai === "chờ xử lý"));
+    assert.equal(pages.has("p1"), false);
+    login.retryProfile("p1");
+    assert.throws(() => login.retryProfile("p1"), /Chi chay lai/);
+    await until(() => !runtime.running);
+    assert.equal(runtime.jobs.get("p1").status, "success");
+    assert.equal(attempts, 2);
+    assert.equal(closed.filter((id) => id === "p2").length, 1);
+    assert.equal(runtime.jobs.get("p2").status, "success");
+  } finally {
+    runtime.stopRequested = true;
+    await browser.close();
+  }
+});
+
+test("Login retries an outer profile validation error in the same worker", async () => {
+  const browser = await puppeteer.launch({ executablePath: process.env.CHROME_PATH || "C:/Program Files/Google/Chrome/Application/chrome.exe", headless: true });
+  const runtime = { jobs: new Map(), running: false };
+  const pages = new Map(), names = new Map(["p1", "p2", "p3"].map((id) => [id, `61594499510154-Nuevo, California-${id}`]));
+  const writes = [], closed = [];
+  let attempts = 0;
+  const sheet = { rows: new Map([...names].map(([id, name]) => [id, { "tên profile hiện tại": name }])),
+    async updateOne(id, update) { writes.push({ id, update }); }, async flushAll() {} };
+  const login = createToolLogin({
+    getManager: () => {
+      let ownId;
+      return {
+        async getProfileById(id) { return { name: names.get(id), browserType: id === "p1" && ++attempts === 1 ? "unsupported" : "chrome" }; },
+        async updateProfileName(id, value) { names.set(id, value); },
+        async connectBrowser(id) {
+          ownId = id;
+          const page = await browser.newPage(); pages.set(id, page);
+          await page.setRequestInterception(true);
+          page.on("request", (request) => void request.respond({ status: 200, contentType: "text/html", body: '<h1>Item for sale</h1><p>Preview</p><button role="button" aria-label="Location: Nuevo, California">Nuevo, California</button><input aria-label="Title"><button>Next</button>' }).catch(() => {}));
+          return { newPage: async () => page, disconnect: async () => {} };
+        },
+        async gotoWithRetry(page, url) { await page.goto(url); },
+        async detectInitialMarketplaceState() { return { kind: "progress", totalSteps: 3 }; },
+        async stopHideMyAccProfile(id) { closed.push(id || ownId); }
+      };
+    },
+    dangNhap: { ensureFacebookLogin: async (manager, page, row, id) => { return { ok: true }; } },
+    addRuntimeLog() {}, buildToolRow: () => ({ uid: "61594499510154", raw: {} }),
+    createSheetRowSession: async () => sheet, runtime, stateProxy: { ensureForProfile: async () => null }
+  });
+  const until = async (check) => {
+    for (let i = 0; i < 1500; i++) { if (check()) return; await pause(10); }
+    throw Error("fixture timed out");
+  };
+  try {
+    await login.runQueue(["p1", "p2", "p3"], { loginConcurrency: 2 });
+    await until(() => runtime.jobs.get("p1")?.loginNeedsAttention && runtime.jobs.get("p3")?.status === "success");
+    assert.equal(runtime.jobs.get("p1").status, "running");
+    assert.equal(closed.includes("p1"), false);
+    assert.ok(writes.some(({ id, update }) => id === "p1" && update.trangThai === "chờ xử lý"));
+    assert.equal(pages.has("p1"), false);
+    login.retryProfile("p1");
+    assert.throws(() => login.retryProfile("p1"), /Chi chay lai/);
+    await until(() => !runtime.running);
+    assert.equal(runtime.jobs.get("p1").status, "success");
+    assert.ok(attempts >= 2);
+    assert.equal(closed.filter((id) => id === "p2").length, 1);
+    assert.equal(runtime.jobs.get("p2").status, "success");
+  } finally {
+    runtime.stopRequested = true;
+    await browser.close();
+  }
+});
