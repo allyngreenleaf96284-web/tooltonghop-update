@@ -1061,7 +1061,7 @@ async function readConfig() {
     loaded.postCondition = normalizeListingCondition(loaded.postCondition);
     loaded.fourVPostCondition = normalizeListingCondition(loaded.fourVPostCondition);
     loaded.postThreeVFull = loaded.postThreeVFull === true;
-    loaded.loginConcurrency = clampConcurrency(loaded.loginConcurrency, DEFAULT_CONFIG.loginConcurrency, 4);
+    loaded.loginConcurrency = clampConcurrency(loaded.loginConcurrency, DEFAULT_CONFIG.loginConcurrency, 6);
     loaded.loginUnknownRetryCount = Math.max(0, Math.min(3, Math.floor(Number(loaded.loginUnknownRetryCount ?? DEFAULT_CONFIG.loginUnknownRetryCount) || 0)));
     loaded.loginThreeVFull = loaded.loginThreeVFull === true;
     loaded.loginWaitForManualCaptcha = loaded.loginWaitForManualCaptcha === true;
@@ -1133,7 +1133,7 @@ async function saveConfig(input) {
     postCondition: normalizeListingCondition(input.postCondition ?? current.postCondition),
     fourVPostCondition: normalizeListingCondition(input.fourVPostCondition ?? current.fourVPostCondition),
     postThreeVFull: (input.postThreeVFull ?? current.postThreeVFull) === true,
-    loginConcurrency: clampConcurrency(input.loginConcurrency, current.loginConcurrency || DEFAULT_CONFIG.loginConcurrency, 4),
+    loginConcurrency: clampConcurrency(input.loginConcurrency, current.loginConcurrency || DEFAULT_CONFIG.loginConcurrency, 6),
     loginUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.loginUnknownRetryCount ?? current.loginUnknownRetryCount ?? DEFAULT_CONFIG.loginUnknownRetryCount) || 0))),
     loginThreeVFull: (input.loginThreeVFull ?? current.loginThreeVFull) === true,
     loginWaitForManualCaptcha: (input.loginWaitForManualCaptcha ?? current.loginWaitForManualCaptcha) === true,
@@ -1294,7 +1294,7 @@ async function saveConfigV2(input) {
     postCondition: normalizeListingCondition(input.postCondition ?? current.postCondition),
     fourVPostCondition: normalizeListingCondition(input.fourVPostCondition ?? current.fourVPostCondition),
     postThreeVFull: (input.postThreeVFull ?? current.postThreeVFull) === true,
-    loginConcurrency: clampConcurrency(input.loginConcurrency, current.loginConcurrency || DEFAULT_CONFIG.loginConcurrency, 4),
+    loginConcurrency: clampConcurrency(input.loginConcurrency, current.loginConcurrency || DEFAULT_CONFIG.loginConcurrency, 6),
     loginUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.loginUnknownRetryCount ?? current.loginUnknownRetryCount ?? DEFAULT_CONFIG.loginUnknownRetryCount) || 0))),
     loginThreeVFull: (input.loginThreeVFull ?? current.loginThreeVFull) === true,
     loginWaitForManualCaptcha: (input.loginWaitForManualCaptcha ?? current.loginWaitForManualCaptcha) === true,
@@ -3615,7 +3615,7 @@ async function handleApi(req, res) {
     if (req.method === "POST" && url.pathname === "/api/tools/login") {
       const body = await parseBody(req);
       const config = forceSingleThreadForProxyPanel(await resolveAccountSheetConfig(await readConfig()));
-      if (body.concurrency !== undefined) config.loginConcurrency = clampConcurrency(body.concurrency, config.loginConcurrency || DEFAULT_CONFIG.loginConcurrency, 4);
+      if (body.concurrency !== undefined) config.loginConcurrency = clampConcurrency(body.concurrency, config.loginConcurrency || DEFAULT_CONFIG.loginConcurrency, 6);
       if (body.loginUnknownRetryCount !== undefined) config.loginUnknownRetryCount = Math.max(0, Math.min(3, Math.floor(Number(body.loginUnknownRetryCount) || 0)));
       if (body.loginThreeVFull !== undefined) config.loginThreeVFull = body.loginThreeVFull === true;
       if (body.loginWaitForManualCaptcha !== undefined) config.loginWaitForManualCaptcha = body.loginWaitForManualCaptcha === true;

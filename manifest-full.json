@@ -1,7 +1,7 @@
 {
   "name": "Tool Tong Hop Full",
   "channel": "full",
-  "version": "2026.10.30.2",
+  "version": "2026.10.30.3",
   "rawBase": "https://raw.githubusercontent.com/allyngreenleaf96284-web/tooltonghop-update/main",
   "createdAt": "2026-09-17T00:00:00.000Z",
   "files": [
@@ -67,8 +67,8 @@
     },
     {
       "path": "modules/lamfull.js",
-      "sha256": "d8509f122e4dc2a416e41ee3f137262155de923268021e89ecf2531ae89c1218",
-      "size": 64395
+      "sha256": "bb849ae14a9b4a889a63b503ee1aa6d91e7e93a14bf92e345aaa1804d4a5e7c1",
+      "size": 65219
     },
     {
       "path": "modules/listing_link.js",
@@ -82,8 +82,8 @@
     },
     {
       "path": "modules/tool_login.js",
-      "sha256": "020520b89c0a07be31b33415845929ba8187df1d744338bb4434b89aa9fc5736",
-      "size": 24192
+      "sha256": "3cd74df8cf3d58c30fb05315111ea5fb17fd06460885c6241b84fc984e73e17b",
+      "size": 25089
     },
     {
       "path": "modules/marketplace_link_order.js",
@@ -132,13 +132,13 @@
     },
     {
       "path": "public/app.js",
-      "sha256": "fb0d0315cf00d76097034eb44b57e8da8f94393b03e6613cc35f51c88cfe5eda",
+      "sha256": "9c796225e5ae92c36cfd39e55ee79d6e2ba64dbcde32df900bacb7d08f52d105",
       "size": 191544
     },
     {
       "path": "public/index.html",
-      "sha256": "b35bb3736433b72eac29653f6b2a92f4042f0c5516d6df7aa8b054da0d41649c",
-      "size": 104300
+      "sha256": "021961790801b0caa0668e227ff4840627ee691df9e5c97bbdeb1989498e83a1",
+      "size": 104336
     },
     {
       "path": "public/styles.css",
@@ -157,7 +157,7 @@
     },
     {
       "path": "server.js",
-      "sha256": "ec776a8bf05ff02c2657c85cb7bb86def3c7c80c5328dcd292e5e5c9336a11f5",
+      "sha256": "c059af1536d44bbe46a29e135ea1ad513646787f4a1038c2244416a648e5b374",
       "size": 176660
     },
     {

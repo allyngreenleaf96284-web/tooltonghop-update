@@ -2130,7 +2130,7 @@ async function startToolLogin(profileIds) {
     $("runLoginSelectedBtn").disabled = true;
     $("runLoginAllBtn").disabled = true;
     await saveConfig();
-    const concurrency = Math.max(1, Math.min(4, Number($("loginConcurrency")?.value || 4)));
+    const concurrency = Math.max(1, Math.min(6, Number($("loginConcurrency")?.value || 4)));
     const { data } = await api("/api/tools/login", {
       method: "POST",
       body: JSON.stringify({

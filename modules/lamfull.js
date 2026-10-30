@@ -992,7 +992,7 @@ export function createLamFull({
     return error;
   }
 
-  function patchManagerForCentralizedLogin(manager, row) {
+  function patchManagerForCentralizedLogin(manager, row, readyPage = null) {
     const originals = {
       ensureMarketplaceSession: manager.ensureMarketplaceSession,
       ensureMarketplaceReadyOrRelogin: manager.ensureMarketplaceReadyOrRelogin,
@@ -1013,6 +1013,11 @@ export function createLamFull({
     };
 
     manager.waitForMarketplaceReady = async (page, currentRow = null) => {
+      if (readyPage === page) {
+        readyPage = null;
+        const state = await manager.detectInitialMarketplaceState?.(page);
+        if (state?.kind === "progress" && Number(state.totalSteps) === 3) return;
+      }
       await ensureMarketplaceCreatePageReady(manager, page, currentRow || row);
     };
 
@@ -1054,7 +1059,7 @@ export function createLamFull({
     }
   }
 
-  async function runMarketplaceAndFullWithRetry(manager, page, browser, row, profileId, job, locationCapture, progressCapture, sheetSession, currentName, markNoRollback = () => {}, onSellerInfoInvalid = null) {
+  async function runMarketplaceAndFullWithRetry(manager, page, browser, row, profileId, job, locationCapture, progressCapture, sheetSession, currentName, markNoRollback = () => {}, onSellerInfoInvalid = null, existingLocation = null) {
     let lastError = null;
     let genericFailures = 0;
     const maxAttempts = 5;
@@ -1065,7 +1070,9 @@ export function createLamFull({
         if (attempt > 1) {
           log(profileId, "retry full flow", `thu lai full flow lan ${attempt}/${maxAttempts} tu buoc Marketplace`, "warn");
         }
-        const resolvedLocation = await step(profileId, job, "vao Marketplace va doi location", async () =>
+        const resolvedLocation = attempt === 1 && existingLocation
+          ? { initialLocation: existingLocation.initial, currentLocation: existingLocation.current }
+          : await step(profileId, job, "vao Marketplace va doi location", async () =>
           ensureUsMarketplaceLocation(manager, page, row)
         , { timeoutMs: 180000 });
         locationCapture.initial = String(resolvedLocation?.initialLocation || "").trim();
@@ -1120,7 +1127,8 @@ export function createLamFull({
     if (options.condition) {
       manager.chooseConditionNew = (page) => chooseListingCondition(page, options.condition);
     }
-    patchStableWindowTiling(manager, workerSlot, workerTotal);
+    if (options.existingSession?.configureManager) options.existingSession.configureManager(manager);
+    else patchStableWindowTiling(manager, workerSlot, workerTotal);
     manager.saveConfig({
       dataRoot: config.fullDataRoot,
       priceMin: config.fullPriceMin,
@@ -1132,8 +1140,8 @@ export function createLamFull({
     const uid = profileUid(row, profileId);
     const job = runtime.jobs.get(profileId);
     const sheetWriter = createDeferredSheetWriter(sheetSession, profileId);
-    let browser = null;
-    let page = null;
+    let browser = options.existingSession?.browser || null;
+    let page = options.existingSession?.page || null;
     let proxyLease = null;
     let currentName = String(sheetRow["tên profile hiện tại"] || sheetRow["ten profile hien tai"] || profileId).trim();
     let originalName = currentName;
@@ -1170,36 +1178,39 @@ export function createLamFull({
       row.raw = { ...row.raw, ...sellerAllocation.raw };
       await writeSheet(sheetWriter, profileId, { trangThai: "", chiTiet: "đang chạy làm full" });
 
-      proxyLease = await step(profileId, job, "gan proxy bang", async () =>
-        stateProxy?.ensureForProfile?.({
-          config,
-          profileId,
-          row,
-          log: (stepName, message, type = "info") => log(profileId, stepName, message, type)
-        })
-      );
+      if (!options.existingSession) {
+        proxyLease = await step(profileId, job, "gan proxy bang", async () =>
+          stateProxy?.ensureForProfile?.({
+            config,
+            profileId,
+            row,
+            log: (stepName, message, type = "info") => log(profileId, stepName, message, type)
+          })
+        );
 
-      await step(profileId, job, "mo profile full man hinh", async () => {
-        browser = await manager.connectBrowser(profileId);
-        page = await browser.newPage();
-        await page.bringToFront();
-        if (typeof manager.maximizeBrowserWindow === "function") await manager.maximizeBrowserWindow(browser, page).catch(() => {});
-        const viewport = await applyStableViewport(page, workerSlot, workerTotal);
-        log(profileId, "viewport", `worker ${workerSlot + 1}/${workerTotal} bounds=${viewport?.bounds?.width || ""}x${viewport?.bounds?.height || ""} viewport=${viewport?.width || 1365}x${viewport?.height || 900}, zoom=1, actual=${JSON.stringify(viewport?.actual || {})}`);
-      }, { timeoutMs: 120000 });
+        await step(profileId, job, "mo profile full man hinh", async () => {
+          browser = await manager.connectBrowser(profileId);
+          page = await browser.newPage();
+          await page.bringToFront();
+          if (typeof manager.maximizeBrowserWindow === "function") await manager.maximizeBrowserWindow(browser, page).catch(() => {});
+          const viewport = await applyStableViewport(page, workerSlot, workerTotal);
+          log(profileId, "viewport", `worker ${workerSlot + 1}/${workerTotal} bounds=${viewport?.bounds?.width || ""}x${viewport?.bounds?.height || ""} viewport=${viewport?.width || 1365}x${viewport?.height || 900}, zoom=1, actual=${JSON.stringify(viewport?.actual || {})}`);
+        }, { timeoutMs: 120000 });
 
-      await step(profileId, job, "dang nhap va doi ngon ngu", async () => {
-        await dangNhap.ensureFacebookLogin(manager, page, row, profileId, (status) => {
-          if (job) job.liveStatus = status;
-          log(profileId, "dang nhap", status);
-        });
-      }, { timeoutMs: 300000 });
+        await step(profileId, job, "dang nhap va doi ngon ngu", async () => {
+          await dangNhap.ensureFacebookLogin(manager, page, row, profileId, (status) => {
+            if (job) job.liveStatus = status;
+            log(profileId, "dang nhap", status);
+          });
+        }, { timeoutMs: 300000 });
+
+      }
 
       currentName = await step(profileId, job, "quet ten profile Hide", async () =>
         readLatestHideProfileName(manager, profileId, currentName || profileId)
       , { timeoutMs: 30000 });
 
-      restoreManagerLoginGuards = patchManagerForCentralizedLogin(manager, row);
+      restoreManagerLoginGuards = patchManagerForCentralizedLogin(manager, row, options.existingSession?.page || null);
 
       const existingFullToken = buildStandardName({
         currentName,
@@ -1230,7 +1241,8 @@ export function createLamFull({
           row.raw = { ...row.raw, ...sellerAllocation.raw };
           submittedSellerInfo = false;
           log(profileId, "seller info invalid", `da cap seller info moi dong ${sellerAllocation.rowNumber || ""} de lam lai tu Marketplace item`, "warn");
-        }
+        },
+        options.existingSession?.location || null
       );
       const outcome = flowResult.outcome;
 
@@ -1346,10 +1358,12 @@ export function createLamFull({
       if (runtime.activeManagers instanceof Map) runtime.activeManagers.delete(profileId);
       if (manager.activeJobs) manager.activeJobs.delete(uid);
       if (manager.currentActiveUid === uid) manager.currentActiveUid = "";
-      try { if (page && !page.isClosed()) await page.close({ runBeforeUnload: false }); } catch {}
-      try { if (browser) await browser.disconnect(); } catch {}
-      try { stateProxy?.release?.(proxyLease); } catch {}
-      await manager.stopHideMyAccProfile(profileId).catch(() => {});
+      if (!options.existingSession) {
+        try { if (page && !page.isClosed()) await page.close({ runBeforeUnload: false }); } catch {}
+        try { if (browser) await browser.disconnect(); } catch {}
+        try { stateProxy?.release?.(proxyLease); } catch {}
+        await manager.stopHideMyAccProfile(profileId).catch(() => {});
+      }
       if (job) job.finishedAt = new Date().toISOString();
     }
   }

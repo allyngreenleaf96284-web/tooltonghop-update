@@ -14,8 +14,8 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function clampConcurrency(value, fallback = 1) {
   const parsed = Math.floor(Number(value));
-  if (!Number.isFinite(parsed)) return Math.max(1, Math.min(4, fallback));
-  return Math.max(1, Math.min(4, parsed));
+  if (!Number.isFinite(parsed)) return Math.max(1, Math.min(6, fallback));
+  return Math.max(1, Math.min(6, parsed));
 }
 
 function expandSheetUpdate(update) {
@@ -65,18 +65,19 @@ function detectBar(state) {
   return `${total}v`;
 }
 
-function tileBounds(workerSlot = 0, workerTotal = 1) {
-  const total = Math.max(1, Number(workerTotal || 1));
-  if (total <= 1) return { left: 0, top: 0, width: 1280, height: 980 };
-  if (total === 2) return { left: workerSlot % 2 === 0 ? 0 : 960, top: 0, width: 960, height: 980 };
-  if (total === 3) return { left: workerSlot * 640, top: 0, width: 640, height: 980 };
-  return {
-    left: (workerSlot % 2) * 960,
-    top: Math.floor(workerSlot / 2) * 520,
-    width: 960,
-    height: 520
-  };
+export function tileBounds(workerSlot = 0, workerTotal = 1, area = { left: 0, top: 0, width: 1920, height: 1040 }) {
+  const total = Math.max(1, Math.min(6, Number(workerTotal || 1)));
+  const columns = Math.ceil(Math.sqrt(total)), rows = Math.ceil(total / columns);
+  const slot = Math.max(0, Math.min(total - 1, workerSlot));
+  const width = Math.floor(area.width / columns), height = Math.floor(area.height / rows);
+  return { left: area.left + (slot % columns) * width, top: area.top + Math.floor(slot / columns) * height, width, height };
 }
+async function pageTileBounds(page, slot, total) {
+  const area = await page.evaluate(() => ({ left: screen.availLeft || 0, top: screen.availTop || 0,
+    width: screen.availWidth, height: screen.availHeight })).catch(() => null);
+  return tileBounds(slot, total, area?.width > 0 && area?.height > 0 ? area : undefined);
+}
+const zoomPages = new WeakSet();
 
 async function readViewportMetrics(page) {
   return page.evaluate(() => ({
@@ -92,28 +93,37 @@ async function readViewportMetrics(page) {
 
 async function applyStableViewport(page, workerSlot = 0, workerTotal = 1) {
   if (!page || page.isClosed?.()) return null;
-  const bounds = tileBounds(workerSlot, workerTotal);
+  const bounds = await pageTileBounds(page, workerSlot, workerTotal);
   const viewport = {
-    width: Math.max(900, bounds.width - 24),
-    height: Math.max(640, bounds.height - 110),
+    width: Math.max(320, bounds.width - 24),
+    height: Math.max(200, bounds.height - 110),
     deviceScaleFactor: 1
   };
   await page.setViewport?.(viewport).catch(() => {});
-  await page.evaluate(() => {
-    document.documentElement.style.zoom = "";
-    if (document.body) document.body.style.zoom = "";
-  }).catch(() => {});
-  return { ...viewport, zoom: 1, bounds, actual: await readViewportMetrics(page) };
+  const setZoom = () => {
+    const apply = () => { if (document.documentElement) document.documentElement.style.zoom = "0.5"; };
+    apply();
+    document.addEventListener("DOMContentLoaded", apply, { once: true });
+  };
+  if (!zoomPages.has(page)) {
+    await page.evaluateOnNewDocument(setZoom);
+    zoomPages.add(page);
+  }
+  await page.evaluate(setZoom).catch(() => {});
+  return { ...viewport, zoom: 0.5, bounds, actual: await readViewportMetrics(page) };
 }
 
 function patchStableWindowTiling(manager, workerSlot = 0, workerTotal = 1) {
   const original = manager.maximizeBrowserWindow;
   manager.__toolWorkerSlot = workerSlot;
   manager.__toolWorkerTotal = workerTotal;
+  for (const name of ["setMarketplaceZoom", "applyMarketplaceZoom"]) {
+    if (typeof manager[name] === "function") manager[name] = (page) => applyStableViewport(page, workerSlot, workerTotal);
+  }
   manager.maximizeBrowserWindow = async (browser, page = null) => {
     const targetPage = page || (await browser.pages().catch(() => []))[0];
     if (!targetPage) return original?.call(manager, browser, page);
-    const bounds = tileBounds(workerSlot, workerTotal);
+    const bounds = await pageTileBounds(targetPage, workerSlot, workerTotal);
     let session;
     try {
       session = await targetPage.createCDPSession();
@@ -360,7 +370,13 @@ export function createToolLogin({
       if (barStatus === "3v" && config.loginThreeVFull === true) {
         log(profileId, "chuyen lam full", "Da nhan dien 3v, chuyen sang luong tool Full.");
         await writer.commit({ soVach: "3v", chiTiet: "3v - dang chuyen sang lam Full" });
-        return { continueWithFull: true };
+        await pauseControl.gate(profileId);
+        job.loginPauseSupported = false;
+        job.loginPaused = false;
+        operator.remove(profileId);
+        return await runFullProfile(profileId, sheetSession.rows.get(profileId) || sheetRow, config, sheetSession, workerSlot, workerTotal, {
+          existingSession: { browser, page, location: { ...location }, configureManager: (fullManager) => patchStableWindowTiling(fullManager, workerSlot, workerTotal) }
+        });
       }
 
       const tenChuan = buildStandardName({
@@ -490,14 +506,7 @@ export function createToolLogin({
               job.finishedAt = "";
               outcome = await runOne(id, sheetSession.rows.get(id) || row, config, sheetSession, workerSlot, concurrency);
             } while (outcome?.retryCurrent && !runtime.stopRequested);
-            if (outcome?.continueWithFull && !runtime.stopRequested) {
-              await pauseControl.gate(id);
-              job.loginPauseSupported = false;
-              job.loginPaused = false;
-              job.finishedAt = "";
-              job.liveStatus = "3v - dang chuyen sang lam Full";
-              await runFullProfile(id, row, config, sheetSession, workerSlot, concurrency);
-            }
+
           }
         });
         await Promise.all(workers);

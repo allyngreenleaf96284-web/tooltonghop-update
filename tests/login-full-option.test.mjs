@@ -28,7 +28,9 @@ test("Login enters Full only for 3v with the option on, and honours Stop during 
       let name = "61594499510154-Nuevo, California", fullCalls = 0;
       const sheet = {
         rows: new Map([["p1", { "tên profile hiện tại": name }]]),
-        async updateOne(id, update) { writes.push(update); }, async flushAll() {}
+        async updateOne(id, update) { writes.push(update); }, async flushAll() {
+          if (stop && writes.some(update => update.chiTiet === "3v - dang chuyen sang lam Full")) runtime.stopRequested = true;
+        }
       };
       const manager = {
         async getProfileById() { return { name, browserType: "chrome" }; },
@@ -43,10 +45,12 @@ test("Login enters Full only for 3v with the option on, and honours Stop during 
         addRuntimeLog() {}, buildToolRow: () => ({ uid: "61594499510154", raw: {} }),
         createSheetRowSession: async () => sheet, runtime,
         stateProxy: { ensureForProfile: async () => null },
-        async runFullProfile(id, row, config, session, slot, total) {
+        async runFullProfile(id, row, config, session, slot, total, options) {
           fullCalls += 1;
-          assert.equal(page.isClosed(), true);
-          assert.deepEqual(events, ["closed"]);
+          assert.equal(page.isClosed(), false);
+          assert.deepEqual(events, []);
+          assert.equal(options.existingSession.page, page);
+          assert.ok(options.existingSession.browser);
           assert.equal(session, sheet);
           assert.equal(slot, 0);
           assert.equal(total, 1);
