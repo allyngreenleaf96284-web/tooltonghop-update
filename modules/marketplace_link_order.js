@@ -120,6 +120,12 @@ async function waitForMarketplaceSignal(page, timeoutMs) {
       const text = document.body?.innerText || "";
       if (/this listing is(?:n't| not) available any\s*more/i.test(text)) return true;
       if (/buy now|out of stock|make an offer|send seller a message/i.test(text)) return true;
+      if (Array.from(document.querySelectorAll("h1, h2, [role='heading']")).some((el) => {
+        const rect = el.getBoundingClientRect();
+        const style = getComputedStyle(el);
+        return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" &&
+          /^(pending|sold)\s*[·•]\s*\S/i.test(String(el.innerText || el.textContent || "").trim());
+      })) return true;
       if (/marketplace access|log in|login|checkpoint|confirm your identity/i.test(text)) return true;
       return false;
     }).catch(() => false);
@@ -129,7 +135,7 @@ async function waitForMarketplaceSignal(page, timeoutMs) {
   }
 }
 
-async function classifyCurrentPage(page, timeoutMs) {
+export async function classifyCurrentPage(page, timeoutMs) {
   await page.waitForSelector("body", { timeout: Math.min(timeoutMs, 30000) }).catch(() => {});
   await waitForMarketplaceSignal(page, timeoutMs);
   await sleep(3000);
@@ -152,12 +158,17 @@ async function classifyCurrentPage(page, timeoutMs) {
       const style = window.getComputedStyle(el);
       return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
     };
-    const titleEl = Array.from(document.querySelectorAll("h1, h2"))
+    const titleEl = Array.from(document.querySelectorAll("h1, h2, [role='heading']"))
       .filter(visible)
       .map((el) => ({ el, text: clean(el.innerText || el.textContent || ""), rect: el.getBoundingClientRect() }))
       .filter((item) => item.text && !/^marketplace$/i.test(item.text))
       .sort((a, b) => (b.rect.left - a.rect.left) || (a.rect.top - b.rect.top))[0];
     const titleText = titleEl?.text || "";
+    // New Marketplace layout places the status before the listing title,
+    // without an Out of stock button. Require the UI separator, not a word
+    // appearing somewhere in a product description or product name.
+    const titleStatus = titleText.match(/^(pending|sold)\s*[·•]\s*\S/i);
+    if (titleStatus) return titleStatus[1].toLowerCase();
     const titleRect = titleEl?.rect || { left: Math.max(0, window.innerWidth * 0.55), top: 0, bottom: 0 };
     const actionWords = /^(buy now|make an offer|out of stock|send seller a message)$/i;
     const rawButtons = Array.from(document.querySelectorAll("[role='button'], button, a[role='button']"))
