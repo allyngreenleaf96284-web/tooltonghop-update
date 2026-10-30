@@ -12,6 +12,11 @@ import {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+export function normalizeLoginZoomPercent(value) {
+  const parsed = Number(value);
+  return value === "" || value == null || !Number.isFinite(parsed) ? 50 : Math.max(25, Math.min(200, Math.round(parsed)));
+}
+
 function clampConcurrency(value, fallback = 1) {
   const parsed = Math.floor(Number(value));
   if (!Number.isFinite(parsed)) return Math.max(1, Math.min(6, fallback));
@@ -91,7 +96,7 @@ async function readViewportMetrics(page) {
   })).catch(() => null);
 }
 
-async function applyStableViewport(page, workerSlot = 0, workerTotal = 1) {
+async function applyStableViewport(page, workerSlot = 0, workerTotal = 1, zoomPercent = 50) {
   if (!page || page.isClosed?.()) return null;
   const bounds = await pageTileBounds(page, workerSlot, workerTotal);
   const viewport = {
@@ -100,25 +105,26 @@ async function applyStableViewport(page, workerSlot = 0, workerTotal = 1) {
     deviceScaleFactor: 1
   };
   await page.setViewport?.(viewport).catch(() => {});
-  const setZoom = () => {
-    const apply = () => { if (document.documentElement) document.documentElement.style.zoom = "0.5"; };
+  const zoom = normalizeLoginZoomPercent(zoomPercent) / 100;
+  const setZoom = (value) => {
+    const apply = () => { if (document.documentElement) document.documentElement.style.zoom = String(value); };
     apply();
     document.addEventListener("DOMContentLoaded", apply, { once: true });
   };
   if (!zoomPages.has(page)) {
-    await page.evaluateOnNewDocument(setZoom);
+    await page.evaluateOnNewDocument(setZoom, zoom);
     zoomPages.add(page);
   }
-  await page.evaluate(setZoom).catch(() => {});
-  return { ...viewport, zoom: 0.5, bounds, actual: await readViewportMetrics(page) };
+  await page.evaluate(setZoom, zoom).catch(() => {});
+  return { ...viewport, zoom, bounds, actual: await readViewportMetrics(page) };
 }
 
-function patchStableWindowTiling(manager, workerSlot = 0, workerTotal = 1) {
+function patchStableWindowTiling(manager, workerSlot = 0, workerTotal = 1, zoomPercent = 50) {
   const original = manager.maximizeBrowserWindow;
   manager.__toolWorkerSlot = workerSlot;
   manager.__toolWorkerTotal = workerTotal;
   for (const name of ["setMarketplaceZoom", "applyMarketplaceZoom"]) {
-    if (typeof manager[name] === "function") manager[name] = (page) => applyStableViewport(page, workerSlot, workerTotal);
+    if (typeof manager[name] === "function") manager[name] = (page) => applyStableViewport(page, workerSlot, workerTotal, zoomPercent);
   }
   manager.maximizeBrowserWindow = async (browser, page = null) => {
     const targetPage = page || (await browser.pages().catch(() => []))[0];
@@ -134,7 +140,7 @@ function patchStableWindowTiling(manager, workerSlot = 0, workerTotal = 1) {
           bounds: { windowState: "normal", left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height }
         });
       }
-      await applyStableViewport(targetPage, workerSlot, workerTotal);
+      await applyStableViewport(targetPage, workerSlot, workerTotal, zoomPercent);
     } catch {
       await original?.call(manager, browser, page).catch(() => {});
     } finally {
@@ -242,7 +248,7 @@ export function createToolLogin({
 
   async function runOne(profileId, sheetRow, config, sheetSession, workerSlot, workerTotal) {
     const manager = getManager({ fresh: true });
-    patchStableWindowTiling(manager, workerSlot, workerTotal);
+    patchStableWindowTiling(manager, workerSlot, workerTotal, config.loginZoomPercent);
     if (typeof manager.getProfileById !== "function") {
       manager.getProfileById = async (id) => {
         const profiles = await manager.listProfiles();
@@ -317,7 +323,7 @@ export function createToolLogin({
         page = await browser.newPage();
         await page.bringToFront().catch(() => {});
         if (typeof manager.maximizeBrowserWindow === "function") await manager.maximizeBrowserWindow(browser, page).catch(() => {});
-        await applyStableViewport(page, workerSlot, workerTotal);
+        await applyStableViewport(page, workerSlot, workerTotal, config.loginZoomPercent);
       }, 120000);
       await pauseControl.attach(page);
       await operator.attach(page, profileId);
@@ -375,7 +381,7 @@ export function createToolLogin({
         job.loginPaused = false;
         operator.remove(profileId);
         return await runFullProfile(profileId, sheetSession.rows.get(profileId) || sheetRow, config, sheetSession, workerSlot, workerTotal, {
-          existingSession: { browser, page, location: { ...location }, configureManager: (fullManager) => patchStableWindowTiling(fullManager, workerSlot, workerTotal) }
+          existingSession: { browser, page, location: { ...location }, configureManager: (fullManager) => patchStableWindowTiling(fullManager, workerSlot, workerTotal, config.loginZoomPercent) }
         });
       }
 

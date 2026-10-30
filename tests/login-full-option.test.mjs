@@ -50,6 +50,7 @@ test("Login enters Full only for 3v with the option on, and honours Stop during 
           assert.equal(page.isClosed(), false);
           assert.deepEqual(events, []);
           assert.equal(options.existingSession.page, page);
+          assert.equal(await page.evaluate(() => document.documentElement.style.zoom), "0.75");
           assert.ok(options.existingSession.browser);
           assert.equal(session, sheet);
           assert.equal(slot, 0);
@@ -62,7 +63,7 @@ test("Login enters Full only for 3v with the option on, and honours Stop during 
           runtime.jobs.get(id).result = { Tool: "đã làm full", trangThai: "thành công", soVach: "3v" };
         }
       });
-      await login.runQueue(["p1"], { loginConcurrency: 1, loginThreeVFull: enabled, fullDataRoot: "fixture", fullPriceMin: 20, fullPriceMax: 25, sellerSpreadsheetId: "fixture" });
+      await login.runQueue(["p1"], { loginConcurrency: 1, loginZoomPercent: 75, loginThreeVFull: enabled, fullDataRoot: "fixture", fullPriceMin: 20, fullPriceMax: 25, sellerSpreadsheetId: "fixture" });
       for (let attempt = 0; attempt < 2000 && runtime.running; attempt += 1) await pause(10);
       assert.equal(runtime.running, false);
       const job = runtime.jobs.get("p1");

@@ -302,6 +302,7 @@ async function loadConfig() {
   if ($("marketplaceCheckTimeoutMs")) $("marketplaceCheckTimeoutMs").value = config.marketplaceCheckTimeoutMs || 90000;
   if ($("fullConcurrency")) $("fullConcurrency").value = config.fullConcurrency || 4;
   if ($("loginConcurrency")) $("loginConcurrency").value = config.loginConcurrency || 4;
+  if ($("loginZoomPercent")) $("loginZoomPercent").value = config.loginZoomPercent ?? 50;
   if ($("loginUnknownRetryCount")) $("loginUnknownRetryCount").value = Math.max(0, Math.min(3, Number(config.loginUnknownRetryCount ?? 1)));
   if ($("loginThreeVFull")) $("loginThreeVFull").checked = config.loginThreeVFull === true;
   if ($("loginWaitForManualCaptcha")) $("loginWaitForManualCaptcha").checked = config.loginWaitForManualCaptcha === true;
@@ -418,6 +419,7 @@ async function saveConfig() {
       marketplaceCheckTabsPerNick: Math.max(1, Math.min(20, Number($("marketplaceCheckTabsPerNick")?.value || 5))),
       marketplaceCheckTimeoutMs: Math.max(30000, Math.min(240000, Number($("marketplaceCheckTimeoutMs")?.value || 90000))),
       loginConcurrency: Number($("loginConcurrency")?.value || 4),
+      loginZoomPercent: Math.max(25, Math.min(200, Number($("loginZoomPercent")?.value || 50))),
       loginUnknownRetryCount: Math.max(0, Math.min(3, Number($("loginUnknownRetryCount")?.value || 0))),
       loginThreeVFull: $("loginThreeVFull")?.checked === true,
       loginWaitForManualCaptcha: $("loginWaitForManualCaptcha")?.checked === true,
@@ -2136,6 +2138,7 @@ async function startToolLogin(profileIds) {
       body: JSON.stringify({
         profileIds,
         concurrency,
+        loginZoomPercent: Math.max(25, Math.min(200, Number($("loginZoomPercent")?.value || 50))),
         loginUnknownRetryCount: Math.max(0, Math.min(3, Number($("loginUnknownRetryCount")?.value || 0))),
         loginThreeVFull: $("loginThreeVFull")?.checked === true,
         loginWaitForManualCaptcha: $("loginWaitForManualCaptcha")?.checked === true

@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { createDangNhap } from "./modules/dangnhap.js";
 import { createCheckTb } from "./modules/checktb.js";
 import { createLamFull } from "./modules/lamfull.js";
-import { createToolLogin } from "./modules/tool_login.js";
+import { createToolLogin, normalizeLoginZoomPercent } from "./modules/tool_login.js";
 import { createDienMatKhau } from "./modules/dienmatkhau.js";
 import { createDangBai } from "./modules/dangbai.js";
 import { normalizeListingCondition } from "./modules/listing_condition.js";
@@ -132,6 +132,7 @@ const DEFAULT_CONFIG = {
   fourVPostCondition: "Used - Like New",
   postThreeVFull: false,
   loginConcurrency: 4,
+  loginZoomPercent: 50,
   loginUnknownRetryCount: 1,
   loginThreeVFull: false,
   loginWaitForManualCaptcha: false,
@@ -1062,6 +1063,7 @@ async function readConfig() {
     loaded.fourVPostCondition = normalizeListingCondition(loaded.fourVPostCondition);
     loaded.postThreeVFull = loaded.postThreeVFull === true;
     loaded.loginConcurrency = clampConcurrency(loaded.loginConcurrency, DEFAULT_CONFIG.loginConcurrency, 6);
+    loaded.loginZoomPercent = normalizeLoginZoomPercent(loaded.loginZoomPercent);
     loaded.loginUnknownRetryCount = Math.max(0, Math.min(3, Math.floor(Number(loaded.loginUnknownRetryCount ?? DEFAULT_CONFIG.loginUnknownRetryCount) || 0)));
     loaded.loginThreeVFull = loaded.loginThreeVFull === true;
     loaded.loginWaitForManualCaptcha = loaded.loginWaitForManualCaptcha === true;
@@ -1134,6 +1136,7 @@ async function saveConfig(input) {
     fourVPostCondition: normalizeListingCondition(input.fourVPostCondition ?? current.fourVPostCondition),
     postThreeVFull: (input.postThreeVFull ?? current.postThreeVFull) === true,
     loginConcurrency: clampConcurrency(input.loginConcurrency, current.loginConcurrency || DEFAULT_CONFIG.loginConcurrency, 6),
+    loginZoomPercent: normalizeLoginZoomPercent(input.loginZoomPercent !== undefined ? input.loginZoomPercent : current.loginZoomPercent),
     loginUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.loginUnknownRetryCount ?? current.loginUnknownRetryCount ?? DEFAULT_CONFIG.loginUnknownRetryCount) || 0))),
     loginThreeVFull: (input.loginThreeVFull ?? current.loginThreeVFull) === true,
     loginWaitForManualCaptcha: (input.loginWaitForManualCaptcha ?? current.loginWaitForManualCaptcha) === true,
@@ -1295,6 +1298,7 @@ async function saveConfigV2(input) {
     fourVPostCondition: normalizeListingCondition(input.fourVPostCondition ?? current.fourVPostCondition),
     postThreeVFull: (input.postThreeVFull ?? current.postThreeVFull) === true,
     loginConcurrency: clampConcurrency(input.loginConcurrency, current.loginConcurrency || DEFAULT_CONFIG.loginConcurrency, 6),
+    loginZoomPercent: normalizeLoginZoomPercent(input.loginZoomPercent !== undefined ? input.loginZoomPercent : current.loginZoomPercent),
     loginUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.loginUnknownRetryCount ?? current.loginUnknownRetryCount ?? DEFAULT_CONFIG.loginUnknownRetryCount) || 0))),
     loginThreeVFull: (input.loginThreeVFull ?? current.loginThreeVFull) === true,
     loginWaitForManualCaptcha: (input.loginWaitForManualCaptcha ?? current.loginWaitForManualCaptcha) === true,
@@ -3616,6 +3620,7 @@ async function handleApi(req, res) {
       const body = await parseBody(req);
       const config = forceSingleThreadForProxyPanel(await resolveAccountSheetConfig(await readConfig()));
       if (body.concurrency !== undefined) config.loginConcurrency = clampConcurrency(body.concurrency, config.loginConcurrency || DEFAULT_CONFIG.loginConcurrency, 6);
+      if (body.loginZoomPercent !== undefined) config.loginZoomPercent = normalizeLoginZoomPercent(body.loginZoomPercent);
       if (body.loginUnknownRetryCount !== undefined) config.loginUnknownRetryCount = Math.max(0, Math.min(3, Math.floor(Number(body.loginUnknownRetryCount) || 0)));
       if (body.loginThreeVFull !== undefined) config.loginThreeVFull = body.loginThreeVFull === true;
       if (body.loginWaitForManualCaptcha !== undefined) config.loginWaitForManualCaptcha = body.loginWaitForManualCaptcha === true;

@@ -1000,8 +1000,13 @@
             </div>
             <div class="tool-config-grid login-config-grid">
               <label>
-                Số luồng (tối đa 6, nội dung 50%)
+                Số luồng (tối đa 6)
                 <input id="loginConcurrency" type="number" min="1" max="6" step="1" />
+              </label>
+              <label>
+                Thu nhỏ nội dung (%)
+                <input id="loginZoomPercent" type="number" min="25" max="200" step="5" value="50" />
+                <small>50%: thu nhỏ; 100%: kích thước bình thường. Áp dụng từ lần chạy tiếp theo.</small>
               </label>
               <label>
                 Chạy lại lỗi chưa xác định
