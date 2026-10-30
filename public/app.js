@@ -294,6 +294,10 @@ async function loadConfig() {
   if ($("marketplaceCheckSheetName")) $("marketplaceCheckSheetName").value = config.marketplaceCheckSheetName || "";
   if ($("marketplaceCheckNick1Id")) $("marketplaceCheckNick1Id").value = config.marketplaceCheckNick1Id || "";
   if ($("marketplaceCheckNick2Id")) $("marketplaceCheckNick2Id").value = config.marketplaceCheckNick2Id || "";
+  if ($("linkCheckExtraNicks")) {
+    $("linkCheckExtraNicks").replaceChildren();
+    for (const id of config.marketplaceCheckExtraNickIds || []) addLinkCheckNick(id);
+  }
   if ($("marketplaceCheckTabsPerNick")) $("marketplaceCheckTabsPerNick").value = config.marketplaceCheckTabsPerNick || 5;
   if ($("marketplaceCheckTimeoutMs")) $("marketplaceCheckTimeoutMs").value = config.marketplaceCheckTimeoutMs || 90000;
   if ($("fullConcurrency")) $("fullConcurrency").value = config.fullConcurrency || 4;
@@ -410,6 +414,7 @@ async function saveConfig() {
       marketplaceCheckSheetName: $("marketplaceCheckSheetName")?.value || "",
       marketplaceCheckNick1Id: $("marketplaceCheckNick1Id")?.value || "",
       marketplaceCheckNick2Id: $("marketplaceCheckNick2Id")?.value || "",
+      marketplaceCheckExtraNickIds: extraLinkCheckNickIds(),
       marketplaceCheckTabsPerNick: Math.max(1, Math.min(20, Number($("marketplaceCheckTabsPerNick")?.value || 5))),
       marketplaceCheckTimeoutMs: Math.max(30000, Math.min(240000, Number($("marketplaceCheckTimeoutMs")?.value || 90000))),
       loginConcurrency: Number($("loginConcurrency")?.value || 4),
@@ -1868,12 +1873,31 @@ async function startCheckOrder(profileIds) {
   }
 }
 
+function extraLinkCheckNickIds() {
+  return Array.from(document.querySelectorAll("[data-link-check-nick]")).map((input) => input.value.trim()).filter(Boolean);
+}
+function addLinkCheckNick(value = "") {
+  const row = document.createElement("div");
+  const input = document.createElement("input");
+  input.dataset.linkCheckNick = "1";
+  input.placeholder = "ID GPM/HideMyAcc nick check";
+  input.setAttribute("aria-label", "ID nick check bổ sung");
+  input.value = value;
+  const remove = document.createElement("button");
+  remove.type = "button"; remove.textContent = "Xóa nick";
+  remove.addEventListener("click", () => row.remove());
+  row.append(input, remove); $("linkCheckExtraNicks")?.append(row);
+  return input;
+}
+$("addLinkCheckNick")?.addEventListener("click", () => addLinkCheckNick().focus());
+
 async function startLinkOrder() {
   const nick1 = $("marketplaceCheckNick1Id")?.value.trim() || "";
   const nick2 = $("marketplaceCheckNick2Id")?.value.trim() || "";
   const marketplaceCheckSheetLinks = currentMarketplaceSheetLinks();
-  if (!nick1 && !nick2) {
-    $("linkOrderStatusText").textContent = "Bạn cần nhập ID Hide nick 1 hoặc nick 2.";
+  const extraNicks = extraLinkCheckNickIds();
+  if (!nick1 && !nick2 && !extraNicks.length) {
+    $("linkOrderStatusText").textContent = "Bạn cần nhập ít nhất một ID nick check.";
     return;
   }
   if (!marketplaceCheckSheetLinks.length) {
@@ -1889,6 +1913,7 @@ async function startLinkOrder() {
       marketplaceCheckSheetName: $("marketplaceCheckSheetName")?.value || "",
       marketplaceCheckNick1Id: nick1,
       marketplaceCheckNick2Id: nick2,
+      marketplaceCheckExtraNickIds: extraNicks,
       marketplaceCheckTabsPerNick: Math.max(1, Math.min(20, Number($("marketplaceCheckTabsPerNick")?.value || 5))),
       marketplaceCheckTimeoutMs: Math.max(30000, Math.min(240000, Number($("marketplaceCheckTimeoutMs")?.value || 90000)))
     };
@@ -1897,7 +1922,7 @@ async function startLinkOrder() {
       body: JSON.stringify(body)
     });
     state.config = config || state.config;
-    state.linkOrderBatchIds = data.profileIds || [nick1, nick2].filter(Boolean);
+    state.linkOrderBatchIds = data.profileIds || [nick1, nick2, ...extraNicks].filter(Boolean);
     primeToolProgress(state.linkOrderBatchIds, "bắt đầu: check link order", "linkorder");
     $("linkOrderStatusText").textContent = `Đã bắt đầu ${data.started} nick qua ${data.sheets || 1} Sheet, mỗi nick ${data.tabsPerNick || body.marketplaceCheckTabsPerNick} tab. Sheet sẽ chạy tuần tự.`;
     await refreshToolStatus();

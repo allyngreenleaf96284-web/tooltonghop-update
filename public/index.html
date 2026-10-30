@@ -735,7 +735,7 @@
             <div>
               <div class="eyebrow">Marketplace Link Tool</div>
               <h2>Check link order</h2>
-              <p id="linkOrderStatusText">Hai nick dùng chung một hàng đợi: nick 1 lấy từ trên xuống, nick 2 lấy từ dưới lên và cùng ghi cột tình trạng nick 1.</p>
+              <p id="linkOrderStatusText">Thêm các nick check; link được chia đều cho từng nick, không trùng dòng và cùng ghi cột tình trạng nick 1.</p>
             </div>
             <div class="actions">
               <button id="stopLinkOrderBtn" class="ghost-btn danger-btn" type="button"><span>Dừng hẳn</span></button>
@@ -761,13 +761,17 @@
                 <input id="marketplaceCheckSheetName" placeholder="Để trống = tab đầu tiên" />
               </label>
               <label>
-                ID Hide nick 1
+                ID GPM/HideMyAcc nick 1
                 <input id="marketplaceCheckNick1Id" placeholder="6a1c0abad6d3ae219f7d7cbd" />
               </label>
               <label>
-                ID Hide nick 2
+                ID GPM/HideMyAcc nick 2
                 <input id="marketplaceCheckNick2Id" placeholder="692d9e2cf34a40392616dd91" />
               </label>
+              <div class="action-wide">
+                <button id="addLinkCheckNick" type="button" class="ghost-btn small-btn">Thêm nick check</button>
+                <div id="linkCheckExtraNicks"></div>
+              </div>
               <label>
                 Số tab mỗi nick
                 <input id="marketplaceCheckTabsPerNick" type="number" min="1" max="20" step="1" />
@@ -778,7 +782,7 @@
               </label>
             <button id="saveLinkOrderConfig" class="primary action-wide" type="button"><span>Lưu cấu hình check link</span></button>
             </div>
-            <div class="link-order-sheet-note">Mỗi Sheet là một hàng đợi chung. Nick 1 lấy dòng từ trên xuống, nick 2 lấy dòng từ dưới lên; không trùng dòng và chỉ qua Sheet tiếp theo khi cả hai đã hết hàng đợi hiện tại.</div>
+            <div class="link-order-sheet-note">Mỗi Sheet được chia đều link cho tất cả nick, chênh lệch tối đa 1 link. Mỗi dòng chỉ giao cho một nick; cả nhóm hoàn tất mới chuyển Sheet tiếp theo.</div>
           </section>
 
           <section id="linkOrderToolProgressPanel" class="tool-progress hidden">

@@ -232,6 +232,18 @@ async function classifyPage(page, url, timeoutMs) {
   return classifyCurrentPage(page, timeoutMs);
 }
 
+export function partitionLinkTasks(tasks, count) {
+  const buckets = Array.from({ length: Math.max(1, count) }, () => []);
+  tasks.forEach((task, index) => buckets[index % buckets.length].push(task));
+  return buckets;
+}
+
+export function linkCheckProfileIds(config) {
+  return [...new Set([config.marketplaceCheckNick1Id, config.marketplaceCheckNick2Id,
+    ...(Array.isArray(config.marketplaceCheckExtraNickIds) ? config.marketplaceCheckExtraNickIds : [])]
+    .map(normalizeProfileIdText).filter(Boolean))];
+}
+
 export function createMarketplaceLinkOrderTool({
   getHideManager,
   dangNhap,
@@ -294,6 +306,7 @@ export function createMarketplaceLinkOrderTool({
     const tasks = buildTasks(plan.values, plan.linkIndex, plan.nick1Index);
     return {
       tasks,
+      partitions: partitionLinkTasks(tasks, participantCount),
       first: 0,
       last: tasks.length - 1,
       total: tasks.length,
@@ -305,10 +318,9 @@ export function createMarketplaceLinkOrderTool({
     };
   }
 
-  function claimSharedTask(queue, direction) {
-    if (queue.aborted || queue.first > queue.last) return null;
-    if (direction === "desc") return queue.tasks[queue.last--];
-    return queue.tasks[queue.first++];
+  function claimSharedTask(queue, workerSlot) {
+    if (queue.aborted) return null;
+    return queue.partitions[workerSlot]?.shift() || null;
   }
 
   function releaseQueueWaiters(queue) {
@@ -383,17 +395,20 @@ export function createMarketplaceLinkOrderTool({
   }
 
   function tileBounds(workerSlot = 0, workerTotal = 2) {
-    const total = Math.max(1, Math.min(2, Number(workerTotal || 2)));
+    const total = Math.max(1, Number(workerTotal || 1));
     const slot = Math.max(0, Math.min(total - 1, Number(workerSlot || 0)));
     if (total <= 1) return { left: 0, top: 0, width: 1280, height: 980 };
-    return { left: slot === 0 ? 0 : 960, top: 0, width: 960, height: 980 };
+    const columns = Math.ceil(Math.sqrt(total));
+    const rows = Math.ceil(total / columns);
+    const width = Math.floor(1920 / columns), height = Math.floor(980 / rows);
+    return { left: (slot % columns) * width, top: Math.floor(slot / columns) * height, width, height };
   }
 
   async function applyWindowTiling(browser, page, workerSlot, workerTotal) {
     const bounds = tileBounds(workerSlot, workerTotal);
     await page.setViewport?.({
-      width: Math.max(760, bounds.width - 24),
-      height: Math.max(640, bounds.height - 120),
+      width: Math.max(320, bounds.width - 24),
+      height: Math.max(240, bounds.height - 120),
       deviceScaleFactor: 1
     }).catch(() => {});
     try {
@@ -464,18 +479,18 @@ export function createMarketplaceLinkOrderTool({
         const queue = plan.sharedQueue;
         if (!queue) throw new Error("Khong tim thay hang doi chung cua Sheet.");
         if (queue.aborted) throw new Error(queue.abortReason || "Hang doi Sheet da dung.");
-        totalTasks += queue.total;
+        totalTasks += queue.partitions[workerSlot]?.length || 0;
         const sheetLabel = `Sheet ${sheetIndex + 1}/${plans.length} ${plan.title}`;
-        if (job) job.liveStatus = `${nickLabel}: ${sheetLabel}, hang doi chung ${queue.total} link`;
-        log(profileId, "xep hang", `${nickLabel} bat dau ${sheetLabel}, lay link ${direction === "desc" ? "tu duoi len" : "tu tren xuong"} trong hang doi chung`);
-        const workers = Array.from({ length: Math.min(tabCount, Math.max(1, queue.total)) }, async (_, workerIndex) => {
+        if (job) job.liveStatus = `${nickLabel}: ${sheetLabel}, duoc chia ${queue.partitions[workerSlot]?.length || 0}/${queue.total} link`;
+        log(profileId, "xep hang", `${nickLabel} bat dau ${sheetLabel}, xu ly phan link duoc chia rieng`);
+        const workers = Array.from({ length: Math.min(tabCount, queue.partitions[workerSlot]?.length || 0) }, async (_, workerIndex) => {
           let page = await browser.newPage();
           await applyWindowTiling(browser, page, workerSlot, workerTotal);
           try {
             while (true) {
               if (runtime.stopRequested) throw stoppedError();
               if (queue.aborted) throw new Error(queue.abortReason || "Hang doi Sheet da dung.");
-              const task = claimSharedTask(queue, direction);
+              const task = claimSharedTask(queue, workerSlot);
               if (!task) break;
               const label = `${nickLabel} ${sheetLabel} row ${task.rowNumber}`;
               if (job) job.liveStatus = `${label} (${checked}/${totalTasks})`;
@@ -493,7 +508,13 @@ export function createMarketplaceLinkOrderTool({
             await page.close({ runBeforeUnload: false }).catch(() => {});
           }
         });
-        await Promise.all(workers);
+        // Drain every tab before a retry pass can reload and redistribute rows.
+        const results = await Promise.allSettled(workers.map((work) => work.catch((error) => {
+          abortSharedQueues(plans, error.message || String(error));
+          throw error;
+        })));
+        const failed = results.find((result) => result.status === "rejected");
+        if (failed) throw failed.reason;
         await assertMarketplaceAccess(loginPage);
         await waitForSheetPeers(queue);
       }
@@ -531,14 +552,10 @@ export function createMarketplaceLinkOrderTool({
 
   async function run(config) {
     if (runtime.running) throw new Error("Dang co tool khac chay, vui long doi xong.");
-    const nick1 = String(config.marketplaceCheckNick1Id || "").trim();
-    const nick2 = String(config.marketplaceCheckNick2Id || "").trim();
-    if (!nick1 && !nick2) throw new Error("Chua nhap ID Hide nick 1 hoac nick 2.");
+    const ids = linkCheckProfileIds(config);
+    if (!ids.length) throw new Error("Chua nhap ID profile nick check.");
     const tabCount = clampNumber(config.marketplaceCheckTabsPerNick, 5, 1, 20);
-    const profiles = [
-      nick1 ? { profileId: nick1, nickLabel: "nick 1", direction: "asc" } : null,
-      nick2 ? { profileId: nick2, nickLabel: "nick 2", direction: "desc" } : null
-    ].filter(Boolean);
+    const profiles = ids.map((profileId, index) => ({ profileId, nickLabel: `nick ${index + 1}`, direction: "asc" }));
 
     const loadPlans = async (participantCount = profiles.length) => {
       const sheetInputs = Array.isArray(config.marketplaceCheckSpreadsheetIds) && config.marketplaceCheckSpreadsheetIds.length
@@ -585,13 +602,13 @@ export function createMarketplaceLinkOrderTool({
         profileId: item.profileId,
         tool: "check link order",
         status: "queued",
-        liveStatus: `${item.nickLabel}: ${item.direction === "desc" ? "tu duoi len" : "tu tren xuong"} trong hang doi chung, dang cho chay ${tabCount} tab`,
+        liveStatus: `${item.nickLabel}: phan link duoc chia rieng, dang cho chay ${tabCount} tab`,
         logs: [],
         startedAt: new Date().toISOString(),
         finishedAt: "",
         result: null
       });
-      log(item.profileId, "xep hang", `${item.nickLabel} da xep hang ${tabCount} tab, lay link ${item.direction === "desc" ? "tu duoi len" : "tu tren xuong"} trong hang doi chung.`);
+      log(item.profileId, "xep hang", `${item.nickLabel} da xep hang ${tabCount} tab, lay link phan link duoc chia rieng.`);
     }
 
     runtime.running = true;

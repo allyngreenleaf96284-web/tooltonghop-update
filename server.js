@@ -149,6 +149,7 @@ const DEFAULT_CONFIG = {
   marketplaceCheckSheetName: "",
   marketplaceCheckNick1Id: "",
   marketplaceCheckNick2Id: "",
+  marketplaceCheckExtraNickIds: [],
   marketplaceCheckTabsPerNick: 5,
   marketplaceCheckTimeoutMs: 90000,
   interactionConcurrency: 4,
@@ -1082,6 +1083,7 @@ async function readConfig() {
     loaded.marketplaceCheckSheetName = String(loaded.marketplaceCheckSheetName || "").trim();
     loaded.marketplaceCheckNick1Id = String(loaded.marketplaceCheckNick1Id || "").trim();
     loaded.marketplaceCheckNick2Id = String(loaded.marketplaceCheckNick2Id || "").trim();
+    loaded.marketplaceCheckExtraNickIds = Array.isArray(loaded.marketplaceCheckExtraNickIds) ? loaded.marketplaceCheckExtraNickIds.map(normalizeProfileIdText).filter(Boolean) : [];
     loaded.marketplaceCheckTabsPerNick = clampConcurrency(loaded.marketplaceCheckTabsPerNick, DEFAULT_CONFIG.marketplaceCheckTabsPerNick, 20);
     loaded.marketplaceCheckTimeoutMs = Math.max(30000, Math.min(240000, Math.floor(Number(loaded.marketplaceCheckTimeoutMs || DEFAULT_CONFIG.marketplaceCheckTimeoutMs))));
     loaded.interactionConcurrency = clampConcurrency(loaded.interactionConcurrency, DEFAULT_CONFIG.interactionConcurrency, 4);
@@ -1152,6 +1154,7 @@ async function saveConfig(input) {
     marketplaceCheckSheetName: String(input.marketplaceCheckSheetName !== undefined ? input.marketplaceCheckSheetName : current.marketplaceCheckSheetName || "").trim(),
     marketplaceCheckNick1Id: String(input.marketplaceCheckNick1Id !== undefined ? input.marketplaceCheckNick1Id : current.marketplaceCheckNick1Id || "").trim(),
     marketplaceCheckNick2Id: String(input.marketplaceCheckNick2Id !== undefined ? input.marketplaceCheckNick2Id : current.marketplaceCheckNick2Id || "").trim(),
+    marketplaceCheckExtraNickIds: (Array.isArray(input.marketplaceCheckExtraNickIds) ? input.marketplaceCheckExtraNickIds : current.marketplaceCheckExtraNickIds || []).map(normalizeProfileIdText).filter(Boolean),
     marketplaceCheckTabsPerNick: clampConcurrency(input.marketplaceCheckTabsPerNick, current.marketplaceCheckTabsPerNick || DEFAULT_CONFIG.marketplaceCheckTabsPerNick, 20),
     marketplaceCheckTimeoutMs: Math.max(30000, Math.min(240000, Math.floor(Number(input.marketplaceCheckTimeoutMs ?? current.marketplaceCheckTimeoutMs ?? DEFAULT_CONFIG.marketplaceCheckTimeoutMs)) || DEFAULT_CONFIG.marketplaceCheckTimeoutMs)),
     interactionConcurrency: clampConcurrency(input.interactionConcurrency, current.interactionConcurrency || DEFAULT_CONFIG.interactionConcurrency, 4),
@@ -1312,6 +1315,7 @@ async function saveConfigV2(input) {
     marketplaceCheckSheetName: String(input.marketplaceCheckSheetName !== undefined ? input.marketplaceCheckSheetName : current.marketplaceCheckSheetName || "").trim(),
     marketplaceCheckNick1Id: String(input.marketplaceCheckNick1Id !== undefined ? input.marketplaceCheckNick1Id : current.marketplaceCheckNick1Id || "").trim(),
     marketplaceCheckNick2Id: String(input.marketplaceCheckNick2Id !== undefined ? input.marketplaceCheckNick2Id : current.marketplaceCheckNick2Id || "").trim(),
+    marketplaceCheckExtraNickIds: (Array.isArray(input.marketplaceCheckExtraNickIds) ? input.marketplaceCheckExtraNickIds : current.marketplaceCheckExtraNickIds || []).map(normalizeProfileIdText).filter(Boolean),
     marketplaceCheckTabsPerNick: clampConcurrency(input.marketplaceCheckTabsPerNick, current.marketplaceCheckTabsPerNick || DEFAULT_CONFIG.marketplaceCheckTabsPerNick, 20),
     marketplaceCheckTimeoutMs: Math.max(30000, Math.min(240000, Math.floor(Number(input.marketplaceCheckTimeoutMs ?? current.marketplaceCheckTimeoutMs ?? DEFAULT_CONFIG.marketplaceCheckTimeoutMs)) || DEFAULT_CONFIG.marketplaceCheckTimeoutMs)),
     interactionConcurrency: clampConcurrency(input.interactionConcurrency, current.interactionConcurrency || DEFAULT_CONFIG.interactionConcurrency, 4),
@@ -3559,7 +3563,7 @@ async function handleApi(req, res) {
       const config = await resolveAccountSheetConfig(savedConfig);
       const nick1 = String(config.marketplaceCheckNick1Id || "").trim();
       const nick2 = String(config.marketplaceCheckNick2Id || "").trim();
-      const linkProfileIds = [nick1, nick2].filter(Boolean);
+      const linkProfileIds = [...new Set([nick1, nick2, ...(config.marketplaceCheckExtraNickIds || [])].map(normalizeProfileIdText).filter(Boolean))];
       const data = await startAutoRetryBatch({
         runtime: toolRuntime,
         tool: "check link order",
@@ -3570,8 +3574,9 @@ async function handleApi(req, res) {
           const wanted = new Set(runIds);
           return marketplaceLinkOrderModule.run({
             ...config,
-            marketplaceCheckNick1Id: wanted.has(nick1) ? nick1 : "",
-            marketplaceCheckNick2Id: wanted.has(nick2) ? nick2 : ""
+            marketplaceCheckNick1Id: wanted.has(normalizeProfileIdText(nick1)) ? nick1 : "",
+            marketplaceCheckNick2Id: wanted.has(normalizeProfileIdText(nick2)) ? nick2 : "",
+            marketplaceCheckExtraNickIds: (config.marketplaceCheckExtraNickIds || []).filter((id) => wanted.has(normalizeProfileIdText(id)))
           });
         }
       });
