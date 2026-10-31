@@ -125,7 +125,7 @@ test('native HTTP client tunnels TLS through authenticated proxy, reuses cookie 
   try{
     await exec(openssl,['req','-x509','-newkey','rsa:2048','-nodes','-keyout',path.join(directory,'key.pem'),'-out',path.join(directory,'cert.pem'),'-days','1','-subj','/CN=www.facebook.com','-addext','subjectAltName=DNS:www.facebook.com,DNS:api64.ipify.org']);
     secure=https.createServer({key:await readFile(path.join(directory,'key.pem')),cert:await readFile(path.join(directory,'cert.pem'))},(req,res)=>{
-      seen.push({host:req.headers.host,cookie:req.headers.cookie||''});res.setHeader('Content-Type','application/json');
+      seen.push({host:req.headers.host,cookie:req.headers.cookie||'',userAgent:req.headers['user-agent'],accept:req.headers.accept});res.setHeader('Content-Type','application/json');
       if(req.headers.host==='api64.ipify.org')return res.end('{"ip":"2001:db8::1"}');
       res.setHeader('Set-Cookie','xs=updated-fixture; Path=/');res.setHeader('Content-Encoding','gzip');res.end(gzipSync('{"USER_ID":"10001"}'));
     });
@@ -140,5 +140,7 @@ test('native HTTP client tunnels TLS through authenticated proxy, reuses cookie 
     const result=await exec(process.execPath,['--input-type=module','-e',script],{env:{...process.env,NODE_EXTRA_CA_CERTS:path.join(directory,'cert.pem')},timeout:20000});
     assert.match(result.stdout,/ok/);assert.ok(connects.every(value=>value==='Basic '+Buffer.from('user:pass').toString('base64')));
     assert.equal(seen[0].host,'api64.ipify.org');assert.equal(seen[0].cookie,'');assert.match(seen[2].cookie,/xs=updated-fixture/);
+    assert.ok(seen.every(item=>item.userAgent==='ToolTongHop-LinkCheck/1.0'));
+    assert.equal(seen[0].accept,'application/json');assert.match(seen[1].accept,/text\/html/);assert.ok(!seen[1].accept.includes('application/json'));
   }finally{for(const socket of sockets)socket.destroy();if(proxy)await new Promise(resolve=>proxy.close(resolve));if(secure)await new Promise(resolve=>secure.close(resolve));await rm(directory,{recursive:true,force:true});}
 });

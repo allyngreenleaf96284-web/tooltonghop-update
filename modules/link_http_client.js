@@ -88,8 +88,10 @@ export function createHttpCheckClient({ cookie, proxy }, { lookupCountry } = {})
     if (url.protocol !== "https:" || !allowed.includes(url.hostname) || (url.port && url.port !== "443")) throw new Error("URL check khong duoc ho tro.");
     if (facebook && !throughProxy) throw new Error("Facebook bat buoc di qua proxy.");
     return new Promise((resolve, reject) => {
-      const headers = { "Accept": "text/html,application/json", "Accept-Encoding": "gzip, br", "Accept-Language": "en-US,en;q=0.9",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36" };
+      // Identify this transport as an HTTP client. Claiming Chrome with an
+      // incomplete browser request caused Facebook HTTP 400 on valid sessions.
+      const headers = { "Accept": facebook ? "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" : "application/json", "Accept-Encoding": "gzip, br", "Accept-Language": "en-US,en;q=0.9",
+        "User-Agent": "ToolTongHop-LinkCheck/1.0" };
       if (facebook && cookies.size) headers.Cookie = [...cookies].map(([key,value]) => `${key}=${value}`).join("; ");
       const request = https.get(url, { agent: throughProxy ? agent : undefined, headers, signal }, (response) => {
         if (facebook) for (const line of response.headers["set-cookie"] || []) {
