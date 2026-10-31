@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { normalizeHttpAccounts, accountUid, parseCheckProxy, createHttpCheckClient, classifyHttpListing } from "./link_http_client.js";
 import { createLinkCheckProgress } from "./link_check_light.js";
+import { createLinkBrowserVerifier } from "./link_browser_verify.js";
 
 const defaultJournal = fileURLToPath(new URL("../data/link-http-pending.json",import.meta.url));
 const retryStatus = (value) => /^(không rõ|khong ro|lỗi check|loi check)$/i.test(String(value).trim());
@@ -44,7 +45,8 @@ export async function createHttpSheetWriter(plans, journalPath=defaultJournal) {
   return {
     flush,
     get pendingCount(){return [...pending.values()].filter(item=>plans.some(plan=>plan.spreadsheetId===item.spreadsheetId&&plan.title===item.title)).length;},
-    async write(plan,task,status){await locked(async()=>{const item={spreadsheetId:plan.spreadsheetId,title:plan.title,rowNumber:task.rowNumber,link:task.link,status,version:randomUUID()};pending.set(cellKey(item),item);await persist();});}
+    async discardUnconfirmed(){await locked(async()=>{for(const [key,item] of pending)if(plans.some(plan=>plan.spreadsheetId===item.spreadsheetId&&plan.title===item.title)&&(retryStatus(item.status)||(/thâm buy now/i.test(item.status)&&item.verifiedBy!=="browser")))pending.delete(key);await persist();});},
+    async write(plan,task,status,verifiedBy="http"){await locked(async()=>{const item={spreadsheetId:plan.spreadsheetId,title:plan.title,rowNumber:task.rowNumber,link:task.link,status,verifiedBy,version:randomUUID()};pending.set(cellKey(item),item);await persist();});}
   };
 }
 
@@ -56,7 +58,7 @@ export async function runHttpLinkChecks(options) {
   catch(error){runtime.running=false;runtime.currentTool="";throw error;}
 }
 
-async function startHttpLinkChecks({config,readPlan,runtime,log,createClient=createHttpCheckClient,journalPath}) {
+async function startHttpLinkChecks({config,readPlan,runtime,log,createClient=createHttpCheckClient,journalPath,readBrowserStatus,createVerifier=createLinkBrowserVerifier}) {
   const accounts=normalizeHttpAccounts(config.marketplaceHttpAccounts);
   if(!accounts.length)throw new Error("Them it nhat mot nick HTTP: cookie Facebook va proxy My.");
   const seen=new Set();
@@ -71,6 +73,7 @@ async function startHttpLinkChecks({config,readPlan,runtime,log,createClient=cre
     if(!sheets.has(key)){sheets.add(key);plans.push(plan);}
   }
   const writer=await createHttpSheetWriter(plans,journalPath);
+  await writer.discardUnconfirmed();
   // Replay locally saved results before scheduling links again.
   await writer.flush();
   const tasks=[];
@@ -78,15 +81,20 @@ async function startHttpLinkChecks({config,readPlan,runtime,log,createClient=cre
     const owned=[];
     for(let i=1;i<plan.values.length;i++){
       const url=String(plan.values[i]?.[plan.linkIndex]||"").trim(),status=plan.values[i]?.[plan.nick1Index]||"";
-      if(!url || (status&&!retryStatus(status)))continue;
+      if(!url || (status&&!retryStatus(status)&&!/thâm buy now/i.test(status)))continue;
       const task={rowNumber:i+1,link:url,plan};owned.push(task);tasks.push(task);
     }
     plan.sharedQueue={tasks:owned};
   }
   const progress=createLinkCheckProgress(runtime,nicks.length,retryStatus);
+  // These rows are being re-verified. Their old Sheet labels are not evidence
+  // that this run has completed them. This only changes the in-memory view.
+  for(const task of tasks){task.plan.values[task.rowNumber-1]=[...task.plan.values[task.rowNumber-1]];task.plan.values[task.rowNumber-1][task.plan.nick1Index]="";}
   progress.register(plans);progress.summary.mode="http";progress.summary.sheetPending=0;
   const perNick=Math.max(1,Math.min(10,Math.floor(Number(config.marketplaceHttpConcurrency)||2)));
   const controller=new AbortController();
+  const verifier=createVerifier({readStatus:readBrowserStatus});
+  progress.summary.awaitingVerification=0;
   let cursor=0;
   for(const nick of nicks)runtime.jobs.set(nick.id,{profileId:nick.id,uid:nick.uid,tool:"check link order",status:"queued",liveStatus:`${nick.label}: cho kiem tra proxy/session`,logs:[],startedAt:new Date().toISOString(),result:null});
   setImmediate(async()=>{
@@ -105,8 +113,17 @@ async function startHttpLinkChecks({config,readPlan,runtime,log,createClient=cre
         try{
           client=createClient(nick);job.status="running";job.liveStatus=`${nick.label}: dang xac minh proxy My`;
           await client.verifyUs(controller.signal);
+          if(client.proxyInfo) {
+            job.proxyInfo = client.proxyInfo;
+            log(nick.id,"proxy HTTP",`${nick.label}: cong ${job.proxyInfo.gateway}; IP kiem tra ${job.proxyInfo.exitIp}; quoc gia ${job.proxyInfo.country}`);
+          }
           // Verify the supplied session belongs to this account before sharing work.
           const session=await client.get("https://www.facebook.com/me?locale=en_US",{signal:controller.signal});
+          if(session.connection) {
+            if(!session.connection.throughProxy)throw new Error("Request Facebook khong di qua proxy; da dung nick.");
+            if(job.proxyInfo)job.proxyInfo.facebookGateway=`${session.connection.gatewayPeer}:${session.connection.gatewayPort || ""}`;
+            log(nick.id,"proxy HTTP",`${nick.label}: TCP Facebook qua cong proxy ${session.connection.gatewayPeer}:${session.connection.gatewayPort || ""}`);
+          }
           if(session.status!==200)throw new Error(`Facebook tra HTTP ${session.status} khi kiem tra phien; chua xac nhan duoc dang nhap.`);
           if(/\/login|\/checkpoint|\/two_step_verification/.test(session.url))throw new Error("Cookie het han hoac can xac minh dang nhap.");
           const sessionEvidence=session.html.match(/"USER_ID"\s*:\s*"(\d+)"/)?.[1] || session.html.match(/"actorID"\s*:\s*"(\d+)"/)?.[1];
@@ -127,7 +144,19 @@ async function startHttpLinkChecks({config,readPlan,runtime,log,createClient=cre
                   }catch{result={status:"không rõ",reason:"Loi HTTP/proxy; can check lai."};}
                   if(runtime.stopRequested)break;
                   if(result.blocked){tasks.push(task);blocked=true;job.liveStatus=`${nick.label}: ${result.reason}`;job.status="error";job.result={chiTiet:result.reason};return;}
-                  await writer.write(task.plan,task,result.status);
+                  if(!result.status||retryStatus(result.status)||/thâm buy now/i.test(result.status)) {
+                    job.liveStatus=`${nick.label}: dang xac minh bang trinh duyet an, dong ${task.rowNumber}`;
+                    try {result=await verifier.verify(nick,task.link,{signal:controller.signal,verifyIp:client.verifyExternalIp,
+                      onProxyInfo:info=>{const changed=job.proxyInfo?.browserExitIp!==info.ip;if(job.proxyInfo)job.proxyInfo.browserExitIp=info.ip;if(changed)log(nick.id,"proxy trinh duyet",`${nick.label}: IP trinh duyet ${info.ip}; ${info.country}`);}});}
+                    catch(error){result={reason:/^(Can Chrome|Chua tim thay|Thu vien Chromium|Chua co bo doc|Chua xac minh|Proxy chua)/.test(error.message)?error.message:"Chua xac minh duoc bang trinh duyet; link duoc giu lai."};}
+                  }
+                  if(runtime.stopRequested)break;
+                  if(result.blocked){tasks.push(task);blocked=true;job.liveStatus=`${nick.label}: ${result.reason}`;job.status="error";job.result={chiTiet:result.reason};return;}
+                  if(!result.status||retryStatus(result.status)) {
+                    unknown++;progress.summary.awaitingVerification++;lastReason=result.reason||"Link chua du bang chung.";
+                    job.liveStatus=`${nick.label}: cho xac minh dong ${task.rowNumber}; ${lastReason}`;continue;
+                  }
+                  await writer.write(task.plan,task,result.status,result.verifiedBy||"http");
                   progress.wrote(task.plan,task,result.status);progress.summary.sheetPending=writer.pendingCount;checked++;
                   if(retryStatus(result.status))unknown++;
                   if(result.reason)lastReason=result.reason;
@@ -139,13 +168,14 @@ async function startHttpLinkChecks({config,readPlan,runtime,log,createClient=cre
             const failed=results.find(result=>result.status==="rejected");
             if(failed)throw failed.reason;
           }finally{progress.summary.activeProfiles--;}
-          if(!blocked){job.status=runtime.stopRequested?"stopped":"success";job.liveStatus=`${nick.label}: da check ${checked}, khong ro ${unknown}${lastReason?` — ${lastReason}`:""}`;job.result={checked,unknown,lastReason};}
+          if(!blocked){job.status=runtime.stopRequested?"stopped":unknown?"error":"success";job.liveStatus=`${nick.label}: da xac nhan ${checked}, cho xac minh ${unknown}${lastReason?` — ${lastReason}`:""}`;job.result={checked,unknown,lastReason};}
           else job.liveStatus=`${nick.label}: ${job.result.chiTiet}`;
         }catch(error){job.status=runtime.stopRequested?"stopped":"error";job.liveStatus=`${nick.label}: ${error.message}`;log(nick.id,"HTTP check",job.liveStatus,"warn");}
         finally{try{client?.close();}catch{}job.finishedAt=new Date().toISOString();}
       }));
     }finally{
       clearInterval(timer);
+      try{await verifier.close();}catch{}
       // A final flush is queued behind any timer flush, including on Stop.
       try{await writer.flush();progress.summary.sheetWriteError="";}catch{progress.summary.sheetWriteError="Con ket qua cho ghi Sheet; da luu tren may, lan chay sau se ghi lai.";}
       progress.summary.sheetPending=writer.pendingCount;controller.abort();progress.finish();runtime.running=false;runtime.currentTool="";

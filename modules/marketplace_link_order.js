@@ -542,7 +542,7 @@ export function createMarketplaceLinkOrderTool({
 
   async function run(config) {
     if (runtime.running) throw new Error("Dang co tool khac chay, vui long doi xong.");
-    if (config.marketplaceCheckMode === "http") return runHttpLinkChecks({config,readPlan,runtime,log});
+    if (config.marketplaceCheckMode === "http") return runHttpLinkChecks({config,readPlan,runtime,log,readBrowserStatus:readCurrentMarketplaceStatus});
     const ids = linkCheckProfileIds(config);
     if (!ids.length) throw new Error("Chua nhap ID profile nick check.");
     const tabCount = clampNumber(config.marketplaceCheckTabsPerNick, 5, 1, 20);

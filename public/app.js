@@ -1958,7 +1958,7 @@ async function startLinkOrder() {
     state.config = config || state.config;
     state.linkOrderBatchIds = data.profileIds || [nick1, nick2, ...extraNicks].filter(Boolean);
     primeToolProgress(state.linkOrderBatchIds, "bắt đầu: check link order", "linkorder");
-    $("linkOrderStatusText").textContent = data.mode === "http" ? `HTTP: ${data.started} nick, ${data.totalLinks} link, ${data.requestsPerNick} request/nick. HTML thiếu dữ liệu sẽ ghi không rõ để check lại bằng Hide.` : `Đã bắt đầu ${data.started} nick qua ${data.sheets || 1} Sheet, mỗi nick ${data.tabsPerNick || body.marketplaceCheckTabsPerNick} tab. Sheet sẽ chạy tuần tự.`;
+    $("linkOrderStatusText").textContent = data.mode === "http" ? `HTTP: ${data.started} nick, ${data.totalLinks} link, ${data.requestsPerNick} request/nick. Link thiếu dữ liệu/nút mua vô hiệu hóa sẽ được xác minh bằng trình duyệt ẩn.` : `Đã bắt đầu ${data.started} nick qua ${data.sheets || 1} Sheet, mỗi nick ${data.tabsPerNick || body.marketplaceCheckTabsPerNick} tab. Sheet sẽ chạy tuần tự.`;
     await refreshToolStatus();
     startToolStatusPolling();
   } catch (error) {
@@ -2855,7 +2855,7 @@ function linkOrderProgressPresentation(summary) {
   return {
     stateLabel: !summary.running && summary.sheetPending > 0 ? "chờ ghi Sheet" : summary.running ? (summary.pass > 1 ? "đang check lại" : "đang chạy") : pending ? "còn link chưa xong" : "xong",
     countLabel: `Đã check ${summary.checked || 0} / ${total} link`,
-    textLabel: `Hoàn tất ${completed} · Còn ${pending} · Cần check lại ${summary.retryable || 0} · Đang xử lý ${summary.inFlight || 0} link · Nick hoạt động ${summary.activeProfiles || 0}/${summary.profileCount || 0} · Lượt ${summary.pass || 1}${summary.mode === "http" ? ` · Đã ghi Sheet ${Math.max(0, Number(summary.checked || 0) - Number(summary.sheetPending || 0))} · Chờ ghi Sheet ${summary.sheetPending || 0}${summary.sheetWriteError ? ` · ${summary.sheetWriteError}` : ""}` : ""}`,
+    textLabel: `Hoàn tất ${completed} · Còn ${pending} · Cần check lại ${summary.retryable || 0} · Đang xử lý ${summary.inFlight || 0} link · Nick hoạt động ${summary.activeProfiles || 0}/${summary.profileCount || 0} · Lượt ${summary.pass || 1}${summary.mode === "http" ? ` · Đã ghi Sheet ${Math.max(0, Number(summary.checked || 0) - Number(summary.sheetPending || 0))} · Chờ ghi Sheet ${summary.sheetPending || 0} · Chờ xác minh ${summary.awaitingVerification || 0}${summary.sheetWriteError ? ` · ${summary.sheetWriteError}` : ""}` : ""}`,
     percent: total ? Math.max(0, Math.min(100, completed / total * 100)) : 0
   };
 }
@@ -3302,6 +3302,7 @@ function renderToolProgressPanel({
       <span class="job-status ${escapeAttr(rawStatus)}">${escapeHtml(displayStatus)}</span>
       ${timeCell}
       <span>${escapeHtml(`${phaseText}: ${job.liveStatus || ""}`)}
+      ${job.tool === "check link order" && job.proxyInfo ? `<br><small>${escapeHtml(`Cổng proxy: ${job.proxyInfo.gateway} · IP kiểm tra: ${job.proxyInfo.exitIp} (${job.proxyInfo.country}) · Facebook qua cổng: ${job.proxyInfo.facebookGateway || "đang kiểm tra"}${job.proxyInfo.browserExitIp ? ` · IP trình duyệt: ${job.proxyInfo.browserExitIp}` : ""}`)}</small>` : ""}
       ${job.tool === "tool login" && ["running", "queued"].includes(rawStatus) && job.loginPauseSupported !== false ? `<button type="button" data-login-pause-id="${escapeAttr(job.profileId)}">${job.loginLocalPaused ? "Tiếp tục nick" : "Tạm dừng nick"}</button>${rawStatus === "running" ? `<button type="button" data-login-retry-id="${escapeAttr(job.profileId)}">Chạy lại (F10)</button>` : ""}${rawStatus === "running" ? `<button type="button" data-login-manual-id="${escapeAttr(job.profileId)}">Sửa tên & đóng (F9)</button>` : ""}` : ""}</span>
     </div>
   `; }).join("");

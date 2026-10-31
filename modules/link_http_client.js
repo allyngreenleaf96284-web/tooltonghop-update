@@ -81,7 +81,9 @@ class TunnelAgent extends https.Agent {
 }
 
 export function createHttpCheckClient({ cookie, proxy }, { lookupCountry } = {}) {
-  const agent = new TunnelAgent(parseCheckProxy(proxy));
+  const parsedProxy = parseCheckProxy(proxy);
+  const agent = new TunnelAgent(parsedProxy);
+  let proxyInfo = null;
   const cookies = new Map(cookie.split(";").map((part) => { const i = part.indexOf("="); return [part.slice(0,i).trim(), part.slice(i+1).trim()]; }).filter(([key]) => key));
   async function get(rawUrl, { timeoutMs = 20000, signal, facebook = true, throughProxy = true } = {}, redirects = 0) {
     const url = new URL(rawUrl);
@@ -95,6 +97,9 @@ export function createHttpCheckClient({ cookie, proxy }, { lookupCountry } = {})
         "User-Agent": "ToolTongHop-LinkCheck/1.0" };
       if (facebook && cookies.size) headers.Cookie = [...cookies].map(([key,value]) => `${key}=${value}`).join("; ");
       const request = https.get(url, { agent: throughProxy ? agent : undefined, headers, signal }, (response) => {
+        // TCP peer is the proxy gateway for tunneled requests, not the
+        // destination's exit IP. Keep these distinct in diagnostics.
+        const connection = { throughProxy, gatewayPeer: request.socket?.remoteAddress || "", gatewayPort: request.socket?.remotePort || null };
         if (facebook) for (const line of response.headers["set-cookie"] || []) {
           const pair = line.split(";")[0], i = pair.indexOf("=");
           if (i > 0) cookies.set(pair.slice(0,i), pair.slice(i+1));
@@ -109,7 +114,7 @@ export function createHttpCheckClient({ cookie, proxy }, { lookupCountry } = {})
         if(body!==response)response.pipe(body);
         const chunks = []; let size = 0;
         body.on("data", (chunk) => { size += chunk.length; if (size > 12*1024*1024) {body.destroy();request.destroy(new Error("Phan hoi qua lon."));} else chunks.push(chunk); });
-        body.on("end", () => resolve({ html: Buffer.concat(chunks).toString("utf8"), status: response.statusCode, url: url.href }));
+        body.on("end", () => resolve({ html: Buffer.concat(chunks).toString("utf8"), status: response.statusCode, url: url.href, connection }));
         body.on("error",()=>{request.destroy();reject(new Error("Khong doc duoc noi dung HTTP."));});
         response.on("error", () => reject(new Error("Phan hoi bi ngat.")));
       });
@@ -118,15 +123,8 @@ export function createHttpCheckClient({ cookie, proxy }, { lookupCountry } = {})
       request.once("error",(error)=>reject(error.proxyDiagnostic ? error : error.name === "AbortError" ? new Error("Da dung check HTTP.") : connectionError(`HTTPS -> ${url.hostname}${throughProxy ? " qua proxy" : " (tra quoc gia IP)"}`,error.code)));
     });
   }
-  return {
-    get,
-    async verifyUs(signal) {
-      // IPv6-only exits cannot reach IPv4-only geo providers. Obtain the exit
-      // through a dual-stack endpoint first. Geography lookup sends only that
-      // public IP, directly; it never receives Facebook cookies or proxy auth.
-      const response = await get("https://api64.ipify.org?format=json", {facebook:false,signal,timeoutMs:15000});
-      let ip;try{ip=JSON.parse(response.html).ip;}catch{}
-      if(response.status!==200||!isIP(ip || ""))throw new Error("Khong lay duoc IP dau ra IPv4/IPv6 cua proxy.");
+  async function verifyExternalIp(ip,signal) {
+    if(!isIP(ip || ""))throw new Error("IP dau ra trinh duyet khong hop le.");
       let info;
       if(lookupCountry) info=await lookupCountry(ip,signal);
       else {
@@ -135,6 +133,22 @@ export function createHttpCheckClient({ cookie, proxy }, { lookupCountry } = {})
         try {info=JSON.parse(country.html);}catch{throw new Error("Khong doc duoc quoc gia IP dau ra.");}
       }
       if (info?.country !== "US") throw new Error("Proxy chua duoc xac nhan la IP My (US).");
+    return {ip,country:info.country};
+  }
+  return {
+    get,
+    verifyExternalIp,
+    get proxyInfo() { return proxyInfo ? {...proxyInfo} : null; },
+    async verifyUs(signal) {
+      // IPv6-only exits cannot reach IPv4-only geo providers. Obtain the exit
+      // through a dual-stack endpoint first. Geography lookup sends only that
+      // public IP, directly; it never receives Facebook cookies or proxy auth.
+      const response = await get("https://api64.ipify.org?format=json", {facebook:false,signal,timeoutMs:15000});
+      let ip;try{ip=JSON.parse(response.html).ip;}catch{}
+      if(response.status!==200||!isIP(ip || ""))throw new Error("Khong lay duoc IP dau ra IPv4/IPv6 cua proxy.");
+      const info = await verifyExternalIp(ip,signal);
+      proxyInfo = { gateway: `${parsedProxy.hostname}:${parsedProxy.port || (parsedProxy.protocol === "https:" ? 443 : 80)}`,
+        exitIp: ip, country: info.country, verifiedAt: new Date().toISOString() };
       return true;
     },
     close() { agent.destroy(); }

@@ -134,6 +134,22 @@ test('a rejected session does not consume links assigned to healthy sessions',as
   }finally{await rm(directory,{recursive:true,force:true});}
 });
 
+test('old gray results are reverified; unresolved results are never written to Sheet',async()=>{
+  const directory=await mkdtemp(path.join(os.tmpdir(),'link-http-confirm-'));
+  try{
+    const runtime={jobs:new Map()},writes=[],verified=[];
+    const plan={spreadsheetId:'fixture',title:'Links',linkIndex:0,nick1Index:1,values:[['link','status'],['https://www.facebook.com/marketplace/item/123/','thâm buy now'],['https://www.facebook.com/marketplace/item/124/','không rõ']],client:{async batchUpdateValues(batch){writes.push(...batch);}}};
+    const cookie='c_user=10001; xs=fixture;',proxy='localhost:8000';
+    await runHttpLinkChecks({runtime,log(){},config:{marketplaceCheckSpreadsheetId:'fixture',marketplaceHttpAccounts:[{cookie,proxy}]},readPlan:async()=>plan,journalPath:path.join(directory,'pending.json'),
+      createClient:()=>({verifyUs:async()=>{},verifyExternalIp:async()=>({ip:'2001:db8::1',country:'US'}),async get(url){if(url.includes('/me?'))return {status:200,url,html:'{"USER_ID":"10001"}'};return {status:200,url,html:'<main>Loading</main>'};},close(){}}),
+      createVerifier:()=>({async verify(nick,url){assert.equal(nick.cookie,cookie);assert.equal(nick.proxy,proxy);verified.push(url);return url.includes('/123/')?{status:'buy now- make an offer',verifiedBy:'browser'}:{reason:'not ready'};},async close(){}})});
+    while(runtime.running)await delay(10);
+    assert.equal(verified.length,2);assert.equal(writes.length,1);assert.equal(writes[0].values[0][0],'buy now- make an offer');
+    assert.equal(runtime.linkOrderProgress.total,2);assert.equal(runtime.linkOrderProgress.completed,1);assert.equal(runtime.linkOrderProgress.awaitingVerification,1);
+    assert.equal(runtime.jobs.get('http-10001').status,'error');
+  }finally{await rm(directory,{recursive:true,force:true});}
+});
+
 test('Stop aborts requests, releases clients, and leaves unfinished rows untouched',async()=>{
   const directory=await mkdtemp(path.join(os.tmpdir(),'link-http-stop-'));
   try{

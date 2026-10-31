@@ -767,7 +767,7 @@
                 <label>Số request đồng thời mỗi nick (1–10)<input id="marketplaceHttpConcurrency" type="number" min="1" max="10" value="2" /></label>
                 <button id="addLinkHttpNick" type="button" class="ghost-btn small-btn">Thêm nick HTTP</button>
                 <div id="linkHttpAccounts"></div>
-                <p>Cookie và proxy lưu trên máy này. Proxy HTTP/HTTPS phải ra IP Mỹ. HTML thiếu dữ liệu sẽ ghi “không rõ”, cần check lại bằng Hide; HTTP không đọc màu nút.</p>
+                <p>Cookie và proxy lưu trên máy này. Proxy HTTP/HTTPS phải ra IP Mỹ. Link thiếu dữ liệu hoặc nút mua vô hiệu hóa sẽ được xác minh bằng Chrome/Edge chạy ẩn (tối đa 2 lượt đồng thời). Chỉ ghi kết quả đã xác nhận; link chưa xác minh được được giữ lại.</p>
               </div>
               <div id="linkHideAccounts" class="wide-field">
               <label>
@@ -793,7 +793,7 @@
               </label>
             <button id="saveLinkOrderConfig" class="primary action-wide" type="button"><span>Lưu cấu hình check link</span></button>
             </div>
-            <div class="link-order-sheet-note">Các nick chạy song song, mỗi dòng giao cho một nick. Hide chia đều link và chặn tài nguyên nặng ở tab check. HTTP tự giao link cho nick rảnh, không mở trình duyệt; kết quả thiếu bằng chứng cần check lại bằng Hide.</div>
+            <div class="link-order-sheet-note">Các nick chạy song song, mỗi dòng giao cho một nick. Hide chia đều link và chặn tài nguyên nặng ở tab check. HTTP tự giao link cho nick rảnh; trường hợp chưa chắc chắn dùng trình duyệt ẩn với cùng cookie/proxy để xác minh.</div>
           </section>
 
           <section id="linkOrderToolProgressPanel" class="tool-progress hidden">

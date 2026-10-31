@@ -1,7 +1,7 @@
 {
   "name": "Tool Tong Hop Full",
   "channel": "full",
-  "version": "2026.10.31.10",
+  "version": "2026.10.31.11",
   "rawBase": "https://raw.githubusercontent.com/allyngreenleaf96284-web/tooltonghop-update/main",
   "createdAt": "2026-09-17T00:00:00.000Z",
   "files": [
@@ -87,8 +87,8 @@
     },
     {
       "path": "modules/marketplace_link_order.js",
-      "sha256": "4022eb5be27af654b8d835085aba62edddaa324d0d30cc174db3c374577277b2",
-      "size": 31149
+      "sha256": "88dcfaf10c66048bb337619d96c3728b3c4e3bd29be335e0fc6febad1e4c2d34",
+      "size": 31196
     },
     {
       "path": "modules/nineproxy_cloud.js",
@@ -132,13 +132,13 @@
     },
     {
       "path": "public/app.js",
-      "sha256": "e607ccbf04b09bf6a575857a46efa71eb15b9ad59aee2765cbee094d518a0116",
-      "size": 197605
+      "sha256": "b66685a16b409f1606b9acc6c86944288518ddf5dae6b2dc2627dbeca15e493b",
+      "size": 198070
     },
     {
       "path": "public/index.html",
-      "sha256": "f076372b2dbb0638e8b3592dde69a8c831e42d04812ec480e8c903f310c386ab",
-      "size": 105883
+      "sha256": "18661325c0f3c5e972ef567cdbe94c0eab3097b3d00415c67aa174b3f16b0701",
+      "size": 106022
     },
     {
       "path": "public/styles.css",
@@ -212,18 +212,23 @@
     },
     {
       "path": "modules/link_http_client.js",
-      "sha256": "9a380194207bcc77543dc00b2bee39031f630fc89f2eba49e287564da798c730",
-      "size": 12806
+      "sha256": "5baecab9c7868e7bf9f981e861df59515b902e6db3675f388a9ebe6cf1f09b9c",
+      "size": 13683
     },
     {
       "path": "modules/link_http_runner.js",
-      "sha256": "ec7ec62b9674501c3602ef004dbed83f16941031373b0beb112f066ade4e7f38",
-      "size": 10948
+      "sha256": "4c721a3a150541b498e0e58571f23705469dbd750db869d773aa9be141ad2434",
+      "size": 14118
     },
     {
       "path": "modules/link_http_html.js",
       "sha256": "a7f51cd0915e0b82152d804b2b20bdf62578d48e5455be2fb44ea30fa19d1c8e",
       "size": 4114
+    },
+    {
+      "path": "modules/link_browser_verify.js",
+      "sha256": "63a58746b1eea9766a0469b418c52587786cea08017542180ea0f6c743821a24",
+      "size": 6297
     }
   ]
 }
