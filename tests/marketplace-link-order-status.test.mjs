@@ -15,6 +15,10 @@ for (const [title, button, expected] of [
   ['Active translucent button', '<button style="opacity:0.6">Buy now</button>', 'buy now'],
   ['Disabled checkout', '<button disabled>Buy now</button>', 'thâm buy now'],
   ['ARIA disabled checkout', '<div role="button" aria-disabled="true">Buy now</div>', 'thâm buy now'],
+  ['Message action', '<button>Message</button>', 'send seller a message'],
+  ['Composer label', '<footer><span>Send seller a message</span><input value="Is this available?"><button>Send</button></footer>', 'send seller a message'],
+  ['Checkout with composer', '<button>Buy now</button><footer><span>Send seller a message</span><input><button>Send</button></footer>', 'buy now'],
+  ['Description only', '<p>Send seller a message</p>', 'không rõ'],
   ['LEGO sold separately', '<button>Out of stock</button>', 'out of stock'],
   ['Sold separately LEGO pieces', '', 'không rõ'],
   ['Pending · Old layout', '<button>Out of stock</button>', 'pending'],
@@ -40,5 +44,13 @@ test('initially disabled checkout becomes active before the gray confirmation wi
   try {
     await page.setContent('<h1>Fixture</h1><button disabled>Buy now</button><script>setTimeout(()=>document.querySelector("button").disabled=false,150)</script>');
     assert.equal(await classifyCurrentPage(page,2500),'buy now');
+  }finally{await page.close();}
+});
+
+test('sidebar Message and unrelated composer do not determine the listing status', async()=>{
+  const page=await browser.newPage();
+  try{
+    await page.setContent('<aside style="position:absolute;left:0;width:200px"><button>Message</button><footer><span>Send seller a message</span><input><button>Send</button></footer></aside><main style="margin-left:500px"><h1>Unknown fixture</h1><p>$30</p></main>');
+    assert.equal(await classifyCurrentPage(page,500),'không rõ');
   }finally{await page.close();}
 });

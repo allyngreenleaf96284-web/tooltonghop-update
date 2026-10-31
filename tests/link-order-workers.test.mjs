@@ -49,19 +49,22 @@ test('five browsers check sixty rows once and write the existing status column',
     getHideManager:()=>({
       async connectBrowser(id){return {async newPage(){
         const page=await browser.newPage();pages.push({id,page});await page.setRequestInterception(true);
-        page.on('request',request=>{if(request.isNavigationRequest())visits.push({id,url:request.url()});void request.respond({status:200,contentType:'text/html; charset=utf-8',body:'<h1>Sold · Fixture product</h1><p>$20</p>'}).catch(()=>{});});const goto=page.goto.bind(page);page.goto=async(...args)=>{if(id==='p1')await new Promise(resolve=>setTimeout(resolve,700));return goto(...args);};return page;
+        page.on('request',request=>{if(request.isNavigationRequest())visits.push({id,url:request.url()});void request.respond({status:200,contentType:'text/html; charset=utf-8',body:request.url().includes('/159')?'<h1>New unsupported layout</h1><p>$20</p>':request.url().includes('/158')?'<h1>Fixture product</h1><footer><span>Send seller a message</span><input><button>Send</button></footer>':'<h1>Sold · Fixture product</h1><p>$20</p>'}).catch(()=>{});});const goto=page.goto.bind(page);page.goto=async(...args)=>{if(id==='p1')await new Promise(resolve=>setTimeout(resolve,700));return goto(...args);};return page;
       },async disconnect(){}};},async stopHideMyAccProfile(){}
     })
   });
   try{
-    const result=await tool.run({credentialsPath:'fixture',marketplaceCheckSpreadsheetId:'fixture',marketplaceCheckNick1Id:'p1',marketplaceCheckNick2Id:'p2',marketplaceCheckExtraNickIds:['p3','p4','p5','p1'],marketplaceCheckTabsPerNick:3});
+    const result=await tool.run({credentialsPath:'fixture',marketplaceCheckSpreadsheetId:'fixture',marketplaceCheckNick1Id:'p1',marketplaceCheckNick2Id:'p2',marketplaceCheckExtraNickIds:['p3','p4','p5','p1'],marketplaceCheckTabsPerNick:3,marketplaceCheckTimeoutMs:10000});
     assert.equal(result.started,5);
     const deadline=Date.now()+25000;
     while(runtime.running && Date.now()<deadline)await new Promise(r=>setTimeout(r,50));
     assert.equal(runtime.running,false,JSON.stringify([...runtime.jobs.values()]));
     assert.equal(writes.length,60);
     assert.equal(new Set(writes.map(x=>x.range)).size,60);
-    assert.ok(writes.every(x=>x.values[0][0]==='sold' && /!C\d+$/.test(x.range)));
+    assert.ok(writes.every(x=>/!C\d+$/.test(x.range)));
+    assert.equal(writes.filter(x=>x.values[0][0]==='sold').length,58);
+    assert.equal(writes.filter(x=>x.values[0][0]==='send seller a message').length,1);
+    assert.equal(writes.filter(x=>x.values[0][0]==='không rõ').length,1);
     assert.equal(new Set(visits.map(x=>x.url)).size,60);
     assert.equal(pages.length,15,'three check windows per profile');
     assert.equal(loginOptions.length,5);assert.ok(loginOptions.every(options=>options.robustLanguage===true));
@@ -71,8 +74,10 @@ test('five browsers check sixty rows once and write the existing status column',
     assert.equal(runtime.linkOrderProgress.sheetPending,0);
     assert.equal(runtime.linkOrderProgress.total,60);
     assert.equal(runtime.linkOrderProgress.checked,60);
-    assert.equal(runtime.linkOrderProgress.completed,60);
-    assert.equal(runtime.linkOrderProgress.pending,0);
+    assert.equal(runtime.linkOrderProgress.completed,59);
+    assert.equal(runtime.linkOrderProgress.pending,1);
+    assert.equal(runtime.linkOrderProgress.manualReview,1);
+    assert.equal(runtime.linkOrderProgress.pass,1,"unknown layout waits for manual review instead of restarting");
     assert.equal(runtime.linkOrderProgress.inFlight,0);
     assert.equal(runtime.linkOrderProgress.activeProfiles,0);
     assert.equal(runtime.linkOrderProgress.running,false);
@@ -95,4 +100,11 @@ test('Add nick check creates editable inputs and removing one preserves the othe
     await page.click('#linkCheckExtraNicks > div:nth-child(2) button');
     assert.deepEqual(await page.evaluate(()=>extraLinkCheckNickIds()),['p3','p5']);
   }finally{await browser.close();}
+});
+
+test('tab count is configured exactly once inside the link check settings',async()=>{
+  const {readFile}=await import('node:fs/promises');
+  const html=await readFile(new URL('../public/index.html',import.meta.url),'utf8');
+  assert.equal((html.match(/id="marketplaceCheckTabsPerNick"/g)||[]).length,1);
+  assert.ok(html.slice(html.indexOf('id="linkOrderModule"'),html.indexOf('id="linkOrderToolProgressPanel"')).includes('id="marketplaceCheckTabsPerNick"'));
 });

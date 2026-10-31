@@ -141,7 +141,7 @@ async function readCurrentMarketplaceStatus(page) {
     const titleStatus = titleText.match(/^(pending|sold)\s*[·•]\s*\S/i);
     if (titleStatus) return titleStatus[1].toLowerCase();
     const titleRect = titleEl?.rect || { left: Math.max(0, window.innerWidth * 0.55), top: 0, bottom: 0 };
-    const actionWords = /^(buy now|make an offer|out of stock|send seller a message)$/i;
+    const actionWords = /^(buy now|make an offer|out of stock|send seller a message|message)$/i;
     const rawButtons = Array.from(document.querySelectorAll("[role='button'], button, a[role='button']"))
       .filter(visible)
       .map((el) => {
@@ -172,8 +172,25 @@ async function readCurrentMarketplaceStatus(page) {
       .filter((item) => item.left >= Math.max(0, titleRect.left - 80))
       .filter((item) => item.top >= Math.max(0, titleRect.bottom - 20))
       .sort((a, b) => a.top - b.top || a.left - b.left);
-    const buttons = panelButtons.length ? panelButtons : rawButtons.sort((a, b) => a.top - b.top || a.left - b.left);
-    if (!buttons.length) return "";
+    const buttons = panelButtons.length ? panelButtons : rawButtons.filter(item => item.label !== "message").sort((a, b) => a.top - b.top || a.left - b.left);
+    // Facebook also renders this as a composer label, not a button. Require
+    // the actual input + Send control below the product title, rather than
+    // matching words inside a description, sidebar or recommendation.
+    const messageButton = panelButtons.some(item => /^(message|send seller a message)$/.test(item.label));
+    const hasPurchaseAction = buttons.some(item => !/^(message|send seller a message)$/.test(item.label));
+    const composerLabel = !hasPurchaseAction && !messageButton && titleEl && [...document.querySelectorAll("label, span, p, div")].some(el => {
+      if (!visible(el) || lower(el.innerText || el.textContent) !== "send seller a message") return false;
+      const rect = el.getBoundingClientRect();
+      if (rect.left < Math.max(0, titleRect.left - 80) || rect.top < Math.max(0, titleRect.bottom - 20)) return false;
+      let parent = el.parentElement;
+      for (let depth = 0; parent && parent !== document.body && depth < 4; depth++, parent = parent.parentElement) {
+        const input = [...parent.querySelectorAll('textarea, input:not([type="hidden"]), [contenteditable="true"], [role="textbox"]')].some(visible);
+        const send = [...parent.querySelectorAll('button, [role="button"]')].some(button => visible(button) && /^send$/i.test(clean(button.innerText || button.getAttribute("aria-label") || button.textContent)));
+        if (input && send) return true;
+      }
+      return false;
+    });
+    if (!buttons.length && !composerLabel) return "";
 
     const outOfStock = buttons.find((item) => item.label === "out of stock");
     if (outOfStock) {
@@ -188,10 +205,11 @@ async function readCurrentMarketplaceStatus(page) {
         // buttons may be gray or translucent in Facebook's layouts/themes.
         const isGray = item.disabled;
         labels.push(isGray ? "thâm buy now" : "buy now");
-      } else {
+      } else if (!/^(message|send seller a message)$/.test(item.label)) {
         labels.push(item.label);
       }
     }
+    if (!labels.length && (messageButton || composerLabel)) labels.push("send seller a message");
     return Array.from(new Set(labels)).join("- ");
   }).catch(() => "");
   return result;
@@ -265,20 +283,20 @@ export function createMarketplaceLinkOrderTool({
     return { client, title, gid: sheetInput.gid, spreadsheetId, sheetId, values, ...indexes };
   }
 
-  function buildTasks(values, linkIndex, statusIndex) {
+  function buildTasks(values, linkIndex, statusIndex, includeUnknown = true) {
     const tasks = [];
     for (let index = 1; index < values.length; index += 1) {
       const row = values[index] || [];
       const link = String(row[linkIndex] || "").trim();
       const status = String(row[statusIndex] || "").trim();
-      if (!link || (status && !shouldRetryStatus(status))) continue;
+      if (!link || (status && (!shouldRetryStatus(status) || (!includeUnknown && isUnknownStatus(status))))) continue;
       tasks.push({ rowNumber: index + 1, link });
     }
     return tasks;
   }
 
-  function createSharedQueue(plan, participantCount) {
-    const tasks = buildTasks(plan.values, plan.linkIndex, plan.nick1Index);
+  function createSharedQueue(plan, participantCount, includeUnknown = true) {
+    const tasks = buildTasks(plan.values, plan.linkIndex, plan.nick1Index, includeUnknown);
     return {
       tasks,
       cursor: 0,
@@ -321,6 +339,8 @@ export function createMarketplaceLinkOrderTool({
     await new Promise((resolve) => queue.waiters.push(resolve));
     if (queue.aborted) throw new Error(queue.abortReason);
   }
+
+  function isUnknownStatus(status) { return /^(không rõ|khong ro)$/i.test(String(status || "").trim()); }
 
   function shouldRetryStatus(status) {
     const text = normalizeStatusLabel(status);
@@ -423,9 +443,9 @@ export function createMarketplaceLinkOrderTool({
               progress.summary.sheetPending = writer.pendingCount;
               progress.wrote(plan, task, status);
               checked += 1;
-              if (shouldRetryStatus(status)) retryable += 1;
+              if (shouldRetryStatus(status) && !isUnknownStatus(status)) retryable += 1;
               if (job) job.liveStatus = `${nickLabel}: da check ${checked} link; ${status}`;
-              log(profileId, "check link", `${label} => ${status}; da luu cho ghi Sheet`, status === "lỗi check" ? "warn" : "success");
+              log(profileId, "check link", `${label} => ${status}; da luu cho ghi Sheet`, shouldRetryStatus(status) ? "warn" : "success");
             } finally {
               progress.summary.inFlight -= 1;
             }
@@ -559,7 +579,7 @@ export function createMarketplaceLinkOrderTool({
             if (pass > 1) currentPlans = await loadPlans(activeProfiles.length);
             writer = await createLinkSheetWriter(currentPlans, journalPath);
             await writer.flush();
-            for (const plan of currentPlans) plan.sharedQueue = createSharedQueue(plan, activeProfiles.length);
+            for (const plan of currentPlans) plan.sharedQueue = createSharedQueue(plan, activeProfiles.length, pass === 1);
             progress.register(currentPlans);
             progress.summary.sheetPending = writer.pendingCount;
             let flushing = false;

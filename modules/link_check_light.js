@@ -19,7 +19,7 @@ export function createLinkCheckProgress(runtime, profileCount, retryStatus) {
   const rows = new Map();
   const startedAt = Date.now();
   const summary = runtime.linkOrderProgress = {
-    total: 0, checked: 0, completed: 0, retryable: 0, pending: 0,
+    total: 0, checked: 0, completed: 0, retryable: 0, pending: 0, manualReview: 0,
     inFlight: 0, activeProfiles: 0, profileCount, attempts: 0, pass: 1,
     running: true, startedAt, finishedAt: null
   };
@@ -28,6 +28,8 @@ export function createLinkCheckProgress(runtime, profileCount, retryStatus) {
     const old = rows.get(id) || "";
     summary.checked += Number(Boolean(status)) - Number(Boolean(old));
     summary.retryable += Number(Boolean(status) && retryStatus(status)) - Number(Boolean(old) && retryStatus(old));
+    const unknown = value => /^(không rõ|khong ro)$/i.test(String(value || "").trim());
+    summary.manualReview += Number(unknown(status)) - Number(unknown(old));
     rows.set(id, status);
     summary.total = rows.size;
     summary.completed = summary.checked - summary.retryable;

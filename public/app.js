@@ -2826,7 +2826,7 @@ function linkOrderProgressPresentation(summary) {
   return {
     stateLabel: !summary.running && summary.sheetPending > 0 ? "chờ ghi Sheet" : summary.running ? (summary.pass > 1 ? "đang check lại" : "đang chạy") : pending ? "còn link chưa xong" : "xong",
     countLabel: `Đã check ${summary.checked || 0} / ${total} link`,
-    textLabel: `Hoàn tất ${completed} · Còn ${pending} · Cần check lại ${summary.retryable || 0} · Đang xử lý ${summary.inFlight || 0} link · Nick hoạt động ${summary.activeProfiles || 0}/${summary.profileCount || 0} · Lượt ${summary.pass || 1} · Đã ghi Sheet ${Math.max(0, Number(summary.checked || 0) - Number(summary.sheetPending || 0))} · Chờ ghi Sheet ${summary.sheetPending || 0}${summary.sheetWriteError ? ` · ${summary.sheetWriteError}` : ""}`,
+    textLabel: `Hoàn tất ${completed} · Còn ${pending} · Cần check lại ${Math.max(0, Number(summary.retryable || 0) - Number(summary.manualReview || 0))} · Cần xem tay ${summary.manualReview || 0} · Đang xử lý ${summary.inFlight || 0} link · Nick hoạt động ${summary.activeProfiles || 0}/${summary.profileCount || 0} · Lượt ${summary.pass || 1} · Đã ghi Sheet ${Math.max(0, Number(summary.checked || 0) - Number(summary.sheetPending || 0))} · Chờ ghi Sheet ${summary.sheetPending || 0}${summary.sheetWriteError ? ` · ${summary.sheetWriteError}` : ""}`,
     percent: total ? Math.max(0, Math.min(100, completed / total * 100)) : 0
   };
 }
