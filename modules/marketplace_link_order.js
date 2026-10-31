@@ -181,10 +181,9 @@ async function readCurrentMarketplaceStatus(page) {
     const labels = [];
     for (const item of buttons) {
       if (item.label === "buy now") {
-        const isGray =
-          item.disabled ||
-          item.opacity < 0.75 ||
-          /rgba?\(\s*(?:229|228|218|216|206|204|198|196|190|189|180|176|170|166|160|150|140|130|120)/i.test(item.background);
+        // Appearance is not evidence of disabled checkout: active secondary
+        // buttons may be gray or translucent in Facebook's layouts/themes.
+        const isGray = item.disabled;
         labels.push(isGray ? "thâm buy now" : "buy now");
       } else {
         labels.push(item.label);
