@@ -1,7 +1,7 @@
 import { withFacebookLocale, isMarketplaceIneligibleError, assertMarketplaceAccess } from "./facebook_locale.js";
 import { installLightLinkCheck, createLinkCheckProgress } from "./link_check_light.js";
 import { createLinkSheetWriter } from "./link_check_writer.js";
-import { createLinkCheckDisplay } from "./link_check_display.js";
+import { createLinkCheckDisplay, openCheckWindow } from "./link_check_display.js";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const LINK_ORDER_RESTART_DELAY_MS = 60 * 1000;
@@ -224,7 +224,8 @@ export function createMarketplaceLinkOrderTool({
   SheetsClient,
   addRuntimeLog,
   runtime,
-  journalPath
+  journalPath,
+  createWindowPage = openCheckWindow
 }) {
   const checkDisplay = createLinkCheckDisplay();
 
@@ -346,12 +347,12 @@ export function createMarketplaceLinkOrderTool({
     const page = await browser.newPage();
     try {
       const bounds = await applyWindowTiling(browser, page, workerSlot, workerTotal);
-      if (job) job.liveStatus = `${nickLabel}: dang kiem tra dang nhap`;
+      if (job) { job.status = "running"; job.liveStatus = `${nickLabel}: dang kiem tra dang nhap`; }
       log(profileId, "dang nhap Facebook", `${nickLabel} dang kiem tra dang nhap truoc khi check link, uid=${row.uid || profileId}`);
       await dangNhap.ensureFacebookLogin(manager, page, row, profileId, (status) => {
         if (job) job.liveStatus = `${nickLabel}: ${status}`;
         log(profileId, "dang nhap Facebook", status);
-      });
+      }, { robustLanguage: true, shouldStop: () => runtime.stopRequested });
       await applyWindowTiling(browser, page, workerSlot, workerTotal);
       log(profileId, "dang nhap Facebook", `${nickLabel} da dang nhap Facebook, bounds=${bounds.width}x${bounds.height}`, "success");
       return page;
@@ -361,7 +362,7 @@ export function createMarketplaceLinkOrderTool({
     }
   }
 
-  async function runNick({ profileId, nickLabel, direction, sheetRow, config, plans, writer, progress, workerSlot = 0, workerTotal = 2 }) {
+  async function runNick({ profileId, nickLabel, direction, sheetRow, config, plans, writer, progress, tabCount, workerSlot = 0, workerTotal = 2 }) {
     const manager = getHideManager();
     if (manager) {
       manager.__profileConfig = async () => ({ ...config, browserApiProvider: "hide" });
@@ -373,6 +374,7 @@ export function createMarketplaceLinkOrderTool({
     const job = runtime.jobs.get(profileId);
     let browser = null;
     let loginPage = null;
+    const checkPages = [];
     let checked = 0;
     let retryable = 0;
     let totalTasks = 0;
@@ -381,9 +383,16 @@ export function createMarketplaceLinkOrderTool({
       if (!(runtime.activeManagers instanceof Map)) runtime.activeManagers = new Map();
       runtime.activeManagers.set(profileId, { manager, uid: row.uid || profileId, shouldFinish: () => false });
       browser = await manager.connectBrowser(profileId);
-      loginPage = await ensureLoggedIn(manager, browser, profileId, nickLabel, row, workerSlot, workerTotal, job);
-      // Reuse the visible login page: one profile, one check window.
+      loginPage = await ensureLoggedIn(manager, browser, profileId, nickLabel, row, workerSlot * tabCount, workerTotal * tabCount, job);
+      checkPages.push(loginPage);
       await installLightLinkCheck(loginPage);
+      for (let index = 1; index < tabCount; index++) {
+        if (runtime.stopRequested) throw stoppedError();
+        const page = await createWindowPage(browser);
+        checkPages.push(page);
+        await installLightLinkCheck(page);
+        await applyWindowTiling(browser, page, workerSlot * tabCount + index, workerTotal * tabCount);
+      }
       if (job) {
         job.status = "running";
         job.liveStatus = `${nickLabel}: dang chay ${plans.length} Sheet`;
@@ -398,28 +407,36 @@ export function createMarketplaceLinkOrderTool({
         const sheetLabel = `Sheet ${sheetIndex + 1}/${plans.length} ${plan.title}`;
         if (job) job.liveStatus = `${nickLabel}: ${sheetLabel}, hang doi chung ${queue.total} link`;
         log(profileId, "xep hang", `${nickLabel} bat dau ${sheetLabel}, lay link tu hang doi chung`);
-        while (true) {
-          if (runtime.stopRequested) throw stoppedError();
-          if (queue.aborted) throw new Error(queue.abortReason || "Hang doi Sheet da dung.");
-          const task = claimSharedTask(queue);
-          if (!task) break;
-          const label = `${nickLabel} ${sheetLabel} row ${task.rowNumber}`;
-          if (job) job.liveStatus = `${label}; da check ${checked} link`;
-          progress.summary.inFlight += 1;
-          progress.summary.attempts += 1;
-          try {
-            const status = await checkTask(loginPage, task, timeoutMs, profileId, label);
-            await writer.write(plan, task, status, "browser");
-            progress.summary.sheetPending = writer.pendingCount;
-            progress.wrote(plan, task, status);
-            checked += 1;
-            if (shouldRetryStatus(status)) retryable += 1;
-            if (job) job.liveStatus = `${nickLabel}: da check ${checked} link; ${status}`;
-            log(profileId, "check link", `${label} => ${status}; da luu cho ghi Sheet`, status === "lỗi check" ? "warn" : "success");
-          } finally {
-            progress.summary.inFlight -= 1;
+        const workers = checkPages.map(async page => {
+          while (true) {
+            if (runtime.stopRequested) throw stoppedError();
+            if (queue.aborted) throw new Error(queue.abortReason || "Hang doi Sheet da dung.");
+            const task = claimSharedTask(queue);
+            if (!task) break;
+            const label = `${nickLabel} ${sheetLabel} row ${task.rowNumber}`;
+            if (job) job.liveStatus = `${label}; da check ${checked} link`;
+            progress.summary.inFlight += 1;
+            progress.summary.attempts += 1;
+            try {
+              const status = await checkTask(page, task, timeoutMs, profileId, label);
+              await writer.write(plan, task, status, "browser");
+              progress.summary.sheetPending = writer.pendingCount;
+              progress.wrote(plan, task, status);
+              checked += 1;
+              if (shouldRetryStatus(status)) retryable += 1;
+              if (job) job.liveStatus = `${nickLabel}: da check ${checked} link; ${status}`;
+              log(profileId, "check link", `${label} => ${status}; da luu cho ghi Sheet`, status === "lỗi check" ? "warn" : "success");
+            } finally {
+              progress.summary.inFlight -= 1;
+            }
           }
-        }
+        });
+        const results = await Promise.allSettled(workers.map(work => work.catch(error => {
+          abortSharedQueues(plans, error.message || String(error));
+          throw error;
+        })));
+        const failed = results.find(result => result.status === "rejected");
+        if (failed) throw failed.reason;
         await assertMarketplaceAccess(loginPage);
         await waitForSheetPeers(queue);
       }
@@ -449,6 +466,7 @@ export function createMarketplaceLinkOrderTool({
     } finally {
       progress.summary.activeProfiles -= 1;
       if (runtime.activeManagers instanceof Map) runtime.activeManagers.delete(profileId);
+      await Promise.allSettled(checkPages.map(page => page.close({ runBeforeUnload: false })));
       try { if (loginPage && !loginPage.isClosed()) await loginPage.close({ runBeforeUnload: false }); } catch {}
       try { if (browser) await browser.disconnect(); } catch {}
       await manager.stopHideMyAccProfile(profileId).catch(() => {});
@@ -468,7 +486,7 @@ export function createMarketplaceLinkOrderTool({
   async function start(config) {
     const ids = linkCheckProfileIds(config);
     if (!ids.length) throw new Error("Chua nhap ID profile nick check.");
-    const tabCount = 1;
+    const tabCount = clampNumber(config.marketplaceCheckTabsPerNick, 1, 1, 20);
     checkDisplay.reset(config.marketplaceCheckZoomPercent);
     const profiles = ids.map((profileId, index) => ({ profileId, nickLabel: `nick ${index + 1}`, direction: "asc" }));
 
@@ -519,13 +537,13 @@ export function createMarketplaceLinkOrderTool({
         profileId: item.profileId,
         tool: "check link order",
         status: "queued",
-        liveStatus: `${item.nickLabel}: dang cho mo cua so Hide`,
+        liveStatus: `${item.nickLabel}: dang cho mo ${tabCount} cua so Hide`,
         logs: [],
         startedAt: new Date().toISOString(),
         finishedAt: "",
         result: null
       });
-      log(item.profileId, "xep hang", `${item.nickLabel} da xep hang mot cua so, lay link tu hang doi chung.`);
+      log(item.profileId, "xep hang", `${item.nickLabel} da xep hang ${tabCount} cua so, lay link tu hang doi chung.`);
     }
 
     setImmediate(async () => {
@@ -569,6 +587,7 @@ export function createMarketplaceLinkOrderTool({
               plans: currentPlans,
               writer,
               progress,
+              tabCount,
               direction: item.direction,
               workerSlot: index,
               workerTotal: activeProfiles.length
@@ -635,7 +654,7 @@ export function createMarketplaceLinkOrderTool({
         runtime.currentTool = "";
       }
     });
-    return { started: profiles.length, profileIds: profiles.map((item) => item.profileId), sheetTitles: plans.map((plan) => plan.title), sheets: plans.length, tabsPerNick: tabCount };
+    return { started: profiles.length, profileIds: profiles.map((item) => item.profileId), sheetTitles: plans.map((plan) => plan.title), sheets: plans.length, tabsPerNick: tabCount, windows: profiles.length * tabCount };
   }
 
   return { run };

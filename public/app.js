@@ -298,6 +298,7 @@ async function loadConfig() {
     $("linkCheckExtraNicks").replaceChildren();
     for (const id of config.marketplaceCheckExtraNickIds || []) addLinkCheckNick(id);
   }
+  if ($("marketplaceCheckTabsPerNick")) $("marketplaceCheckTabsPerNick").value = config.marketplaceCheckTabsPerNick || 1;
   if ($("marketplaceCheckZoomPercent")) $("marketplaceCheckZoomPercent").value = config.marketplaceCheckZoomPercent || 50;
   if ($("marketplaceCheckTimeoutMs")) $("marketplaceCheckTimeoutMs").value = config.marketplaceCheckTimeoutMs || 30000;
   if ($("fullConcurrency")) $("fullConcurrency").value = config.fullConcurrency || 4;
@@ -416,6 +417,7 @@ async function saveConfig() {
       marketplaceCheckNick1Id: $("marketplaceCheckNick1Id")?.value || "",
       marketplaceCheckNick2Id: $("marketplaceCheckNick2Id")?.value || "",
       marketplaceCheckExtraNickIds: extraLinkCheckNickIds(),
+      marketplaceCheckTabsPerNick: Math.max(1, Math.min(20, Number($("marketplaceCheckTabsPerNick")?.value || 1))),
       marketplaceCheckZoomPercent: Math.max(25, Math.min(200, Number($("marketplaceCheckZoomPercent")?.value || 50))),
       marketplaceCheckTimeoutMs: Math.max(10000, Math.min(240000, Number($("marketplaceCheckTimeoutMs")?.value || 30000))),
       loginConcurrency: Number($("loginConcurrency")?.value || 4),
@@ -1916,6 +1918,7 @@ async function startLinkOrder() {
       marketplaceCheckNick1Id: nick1,
       marketplaceCheckNick2Id: nick2,
       marketplaceCheckExtraNickIds: extraNicks,
+      marketplaceCheckTabsPerNick: Math.max(1, Math.min(20, Number($("marketplaceCheckTabsPerNick")?.value || 1))),
       marketplaceCheckZoomPercent: Math.max(25, Math.min(200, Number($("marketplaceCheckZoomPercent")?.value || 50))),
       marketplaceCheckTimeoutMs: Math.max(10000, Math.min(240000, Number($("marketplaceCheckTimeoutMs")?.value || 30000)))
     };
@@ -1926,7 +1929,7 @@ async function startLinkOrder() {
     state.config = config || state.config;
     state.linkOrderBatchIds = data.profileIds || [nick1, nick2, ...extraNicks].filter(Boolean);
     primeToolProgress(state.linkOrderBatchIds, "bắt đầu: check link order", "linkorder");
-    $("linkOrderStatusText").textContent = `Đã bắt đầu ${data.started} cửa sổ Hide, tự chia đều màn hình. Cửa sổ rảnh sẽ nhận link tiếp theo; ${data.sheets || 1} Sheet chạy tuần tự.`;
+    $("linkOrderStatusText").textContent = `Đã bắt đầu ${data.started} nick × ${data.tabsPerNick || body.marketplaceCheckTabsPerNick} trang = ${data.windows || data.started * body.marketplaceCheckTabsPerNick} cửa sổ Hide, tự chia đều màn hình. Cửa sổ rảnh sẽ nhận link tiếp theo; ${data.sheets || 1} Sheet chạy tuần tự.`;
     await refreshToolStatus();
     startToolStatusPolling();
   } catch (error) {

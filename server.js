@@ -1090,7 +1090,7 @@ async function readConfig() {
     loaded.marketplaceCheckNick1Id = String(loaded.marketplaceCheckNick1Id || "").trim();
     loaded.marketplaceCheckNick2Id = String(loaded.marketplaceCheckNick2Id || "").trim();
     loaded.marketplaceCheckExtraNickIds = Array.isArray(loaded.marketplaceCheckExtraNickIds) ? loaded.marketplaceCheckExtraNickIds.map(normalizeProfileIdText).filter(Boolean) : [];
-    loaded.marketplaceCheckTabsPerNick = 1;
+    loaded.marketplaceCheckTabsPerNick = clampConcurrency(loaded.marketplaceCheckTabsPerNick, 1, 20);
     loaded.marketplaceCheckZoomPercent = Math.max(25, Math.min(200, Number(loaded.marketplaceCheckZoomPercent) || 50));
     loaded.marketplaceCheckTimeoutMs = Math.max(10000, Math.min(240000, Math.floor(Number(loaded.marketplaceCheckTimeoutMs || DEFAULT_CONFIG.marketplaceCheckTimeoutMs))));
     loaded.interactionConcurrency = clampConcurrency(loaded.interactionConcurrency, DEFAULT_CONFIG.interactionConcurrency, 4);
@@ -1164,7 +1164,7 @@ async function saveConfig(input) {
     marketplaceCheckNick1Id: String(input.marketplaceCheckNick1Id !== undefined ? input.marketplaceCheckNick1Id : current.marketplaceCheckNick1Id || "").trim(),
     marketplaceCheckNick2Id: String(input.marketplaceCheckNick2Id !== undefined ? input.marketplaceCheckNick2Id : current.marketplaceCheckNick2Id || "").trim(),
     marketplaceCheckExtraNickIds: (Array.isArray(input.marketplaceCheckExtraNickIds) ? input.marketplaceCheckExtraNickIds : current.marketplaceCheckExtraNickIds || []).map(normalizeProfileIdText).filter(Boolean),
-    marketplaceCheckTabsPerNick: 1,
+    marketplaceCheckTabsPerNick: clampConcurrency(input.marketplaceCheckTabsPerNick ?? current.marketplaceCheckTabsPerNick, 1, 20),
     marketplaceCheckZoomPercent: Math.max(25, Math.min(200, Number(input.marketplaceCheckZoomPercent ?? current.marketplaceCheckZoomPercent) || 50)),
     marketplaceCheckTimeoutMs: Math.max(10000, Math.min(240000, Math.floor(Number(input.marketplaceCheckTimeoutMs ?? current.marketplaceCheckTimeoutMs ?? DEFAULT_CONFIG.marketplaceCheckTimeoutMs)) || DEFAULT_CONFIG.marketplaceCheckTimeoutMs)),
     interactionConcurrency: clampConcurrency(input.interactionConcurrency, current.interactionConcurrency || DEFAULT_CONFIG.interactionConcurrency, 4),
@@ -1328,7 +1328,7 @@ async function saveConfigV2(input) {
     marketplaceCheckNick1Id: String(input.marketplaceCheckNick1Id !== undefined ? input.marketplaceCheckNick1Id : current.marketplaceCheckNick1Id || "").trim(),
     marketplaceCheckNick2Id: String(input.marketplaceCheckNick2Id !== undefined ? input.marketplaceCheckNick2Id : current.marketplaceCheckNick2Id || "").trim(),
     marketplaceCheckExtraNickIds: (Array.isArray(input.marketplaceCheckExtraNickIds) ? input.marketplaceCheckExtraNickIds : current.marketplaceCheckExtraNickIds || []).map(normalizeProfileIdText).filter(Boolean),
-    marketplaceCheckTabsPerNick: 1,
+    marketplaceCheckTabsPerNick: clampConcurrency(input.marketplaceCheckTabsPerNick ?? current.marketplaceCheckTabsPerNick, 1, 20),
     marketplaceCheckZoomPercent: Math.max(25, Math.min(200, Number(input.marketplaceCheckZoomPercent ?? current.marketplaceCheckZoomPercent) || 50)),
     marketplaceCheckTimeoutMs: Math.max(10000, Math.min(240000, Math.floor(Number(input.marketplaceCheckTimeoutMs ?? current.marketplaceCheckTimeoutMs ?? DEFAULT_CONFIG.marketplaceCheckTimeoutMs)) || DEFAULT_CONFIG.marketplaceCheckTimeoutMs)),
     interactionConcurrency: clampConcurrency(input.interactionConcurrency, current.interactionConcurrency || DEFAULT_CONFIG.interactionConcurrency, 4),

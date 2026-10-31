@@ -735,7 +735,7 @@
             <div>
               <div class="eyebrow">Marketplace Link Tool</div>
               <h2>Check link order</h2>
-              <p id="linkOrderStatusText">Mỗi nick Hide là một luồng và một cửa sổ riêng, tự chia đều màn hình. Link được giao cho cửa sổ rảnh, không trùng dòng.</p>
+              <p id="linkOrderStatusText">Mỗi nick Hide mở số cửa sổ check bạn cấu hình, tự chia đều màn hình. Link được giao cho cửa sổ rảnh, không trùng dòng.</p>
             </div>
             <div class="actions">
               <button id="stopLinkOrderBtn" class="ghost-btn danger-btn" type="button"><span>Dừng hẳn</span></button>
@@ -775,6 +775,10 @@
               </div>
               </div>
               <label>
+                Số trang check mỗi nick (mỗi trang một cửa sổ)
+                <input id="marketplaceCheckTabsPerNick" type="number" min="1" max="20" step="1" value="1" />
+              </label>
+              <label>
                 Thu nhỏ nội dung (%)
                 <input id="marketplaceCheckZoomPercent" type="number" min="25" max="200" step="5" value="50" />
               </label>
@@ -784,7 +788,7 @@
               </label>
             <button id="saveLinkOrderConfig" class="primary action-wide" type="button"><span>Lưu cấu hình check link</span></button>
             </div>
-            <div class="link-order-sheet-note">Mỗi nick = một cửa sổ check. Tất cả cửa sổ dùng chung mức thu nhỏ và kích thước, sắp xếp trong vùng màn hình không có taskbar. Giữ JavaScript và CSS; chặn ảnh, video, font để tải nhẹ hơn.</div>
+            <div class="link-order-sheet-note">Ví dụ 4 nick × 3 trang = 12 cửa sổ check riêng. Tất cả cửa sổ dùng chung mức thu nhỏ và kích thước, sắp xếp trong vùng màn hình không có taskbar. Giữ JavaScript và CSS; chặn ảnh, video, font để tải nhẹ hơn.</div>
           </section>
 
           <section id="linkOrderToolProgressPanel" class="tool-progress hidden">
@@ -1004,6 +1008,10 @@
               <label>
                 Số luồng (tối đa 6)
                 <input id="loginConcurrency" type="number" min="1" max="6" step="1" />
+              </label>
+              <label>
+                Số trang check mỗi nick (mỗi trang một cửa sổ)
+                <input id="marketplaceCheckTabsPerNick" type="number" min="1" max="20" step="1" value="1" />
               </label>
               <label>
                 Thu nhỏ nội dung (%)

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createLoginDisplay } from "./login_display.js";
 
 export function checkWindowBounds(slot, count, area) {
@@ -42,4 +43,21 @@ export function createLinkCheckDisplay(options = {}) {
       return bounds;
     }
   };
+}
+
+// New windows share this profile's browser context, cookies and proxy.
+export async function openCheckWindow(browser) {
+  const session = await browser.target().createCDPSession();
+  const url = `about:blank#link-check-${randomUUID()}`;
+  let targetId;
+  try {
+    ({ targetId } = await session.send("Target.createTarget", { url, newWindow: true, background: false }));
+    const target = await browser.waitForTarget(target => target.url() === url, { timeout: 15000 });
+    const page = await target.page();
+    if (!page) throw new Error("Khong mo duoc cua so check rieng.");
+    return page;
+  } catch (error) {
+    if (targetId) await session.send("Target.closeTarget", { targetId }).catch(() => {});
+    throw error;
+  } finally { await session.detach(); }
 }

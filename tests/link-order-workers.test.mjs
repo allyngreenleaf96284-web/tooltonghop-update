@@ -30,22 +30,22 @@ for (const n of [0, 2, 5, 13, 103]) {
 import { createRequire } from 'node:module';
 import { createMarketplaceLinkOrderTool } from '../modules/marketplace_link_order.js';
 const require=createRequire(import.meta.url);
-test('five browsers check thirteen rows once and write the existing status column', async()=>{
+test('five browsers check sixty rows once and write the existing status column', async()=>{
   const puppeteer=require('puppeteer-core');
   const browser=await puppeteer.launch({executablePath:process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
   const directory=await mkdtemp(path.join(os.tmpdir(),'link-hide-run-'));
   const runtime={jobs:new Map(),running:false};
-  const writes=[],visits=[],pages=[];
+  const writes=[],visits=[],pages=[],loginOptions=[];
   const ids=['p1','p2','p3','p4','p5'];
-  const tool=createMarketplaceLinkOrderTool({runtime,journalPath:path.join(directory,"pending.json"),addRuntimeLog(message,type){if(type === "error" || type === "warn") console.log(message);},
+  const tool=createMarketplaceLinkOrderTool({runtime,createWindowPage:browser=>browser.newPage(),journalPath:path.join(directory,"pending.json"),addRuntimeLog(message,type){if(type === "error" || type === "warn") console.log(message);},
     getGoogleAccessToken:async()=> 'fixture',
     SheetsClient:class {
       async metadata(){return {sheets:[{properties:{title:'Links',sheetId:0}}]};}
-      async getValues(){return [['uid','LINK SP','tình trạng nick 1'],...Array.from({length:13},(_,i)=>['u',`https://www.facebook.com/marketplace/item/${100+i}`,''])];}
+      async getValues(){return [['uid','LINK SP','tình trạng nick 1'],...Array.from({length:60},(_,i)=>['u',`https://www.facebook.com/marketplace/item/${100+i}`,''])];}
       async batchUpdateValues(data){writes.push(...data);}
     },
     getRowsByProfileIds:async()=>new Map(ids.map(id=>[id,{uid:id}])),
-    dangNhap:{ensureFacebookLogin:async()=>{}},
+    dangNhap:{ensureFacebookLogin:async(manager,page,row,id,progress,options)=>{loginOptions.push(options);}},
     getHideManager:()=>({
       async connectBrowser(id){return {async newPage(){
         const page=await browser.newPage();pages.push({id,page});await page.setRequestInterception(true);
@@ -59,17 +59,19 @@ test('five browsers check thirteen rows once and write the existing status colum
     const deadline=Date.now()+25000;
     while(runtime.running && Date.now()<deadline)await new Promise(r=>setTimeout(r,50));
     assert.equal(runtime.running,false,JSON.stringify([...runtime.jobs.values()]));
-    assert.equal(writes.length,13);
-    assert.equal(new Set(writes.map(x=>x.range)).size,13);
+    assert.equal(writes.length,60);
+    assert.equal(new Set(writes.map(x=>x.range)).size,60);
     assert.ok(writes.every(x=>x.values[0][0]==='sold' && /!C\d+$/.test(x.range)));
-    assert.equal(new Set(visits.map(x=>x.url)).size,13);
-    assert.equal(pages.length,5,'only one visible check page per profile');
+    assert.equal(new Set(visits.map(x=>x.url)).size,60);
+    assert.equal(pages.length,15,'three check windows per profile');
+    assert.equal(loginOptions.length,5);assert.ok(loginOptions.every(options=>options.robustLanguage===true));
+    assert.equal(result.windows,15);
     assert.ok(ids.every(id=>visits.some(x=>x.id===id)));
     assert.ok(visits.filter(x=>x.id==='p1').length < Math.max(...ids.map(id=>visits.filter(x=>x.id===id).length)), 'fast profiles take work while slow profile is loading');
     assert.equal(runtime.linkOrderProgress.sheetPending,0);
-    assert.equal(runtime.linkOrderProgress.total,13);
-    assert.equal(runtime.linkOrderProgress.checked,13);
-    assert.equal(runtime.linkOrderProgress.completed,13);
+    assert.equal(runtime.linkOrderProgress.total,60);
+    assert.equal(runtime.linkOrderProgress.checked,60);
+    assert.equal(runtime.linkOrderProgress.completed,60);
     assert.equal(runtime.linkOrderProgress.pending,0);
     assert.equal(runtime.linkOrderProgress.inFlight,0);
     assert.equal(runtime.linkOrderProgress.activeProfiles,0);

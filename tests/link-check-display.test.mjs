@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createRequire } from "node:module";
-import { checkWindowBounds, createLinkCheckDisplay } from "../modules/link_check_display.js";
+import { checkWindowBounds, createLinkCheckDisplay, openCheckWindow } from "../modules/link_check_display.js";
 const require = createRequire(import.meta.url);
 
 for (const total of [1, 4, 6, 10]) test(`${total} windows have equal bounds without overlap or taskbar intrusion`, () => {
@@ -29,4 +29,18 @@ test('different profile sizes get a common viewport, DPR and zoom across navigat
     const metrics=await Promise.all(pages.map(page=>page.evaluate(()=>({width:innerWidth,height:innerHeight,dpr:devicePixelRatio,zoom:document.documentElement.style.zoom}))));
     assert.deepEqual(metrics[0],metrics[1]);assert.equal(metrics[0].zoom,'0.4');assert.equal(metrics[0].dpr,1);assert.equal(reads,1);
   } finally {await browser.close();}
+});
+
+test('extra check pages are distinct native windows in the existing authenticated profile context',async()=>{
+  const browser=await require('puppeteer-core').launch({executablePath:process.env.CHROME_PATH||'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
+  try {
+    const first=await browser.newPage();
+    await first.setCookie({name:'fixture_session',value:'shared-profile',domain:'example.test',path:'/'});
+    const second=await openCheckWindow(browser);
+    assert.equal(second.browserContext(),first.browserContext());
+    assert.equal((await second.cookies('https://example.test')).find(cookie=>cookie.name==='fixture_session')?.value,'shared-profile');
+    const ids=[];
+    for(const page of [first,second]){const cdp=await page.target().createCDPSession();try{ids.push((await cdp.send('Browser.getWindowForTarget')).windowId);}finally{await cdp.detach();}}
+    assert.notEqual(ids[0],ids[1]);
+  }finally{await browser.close();}
 });
