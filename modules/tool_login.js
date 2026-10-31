@@ -364,7 +364,7 @@ export function createToolLogin({
         if (!String(status || "").startsWith("2FA: đang chờ") && !String(status || "").startsWith("2FA: đã chờ")) {
           log(profileId, "dang nhap Facebook", status);
         }
-      }, { forceAccountLogin: true, holdErrorsForOperator: true, waitForManualCaptcha: config.loginWaitForManualCaptcha === true,
+      }, { forceAccountLogin: true, robustLanguage: true, holdErrorsForOperator: true, waitForManualCaptcha: config.loginWaitForManualCaptcha === true,
         resumeAfterManualCaptcha: pauseControl.resuming(),
         shouldStop: () => Boolean(runtime.stopRequested) || !pauseControl.isCurrent(),
         isActive: pauseControl.isCurrent }), config.loginWaitForManualCaptcha === true ? 0 : 900000);

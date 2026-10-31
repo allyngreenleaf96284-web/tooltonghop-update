@@ -1,7 +1,7 @@
 {
   "name": "Tool Tong Hop Full",
   "channel": "full",
-  "version": "2026.10.31.4",
+  "version": "2026.10.31.5",
   "rawBase": "https://raw.githubusercontent.com/allyngreenleaf96284-web/tooltonghop-update/main",
   "createdAt": "2026-09-17T00:00:00.000Z",
   "files": [
@@ -22,8 +22,8 @@
     },
     {
       "path": "modules/batch_retry.js",
-      "sha256": "cc29c4b571a7d8c02b610cadf1e7f9c1db261069a4a339155381ceaebeb693c5",
-      "size": 10504
+      "sha256": "79e6b793db9632caa3749378f98f6036fef4003d8b04534ec548bd7312a64b26",
+      "size": 10511
     },
     {
       "path": "modules/checkorder.js",
@@ -52,8 +52,8 @@
     },
     {
       "path": "modules/dangnhap.js",
-      "sha256": "a8ab84a93925e6de5a63902ef22ad93aa9a660319cdeb3f9ebc18d2654a7326f",
-      "size": 127705
+      "sha256": "338bfc8a460e8d0b64cd45c7158fb8cd6fbce32bc697b06578bc3a987ea70a8f",
+      "size": 128148
     },
     {
       "path": "modules/dienmatkhau.js",
@@ -67,8 +67,8 @@
     },
     {
       "path": "modules/lamfull.js",
-      "sha256": "7b0d49107a5ff3e05f4e0285fdbd2ebe491e88ef79040622cb2a4fa3652ccbd1",
-      "size": 52147
+      "sha256": "92c4b02dff5fe4e60cdc8c68cbc263d296c671396278f4e611e894ef6f92af83",
+      "size": 52425
     },
     {
       "path": "modules/listing_link.js",
@@ -82,8 +82,8 @@
     },
     {
       "path": "modules/tool_login.js",
-      "sha256": "3125b447567cb95260c7f6a6858a9a3e63e501271e35b3a7fed7870164089676",
-      "size": 26414
+      "sha256": "def633d028f76bfdc4dcf76e46fb8d01394fa4715d18777a2cf55f0ed5d6c861",
+      "size": 26436
     },
     {
       "path": "modules/marketplace_link_order.js",
@@ -194,6 +194,16 @@
       "path": "modules/seller_info_status.js",
       "sha256": "93118cefa07916568215c4f215ebceba49262270fbf78eee87d716d3e08ef190",
       "size": 2379
+    },
+    {
+      "path": "modules/bank_account_name.js",
+      "sha256": "6e8d9a82f456bf4b31ee5e4dc152625c9e42d6d4db812490913142195f2e72db",
+      "size": 1317
+    },
+    {
+      "path": "modules/login_language.js",
+      "sha256": "2a6adf254ab0f3a0dd0525e5725d7e3213a802ce7dbb8599412aad75fef1a9d7",
+      "size": 5645
     }
   ]
 }

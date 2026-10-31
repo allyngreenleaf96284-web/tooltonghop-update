@@ -6,6 +6,7 @@ import { withFacebookLocale, isMarketplaceIneligibleError, assertMarketplaceAcce
 import { chooseListingCondition } from "./listing_condition.js";
 import { SELLER_ADDRESS_ERROR, isSellerAddressError } from "./seller_info_status.js";
 import { installSellerAddressRecovery } from "./seller_address_recovery.js";
+import { installBankAccountNameGuard, buildCdtProfileName } from "./bank_account_name.js";
 import { readMarketplaceSidebarLocation, openMarketplaceLocationDialog, readLocationFromDialog,
   selectMarketplaceLocation, applyMarketplaceLocation } from "./marketplace_location.js";
 
@@ -231,6 +232,7 @@ export function buildRuntimeProfileName({ status = "", tenChuan = "" }) {
   const normalizedStatus = String(status || "").trim().toLowerCase();
   const base = String(tenChuan || "").trim() || "profile-tool";
   if (normalizedStatus === "die cho") return buildMarketplaceIneligibleName(base);
+  if (normalizedStatus === "cdt") return buildCdtProfileName(base);
   if (["capcha", "loicapcha"].includes(normalizedStatus)) return buildCaptchaProfileName(base);
   if (!normalizedStatus || normalizedStatus === "thanh cong" || normalizedStatus === "thành công") return base;
   return `${normalizedStatus}-${stripResolvedNamePrefixes(base)}`;
@@ -833,6 +835,7 @@ export function createLamFull({
     let restoreProgressCapture = () => {};
     let restoreManagerLoginGuards = () => {};
     let restoreSellerAddressRecovery = () => {};
+    const restoreBankAccountName = installBankAccountNameGuard(manager);
 
     try {
       job.status = "running";
@@ -1012,7 +1015,7 @@ export function createLamFull({
       const mappedStatus = mappedError.status || "loi";
       const tenChuan = buildRuntimeProfileName({ status: mappedStatus, tenChuan: currentName });
       await rename(manager, profileId, tenChuan);
-      const update = { Tool: "đã làm full", trangThai: ["die cho", "capcha"].includes(mappedStatus) ? mappedStatus : "loi", soVach: stableBarValue(currentName, sheetRow, barStatus), chiTiet: mappedError.detail || detail || mappedStatus, tenChuan };
+      const update = { Tool: "đã làm full", trangThai: ["die cho", "capcha", "cdt"].includes(mappedStatus) ? mappedStatus : "loi", soVach: stableBarValue(currentName, sheetRow, barStatus), chiTiet: mappedError.detail || detail || mappedStatus, tenChuan };
       if (locationCapture.initial) update.diaChiBanDau = locationCapture.initial;
       await writeSheet(sheetWriter, profileId, update);
       await sheetWriter.commit();
@@ -1039,7 +1042,7 @@ export function createLamFull({
       await rename(manager, profileId, tenChuan);
       const update = {
         Tool: "đã làm full",
-        trangThai: ["die cho", "capcha"].includes(mapped.status) ? mapped.status : "loi",
+        trangThai: ["die cho", "capcha", "cdt"].includes(mapped.status) ? mapped.status : "loi",
         soVach: stableBarValue(currentName, sheetRow, barStatus || progressCapture.value),
         chiTiet: mapped.detail,
         tenChuan
@@ -1053,6 +1056,7 @@ export function createLamFull({
       log(profileId, error.step || "loi tong", `loi lam full: ${mapped.detail}`, "error");
       return update;
     } finally {
+      restoreBankAccountName();
       restoreSellerAddressRecovery();
       restoreLocationCapture();
       restoreProgressCapture();

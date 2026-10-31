@@ -50,7 +50,7 @@ export function isRetryableFailure(job) {
   const result = job.result || {};
   const status = normalize(result.trangThai ?? result["trạng thái"] ?? result.status ?? "");
   const message = jobMessage(job);
-  if (["cp282", "cp956", "die cho", "stopped"].includes(status) || isMarketplaceIneligibleError({ status, message })) return false;
+  if (["cp282", "cp956", "die cho", "stopped", "cdt"].includes(status) || isMarketplaceIneligibleError({ status, message })) return false;
   if (["capcha", "loicapcha", "proxytimeout"].includes(status)) return true;
   if (GENERIC_FAILURE_STATUSES.has(status) && !/cp282|cp956/i.test(message) && isFacebookCaptchaError({ status, message })) return true;
   return isUnknownFailure(job);
