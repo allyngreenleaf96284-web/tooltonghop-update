@@ -12,9 +12,10 @@ import net from 'node:net';
 import { gzipSync } from 'node:zlib';
 import { accountUid, parseCheckProxy, classifyHttpListing, createHttpCheckClient } from '../modules/link_http_client.js';
 import { runHttpLinkChecks, createHttpSheetWriter } from '../modules/link_http_runner.js';
+import { readHttpListingActions } from '../modules/link_http_html.js';
 const require=createRequire(import.meta.url),exec=promisify(execFile);
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-const payload=(id,status)=>JSON.stringify({data:{listing:{__typename:'MarketplaceListing',id,...status}}});
+const payload=(id,status)=>JSON.stringify({data:{listing:{__typename:'GroupCommerceProductItem',id,...status}}});
 
 test('proxy/cookie parsing accepts supported forms and rejects missing auth session',()=>{
   assert.equal(parseCheckProxy('127.0.0.1:8000').port,'8000');
@@ -36,12 +37,41 @@ test('proxy authentication errors retain HTTP 407 without exposing credentials',
 
 test('HTML classification requires evidence for the requested listing and never guesses gray Buy now',()=>{
   const response=html=>({html,status:200,url:'https://www.facebook.com/marketplace/item/123/'});
-  for(const [field,expected] of [['is_sold','sold'],['is_pending','pending'],['is_buy_now_enabled','buy now']])assert.equal(classifyHttpListing(response(`<script type="application/json">${payload('123',{[field]:true})}</script>`),'123').status,expected);
+  for(const [field,expected] of [['is_sold','sold'],['is_pending','pending'],['is_buy_now_enabled','buy now']])assert.equal(classifyHttpListing(response(`<script type="application/json">${payload('123',{[field]:true,...(field==='is_buy_now_enabled'?{is_sold:false,is_pending:false,is_checkout_enabled:true}:{})})}</script>`),'123').status,expected);
   assert.equal(classifyHttpListing(response(`<script type="application/json">${payload('999',{is_sold:true})}</script><p>Sold separately</p><button>Buy now</button>`),'123').status,'không rõ');
   assert.equal(classifyHttpListing(response('<link rel="canonical" href="https://www.facebook.com/marketplace/item/123/"><h1>Pending · Product</h1>'),'123').status,'pending');
   assert.equal(classifyHttpListing({status:200,url:'https://www.facebook.com/login/',html:'login'},'123').blocked,true);
   assert.equal(classifyHttpListing({status:429,url:'https://www.facebook.com/marketplace/item/123/',html:''},'123').blocked,true);
   assert.equal(classifyHttpListing(response('<form id="login_form"><input name="email"></form>'),'123').blocked,true);
+});
+
+test('real Facebook fragment shape merges delivery and availability before deciding status',()=>{
+  const script=value=>`<script type="application/json" data-sjs>${JSON.stringify({require:[['ScheduledServerJS','handle',null,[{__bbox:{result:{data:{target:value}}}}]]]})}</script>`;
+  const delivery={__typename:'GroupCommerceProductItem',id:'123',__isMarketplaceListingWithDeliveryOptions:'MarketplaceListingWithDeliveryOptions',is_buy_now_enabled:true};
+  for(const status of ['sold','pending']){
+    const availability={__typename:'GroupCommerceProductItem',id:'123',__isMarketplaceListingRenderable:'MarketplaceListingRenderable',is_sold:status==='sold',is_pending:status==='pending',is_checkout_enabled:false};
+    for(const html of [script(delivery)+script(availability),script(availability)+script(delivery)]) assert.equal(classifyHttpListing({html,status:200,url:'https://www.facebook.com/marketplace/item/123/'},'123').status,status);
+  }
+  const unresolved={...delivery,is_sold:false,is_pending:false,is_checkout_enabled:false};
+  assert.equal(classifyHttpListing({html:script(unresolved),status:200,url:'https://www.facebook.com/marketplace/item/123/'},'123').status,'không rõ');
+  const legacy={__typename:'MarketplaceListing',id:'123',is_sold:true};
+  assert.equal(classifyHttpListing({html:script(legacy),status:200,url:'https://www.facebook.com/marketplace/item/123/'},'123').status,'sold');
+});
+
+test('server-rendered controls resolve Buy now plus Make an offer and explicit disabled Buy now',()=>{
+  const target={__typename:'GroupCommerceProductItem',id:'123',marketplace_listing_title:'Fixture product',is_sold:false,is_pending:false,is_buy_now_enabled:true,is_checkout_enabled:false};
+  const classify=buttons=>classifyHttpListing({status:200,url:'https://www.facebook.com/marketplace/item/123/',html:`<script type="application/json">${JSON.stringify(target)}</script><main><section><h1>Fixture product</h1><div>${buttons}</div></section><aside><h1>Other product</h1><button>Out of stock</button></aside></main>`},'123').status;
+  assert.equal(classify('<div role="button"><span>Buy now</span></div><button>Make an offer</button>'),'buy now- make an offer');
+  assert.equal(classify('<div aria-disabled="true" role="button"><span>Buy now</span></div>'),'thâm buy now');
+  assert.equal(classify('<button disabled>Buy now</button>'),'thâm buy now');
+  assert.equal(classify('<button>Send seller a message</button>'),'send seller a message');
+  assert.equal(classify('<button>Out of stock</button>'),'out of stock');
+  assert.equal(readHttpListingActions('<section><h1>Other product</h1><button>Buy now</button></section>','Fixture product'),'');
+  assert.equal(readHttpListingActions('<section><h1>Fixture product</h1><div aria-hidden="true"><button>Make an offer</button></div><button>Buy now</button></section>','Fixture product'),'buy now');
+  const segment='<div hidden id="S:3"><section><h1>Fixture product</h1><button aria-disabled="true">Buy now</button></section></div>';
+  assert.equal(readHttpListingActions(segment+'<template data-rsi="" data-sid="S:3" data-pid="P:3"></template>','Fixture product'),'thâm buy now');
+  assert.equal(readHttpListingActions(segment,'Fixture product'),'');
+  assert.equal(readHttpListingActions('<main><h1>Fixture product</h1></main><aside><button>Buy now</button></aside>','Fixture product'),'');
 });
 
 test('durable writer replays failed batches, preserves other cells, and refuses moved rows',async()=>{

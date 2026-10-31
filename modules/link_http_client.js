@@ -3,6 +3,7 @@ import https from "node:https";
 import tls from "node:tls";
 import { isIP } from "node:net";
 import { createGunzip, createBrotliDecompress, createInflate } from "node:zlib";
+import { readHttpListingActions } from "./link_http_html.js";
 
 export function normalizeHttpAccounts(value) {
   return (Array.isArray(value) ? value : []).map((item) => ({
@@ -150,26 +151,45 @@ export function classifyHttpListing({html, status, url}, listingId) {
   if (status !== 200) return {status:"không rõ",reason:`HTTP ${status}; can kiem tra bang trinh duyet.`};
   if (/\/marketplace\/ineligible\//.test(url)) return {blocked:true,reason:"die cho: tai khoan khong vao duoc Marketplace."};
   const scriptPattern=/<script\b[^>]*type=["']application\/(?:ld\+)?json["'][^>]*>([\s\S]*?)<\/script>/gi;
-  let match;
+  let match, matched = false, listingTitle = "";
+  const flags = new Map();
   while ((match=scriptPattern.exec(html))) {
     let root; try {root=JSON.parse(match[1]);} catch {try{root=JSON.parse(decode(match[1]));}catch{continue;}}
     const stack=[root]; let visited=0;
     while(stack.length && visited++<100000) {
       const node=stack.pop(); if (!node || typeof node!=="object") continue;
-      if (String(node.id || "") === listingId && /Marketplace.*Listing/i.test(String(node.__typename || ""))) {
-        if (node.is_sold === true) return {status:"sold"};
-        if (node.is_pending === true) return {status:"pending"};
-        if (node.is_buy_now_enabled === true) return {status:"buy now"};
+      const listingType = /Marketplace.*Listing/i.test(String(node.__typename || "")) || node.__typename === "GroupCommerceProductItem";
+      if (String(node.id || "") === listingId && listingType) {
+        matched = true;
+        if(typeof node.marketplace_listing_title === "string")listingTitle=node.marketplace_listing_title;
+        else if(!listingTitle&&typeof node.base_marketplace_listing_title === "string")listingTitle=node.base_marketplace_listing_title;
+        for (const key of ["is_sold", "is_pending", "is_buy_now_enabled", "is_checkout_enabled"]) {
+          if (typeof node[key] === "boolean") {
+            // Delivery and availability arrive in separate JSON fragments.
+            // Keep both observations until every fragment has been inspected.
+            if (!flags.has(key)) flags.set(key, new Set());
+            flags.get(key).add(node[key]);
+          }
+        }
       }
       for(const value of Object.values(node)) if(value && typeof value==="object") stack.push(value);
     }
   }
+  const yes = (key) => flags.get(key)?.has(true);
+  const no = (key) => flags.get(key)?.has(false) && !yes(key);
+  if (yes("is_sold")) return {status:"sold"};
+  if (yes("is_pending")) return {status:"pending"};
   const withoutScripts=html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,"").replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi,"");
+  if(matched) {
+    const actions=readHttpListingActions(html,listingTitle);
+    if(actions)return {status:actions};
+  }
+  if (no("is_sold") && no("is_pending") && yes("is_buy_now_enabled") && yes("is_checkout_enabled")) return {status:"buy now"};
   // Server-rendered title fallback: require the listing's canonical URL.
   const canonical = withoutScripts.match(/<link\b[^>]*rel=["']canonical["'][^>]*href=["']([^"']+)/i)?.[1];
   if (canonical && new RegExp(`/marketplace/item/${listingId}(?:/|[?#]|$)`).test(canonical)) {
     const headings=[...withoutScripts.matchAll(/<h1\b[^>]*>([\s\S]*?)<\/h1>/gi)].map((item)=>decode(item[1].replace(/<[^>]*>/g," ")).replace(/\s+/g," ").trim());
     for (const heading of headings) { const found=heading.match(/^(sold|pending)\s*[·•]\s*\S/i); if(found)return {status:found[1].toLowerCase()}; }
   }
-  return {status:"không rõ",reason:"HTML chua du bang chung; can kiem tra bang trinh duyet (ke ca mau nut Buy now)."};
+  return {status:"không rõ",reason:matched ? "Da doc duoc listing, nhung chua du bang chung ve nut mua/nhan tin; can check lai bang Hide." : "Chua tim thay du lieu cua listing trong HTML; can check lai bang Hide."};
 }
