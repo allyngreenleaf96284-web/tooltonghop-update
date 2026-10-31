@@ -760,6 +760,16 @@
                 Tên tab
                 <input id="marketplaceCheckSheetName" placeholder="Để trống = tab đầu tiên" />
               </label>
+              <label>Chế độ check
+                <select id="marketplaceCheckMode"><option value="hide">Hide — trình duyệt</option><option value="http">HTTP — thử nghiệm, cookie + proxy</option></select>
+              </label>
+              <div id="linkHttpSettings" class="wide-field hidden">
+                <label>Số request đồng thời mỗi nick (1–10)<input id="marketplaceHttpConcurrency" type="number" min="1" max="10" value="2" /></label>
+                <button id="addLinkHttpNick" type="button" class="ghost-btn small-btn">Thêm nick HTTP</button>
+                <div id="linkHttpAccounts"></div>
+                <p>Cookie và proxy lưu trên máy này. Proxy HTTP/HTTPS phải ra IP Mỹ. HTML thiếu dữ liệu sẽ ghi “không rõ”, cần check lại bằng Hide; HTTP không đọc màu nút.</p>
+              </div>
+              <div id="linkHideAccounts" class="wide-field">
               <label>
                 ID GPM/HideMyAcc nick 1
                 <input id="marketplaceCheckNick1Id" placeholder="6a1c0abad6d3ae219f7d7cbd" />
@@ -772,6 +782,7 @@
                 <button id="addLinkCheckNick" type="button" class="ghost-btn small-btn">Thêm nick check</button>
                 <div id="linkCheckExtraNicks"></div>
               </div>
+              </div>
               <label>
                 Số tab mỗi nick
                 <input id="marketplaceCheckTabsPerNick" type="number" min="1" max="20" step="1" />
@@ -782,7 +793,7 @@
               </label>
             <button id="saveLinkOrderConfig" class="primary action-wide" type="button"><span>Lưu cấu hình check link</span></button>
             </div>
-            <div class="link-order-sheet-note">Các nick chạy song song, mỗi Sheet chia đều link, mỗi dòng giao cho một nick. Tab check dùng chế độ nhẹ: chặn ảnh, video và font; giữ JavaScript và CSS để đọc đúng trạng thái. Nhận diện xong sẽ ghi Sheet và giải phóng nội dung tab.</div>
+            <div class="link-order-sheet-note">Các nick chạy song song, mỗi dòng giao cho một nick. Hide chia đều link và chặn tài nguyên nặng ở tab check. HTTP tự giao link cho nick rảnh, không mở trình duyệt; kết quả thiếu bằng chứng cần check lại bằng Hide.</div>
           </section>
 
           <section id="linkOrderToolProgressPanel" class="tool-progress hidden">

@@ -1,7 +1,7 @@
 {
   "name": "Tool Tong Hop Full",
   "channel": "full",
-  "version": "2026.10.31.6",
+  "version": "2026.10.31.7",
   "rawBase": "https://raw.githubusercontent.com/allyngreenleaf96284-web/tooltonghop-update/main",
   "createdAt": "2026-09-17T00:00:00.000Z",
   "files": [
@@ -87,8 +87,8 @@
     },
     {
       "path": "modules/marketplace_link_order.js",
-      "sha256": "87fe67da5e9a0eff81207cc75f6eec43341dd0e1cf6d0a89f08bafd902b0d910",
-      "size": 30985
+      "sha256": "4022eb5be27af654b8d835085aba62edddaa324d0d30cc174db3c374577277b2",
+      "size": 31149
     },
     {
       "path": "modules/nineproxy_cloud.js",
@@ -132,13 +132,13 @@
     },
     {
       "path": "public/app.js",
-      "sha256": "ef7b5249e09829f213ddc6ab009dddeb9f8bc45bf3ac9e9310907eadc94e088e",
-      "size": 194142
+      "sha256": "e607ccbf04b09bf6a575857a46efa71eb15b9ad59aee2765cbee094d518a0116",
+      "size": 197605
     },
     {
       "path": "public/index.html",
-      "sha256": "454955c869b8977fee6ca88ad331589d483b54bd515615818102fa62cb54d437",
-      "size": 104958
+      "sha256": "f076372b2dbb0638e8b3592dde69a8c831e42d04812ec480e8c903f310c386ab",
+      "size": 105883
     },
     {
       "path": "public/styles.css",
@@ -157,8 +157,8 @@
     },
     {
       "path": "server.js",
-      "sha256": "6645fcc98f85608516560095ef724a07394a41b6c5d3787417f56a9550ff9712",
-      "size": 177873
+      "sha256": "2638f7b925c952fd5bd3960924a4df25a34dd0ed2ddc6ade4e6cb8d71c008733",
+      "size": 179380
     },
     {
       "path": "modules/login_pause.js",
@@ -209,6 +209,16 @@
       "path": "modules/link_check_light.js",
       "sha256": "d21427bdda8a153b26600450288920b048a62685c98e8be359403ab2a9cdad0a",
       "size": 2397
+    },
+    {
+      "path": "modules/link_http_client.js",
+      "sha256": "bdcd6b737c73d097d44edd35ee31a8efd8f8f4c9fa1400ce4afca2cd650daa4d",
+      "size": 9643
+    },
+    {
+      "path": "modules/link_http_runner.js",
+      "sha256": "1b20c52ae7ab8d0e4450559162e8e883a1dfaffee3a6e9127c6a2f8fd1ed16ff",
+      "size": 10830
     }
   ]
 }

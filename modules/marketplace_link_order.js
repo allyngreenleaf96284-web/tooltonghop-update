@@ -1,5 +1,6 @@
 import { withFacebookLocale, isMarketplaceIneligibleError, assertMarketplaceAccess } from "./facebook_locale.js";
 import { installLightLinkCheck, createLinkCheckProgress } from "./link_check_light.js";
+import { runHttpLinkChecks } from "./link_http_runner.js";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const LINK_ORDER_RESTART_DELAY_MS = 60 * 1000;
@@ -541,6 +542,7 @@ export function createMarketplaceLinkOrderTool({
 
   async function run(config) {
     if (runtime.running) throw new Error("Dang co tool khac chay, vui long doi xong.");
+    if (config.marketplaceCheckMode === "http") return runHttpLinkChecks({config,readPlan,runtime,log});
     const ids = linkCheckProfileIds(config);
     if (!ids.length) throw new Error("Chua nhap ID profile nick check.");
     const tabCount = clampNumber(config.marketplaceCheckTabsPerNick, 5, 1, 20);
