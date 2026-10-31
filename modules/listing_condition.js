@@ -1,5 +1,5 @@
 const UI_WAIT_MS = 15000;
-const UI_POLL_MS = 500;
+const UI_POLL_MS = 300;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const LISTING_CONDITIONS = ["New", "Used - Like New", "Used - Good", "Used - Fair"];
@@ -9,73 +9,102 @@ export function normalizeListingCondition(value) {
   return LISTING_CONDITIONS.find((label) => label.toLowerCase() === key) || "Used - Like New";
 }
 
-export async function chooseListingCondition(page, condition) {
-  const clean = (value) => String(value || "")
-    .replace(/[–—]/g, "-")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
-  const label = normalizeListingCondition(condition);
-  const wanted = clean(label);
-  for (let recovery = 1; recovery <= 3; recovery += 1) {
-    const alreadySelected = await page.evaluate((value) => {
-      const cleanText = (text) => String(text || "").replace(/[–—]/g, "-").replace(/\s+/g, " ").trim().toLowerCase();
-      return Array.from(document.querySelectorAll("label[role='combobox'], [role='combobox']"))
-        .some((node) => cleanText(node.innerText || node.textContent || "").replace(/^condition\s*/, "") === value);
-    }, wanted).catch(() => false);
-    if (alreadySelected) return;
+// Runs in the page. Scope the option to Condition, rather than another visible
+// "New" in the product preview or a different dropdown.
+function conditionElement(kind, wanted) {
+  const clean = (value) => String(value || "").replace(/[–—]/g, "-").replace(/\s+/g, " ").trim().toLowerCase();
+  const visible = (node) => {
+    const rect = node.getBoundingClientRect(), style = getComputedStyle(node);
+    return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+  };
+  const label = (node) => [node.getAttribute("aria-label"),
+    ...(node.getAttribute("aria-labelledby") || "").split(/\s+/).map((id) => document.getElementById(id)?.textContent),
+    ...(Array.from(node.labels || []).map((item) => item.innerText)), node.innerText].filter(Boolean).join(" ");
+  const control = Array.from(document.querySelectorAll("select, [role='combobox'], button, [role='button']"))
+    .find((node) => visible(node) && /^condition(?:\b|new|used)/i.test(clean(label(node))));
+  if (!control) return null;
+  if (kind === "control") return control;
+  if (kind === "selected") {
+    const texts = control.tagName === "SELECT"
+      ? Array.from(control.selectedOptions).map((option) => option.textContent)
+      : [control.getAttribute("aria-valuetext"), control.value, control.innerText, control.getAttribute("aria-label")];
+    return texts.some((text) => clean(text).replace(/^condition\s*[:*]?\s*(?:required\s*)?/, "") === wanted) ? control : null;
+  }
+  if (kind === "option") {
+    const roots = (control.getAttribute("aria-controls") || control.getAttribute("aria-owns") || "")
+      .split(/\s+/).map((id) => document.getElementById(id)).filter((node) => node && visible(node));
+    if (!roots.length) roots.push(...Array.from(document.querySelectorAll("[role='listbox'], [role='menu']")).filter(visible));
+    const semantic = roots.length ? roots.flatMap((root) => Array.from(root.querySelectorAll("[role='option'], [role='menuitem']")))
+      : Array.from(document.querySelectorAll("[role='option'], [role='menuitem']"));
+    const option = semantic.find((node) => visible(node) && node.getAttribute("aria-disabled") !== "true"
+      && clean(node.innerText || node.textContent) === wanted);
+    if (option) return option;
+    return roots.flatMap((root) => Array.from(root.querySelectorAll("div, span, li, button")))
+      .find((node) => visible(node) && node.getAttribute("aria-disabled") !== "true"
+        && clean(node.innerText || node.textContent) === wanted) || null;
+  }
+  return null;
+}
 
-    const opened = await page.evaluate(() => {
-      const visible = (node) => {
-        const rect = node?.getBoundingClientRect?.();
-        return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
-      };
-      const cleanText = (text) => String(text || "").replace(/\s+/g, " ").trim().toLowerCase();
-      const target = Array.from(document.querySelectorAll("label[role='combobox'], [role='combobox']"))
-        .find((node) => visible(node) && /^condition\b/.test(cleanText(node.innerText || node.textContent || "")));
-      if (!target) return false;
-      target.scrollIntoView({ block: "center", inline: "nearest" });
-      target.click();
-      return true;
-    }).catch(() => false);
-    if (!opened) {
-      await sleep(UI_POLL_MS);
-      continue;
-    }
+async function find(page, kind, wanted) {
+  const handle = await page.evaluateHandle(conditionElement, kind, wanted);
+  const element = handle.asElement();
+  if (!element) { await handle.dispose(); return null; }
+  return element;
+}
 
-    let clicked = false;
-    for (let waitAttempt = 1; waitAttempt <= Math.ceil(UI_WAIT_MS / UI_POLL_MS); waitAttempt += 1) {
-      clicked = await page.evaluate((value) => {
-        const cleanText = (text) => String(text || "").replace(/[–—]/g, "-").replace(/\s+/g, " ").trim().toLowerCase();
-        const visible = (node) => {
-          const rect = node?.getBoundingClientRect?.();
-          return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
-        };
-        const option = Array.from(document.querySelectorAll("[role='option'], [role='menuitem'], div, span"))
-          .find((node) => visible(node) && cleanText(node.innerText || node.textContent || "") === value);
-        if (!option) return false;
-        const target = option.closest?.("[role='option'], [role='menuitem'], [role='button'], button") || option;
-        target.click();
-        return true;
-      }, wanted).catch(() => false);
-      if (clicked) break;
-      await sleep(UI_POLL_MS);
-    }
-    if (clicked) {
-      for (let waitAttempt = 1; waitAttempt <= Math.ceil(UI_WAIT_MS / UI_POLL_MS); waitAttempt += 1) {
-        const selected = await page.evaluate((value) => {
-          const cleanText = (text) => String(text || "").replace(/[–—]/g, "-").replace(/\s+/g, " ").trim().toLowerCase();
-          return Array.from(document.querySelectorAll("label[role='combobox'], [role='combobox']"))
-            .some((node) => cleanText(node.innerText || node.textContent || "").replace(/^condition\s*/, "") === value);
-        }, wanted).catch(() => false);
-        if (selected) return;
+async function waitFor(page, kind, wanted, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  do {
+    const element = await find(page, kind, wanted);
+    if (element) return element;
+    await sleep(UI_POLL_MS);
+  } while (Date.now() < deadline);
+  return null;
+}
+
+async function click(element) {
+  await element.evaluate((node) => node.scrollIntoView({ block: "center", inline: "nearest" }));
+  await element.click();
+}
+
+export async function chooseListingCondition(page, condition, { timeoutMs = UI_WAIT_MS, recoveryCount = 3 } = {}) {
+  const label = normalizeListingCondition(condition), wanted = label.toLowerCase();
+  let stage = "chua tim thay truong Condition";
+  for (let recovery = 0; recovery < recoveryCount; recovery++) {
+    try {
+      const selected = await find(page, "selected", wanted);
+      if (selected) { await selected.dispose(); return true; }
+      const control = await waitFor(page, "control", wanted, timeoutMs);
+      if (!control) continue;
+      try {
+        const native = await control.evaluate((node) => node.tagName === "SELECT");
+        if (native) {
+          const value = await control.evaluate((node, text) => Array.from(node.options).find((option) =>
+            String(option.textContent || "").replace(/[–—]/g, "-").replace(/\s+/g, " ").trim().toLowerCase() === text)?.value, wanted);
+          if (value !== undefined) await control.select(value);
+        } else {
+          if (!(await control.evaluate((node) => node.getAttribute("aria-expanded") === "true"))) await click(control);
+          stage = "menu Condition chua hien lua chon";
+          const option = await waitFor(page, "option", wanted, timeoutMs);
+          if (!option) { await page.keyboard.press("Escape"); continue; }
+          try { await click(option); } finally { await option.dispose(); }
+        }
+      } finally { await control.dispose(); }
+      stage = "da bam lua chon nhung truong Condition chua cap nhat";
+      const verified = await waitFor(page, "selected", wanted, timeoutMs);
+      if (verified) { await verified.dispose(); return true; }
+      await page.keyboard.press("Escape");
+    } catch (error) {
+      if (["LOGIN_PAUSED", "LOGIN_RETRY", "LOGIN_MANUAL_DONE"].includes(error.code) || error.status === "stopped") throw error;
+      stage = error.message || "truong Condition vua tai lai";
+      if (recovery + 1 < recoveryCount) {
+        await page.keyboard.press("Escape");
         await sleep(UI_POLL_MS);
       }
     }
-    await page.keyboard.press("Escape").catch(() => {});
-    await sleep(UI_POLL_MS);
   }
-  const error = new Error(`Khong chon duoc Condition = ${label}.`);
+  const error = new Error(`Khong chon duoc Condition = ${label}: ${stage}.`);
   error.status = "loisp";
   throw error;
 }

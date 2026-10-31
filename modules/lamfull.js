@@ -800,9 +800,8 @@ export function createLamFull({
     const manager = getManager({ fresh: true });
     const locationManager = getLocationManager({ fresh: true });
     patchManager(manager, locationManager);
-    if (options.condition) {
-      manager.chooseConditionNew = (page) => chooseListingCondition(page, options.condition);
-    }
+    // Replace the bundled 1.4-second chooser for standalone Full and Login -> Full.
+    manager.chooseConditionNew = (page) => chooseListingCondition(page, options.condition || "New");
     if (options.existingSession?.configureManager) options.existingSession.configureManager(manager);
     else patchStableWindowTiling(manager, workerSlot, workerTotal);
     manager.saveConfig({
