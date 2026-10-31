@@ -1,4 +1,5 @@
 import { withFacebookLocale, isMarketplaceIneligibleError, assertMarketplaceAccess } from "./facebook_locale.js";
+import { installLightLinkCheck, createLinkCheckProgress } from "./link_check_light.js";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const LINK_ORDER_RESTART_DELAY_MS = 60 * 1000;
@@ -91,54 +92,20 @@ function normalizeStatusLabel(value) {
   return normalizeText(value).toLowerCase();
 }
 
-function classifyUnavailableText(text) {
-  const lower = normalizeStatusLabel(text)
-    .replace(/[’`]/g, "'")
-    .replace(/\u00a0/g, " ");
-  const hasUnavailableTitle = /this listing is(?:n't| not) available any\s*more/.test(lower);
-  const hasUnavailableReason =
-    /it may have (?:expired or been sold|been sold or expired)/.test(lower) ||
-    lower.includes("take a look at these other items below");
-  return hasUnavailableTitle || hasUnavailableReason ? "hết hạn" : "";
-}
-
-function classifyText(text) {
-  const unavailable = classifyUnavailableText(text);
-  if (unavailable) return unavailable;
-  const lower = normalizeStatusLabel(text);
-  if (lower.includes("out of stock")) return "out of stock";
-  if (lower.includes("buy now")) return "buy now";
-  if (lower.includes("send seller a message")) return "send seller a message";
-  return "không rõ";
-}
-
-async function waitForMarketplaceSignal(page, timeoutMs) {
-  const deadline = Date.now() + Math.min(timeoutMs, 90000);
-  while (Date.now() < deadline) {
+export async function classifyCurrentPage(page, timeoutMs) {
+  const deadline = Date.now() + Math.max(0, timeoutMs);
+  for (;;) {
+    if (page.isClosed()) throw new Error("Tab check link da dong.");
     await assertMarketplaceAccess(page);
-    const found = await page.evaluate(() => {
-      const text = document.body?.innerText || "";
-      if (/this listing is(?:n't| not) available any\s*more/i.test(text)) return true;
-      if (/buy now|out of stock|make an offer|send seller a message/i.test(text)) return true;
-      if (Array.from(document.querySelectorAll("h1, h2, [role='heading']")).some((el) => {
-        const rect = el.getBoundingClientRect();
-        const style = getComputedStyle(el);
-        return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" &&
-          /^(pending|sold)\s*[·•]\s*\S/i.test(String(el.innerText || el.textContent || "").trim());
-      })) return true;
-      if (/marketplace access|log in|login|checkpoint|confirm your identity/i.test(text)) return true;
-      return false;
-    }).catch(() => false);
+    const result = await readCurrentMarketplaceStatus(page);
     await assertMarketplaceAccess(page);
-    if (found) return;
-    await sleep(750);
+    if (result && result !== "không rõ") return result;
+    if (Date.now() >= deadline) return "không rõ";
+    await sleep(Math.min(250, deadline - Date.now()));
   }
 }
 
-export async function classifyCurrentPage(page, timeoutMs) {
-  await page.waitForSelector("body", { timeout: Math.min(timeoutMs, 30000) }).catch(() => {});
-  await waitForMarketplaceSignal(page, timeoutMs);
-  await sleep(3000);
+async function readCurrentMarketplaceStatus(page) {
   const result = await page.evaluate(() => {
     const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
     const lower = (value) => clean(value).toLowerCase().replace(/[’`]/g, "'");
@@ -224,7 +191,7 @@ export async function classifyCurrentPage(page, timeoutMs) {
     }
     return Array.from(new Set(labels)).join("- ");
   }).catch(() => "");
-  return result || classifyText(await page.evaluate(() => document.body?.innerText || "").catch(() => ""));
+  return result;
 }
 
 async function classifyPage(page, url, timeoutMs) {
@@ -378,13 +345,17 @@ export function createMarketplaceLinkOrderTool({
           log(profileId, "check link", `${label} van ${lastStatus || lastError || "khong ro"}, dong tab mo tab moi lan 3`, "warn");
           await page.close({ runBeforeUnload: false }).catch(() => {});
           page = await browser.newPage();
+          await installLightLinkCheck(page);
           await applyWindowTiling(browser, page, workerSlot, workerTotal);
           lastStatus = await classifyPage(page, task.link, timeoutMs);
         }
         await assertMarketplaceAccess(page);
         lastError = "";
       } catch (error) {
-        if (isMarketplaceIneligibleError(error)) throw error;
+        if (isMarketplaceIneligibleError(error)) {
+          if (page !== currentPage) await page.close({ runBeforeUnload: false }).catch(() => {});
+          throw error;
+        }
         lastError = error.message || String(error);
         lastStatus = "lỗi check";
         log(profileId, "check link", `${label} lan ${attempt} loi: ${lastError}`, "warn");
@@ -449,7 +420,7 @@ export function createMarketplaceLinkOrderTool({
     }
   }
 
-  async function runNick({ profileId, nickLabel, direction, sheetRow, config, plans, tabCount, workerSlot = 0, workerTotal = 2 }) {
+  async function runNick({ profileId, nickLabel, direction, sheetRow, config, plans, tabCount, progress, workerSlot = 0, workerTotal = 2 }) {
     const manager = getHideManager();
     if (manager) {
       manager.__profileConfig = async () => ({ ...config, browserApiProvider: "hide" });
@@ -465,10 +436,14 @@ export function createMarketplaceLinkOrderTool({
     let retryable = 0;
     let totalTasks = 0;
     try {
+      progress.summary.activeProfiles += 1;
       if (!(runtime.activeManagers instanceof Map)) runtime.activeManagers = new Map();
       runtime.activeManagers.set(profileId, { manager, uid: row.uid || profileId, shouldFinish: () => false });
       browser = await manager.connectBrowser(profileId);
       loginPage = await ensureLoggedIn(manager, browser, profileId, nickLabel, row, workerSlot, workerTotal, job);
+      // Cookies remain in the profile; the idle login tab need not retain a
+      // Facebook feed and its images while the check tabs do the work.
+      await loginPage.goto("about:blank");
       if (job) {
         job.status = "running";
         job.liveStatus = `${nickLabel}: dang chay ${plans.length} Sheet`;
@@ -485,8 +460,9 @@ export function createMarketplaceLinkOrderTool({
         log(profileId, "xep hang", `${nickLabel} bat dau ${sheetLabel}, xu ly phan link duoc chia rieng`);
         const workers = Array.from({ length: Math.min(tabCount, queue.partitions[workerSlot]?.length || 0) }, async (_, workerIndex) => {
           let page = await browser.newPage();
-          await applyWindowTiling(browser, page, workerSlot, workerTotal);
           try {
+            await installLightLinkCheck(page);
+            await applyWindowTiling(browser, page, workerSlot, workerTotal);
             while (true) {
               if (runtime.stopRequested) throw stoppedError();
               if (queue.aborted) throw new Error(queue.abortReason || "Hang doi Sheet da dung.");
@@ -495,14 +471,26 @@ export function createMarketplaceLinkOrderTool({
               const label = `${nickLabel} ${sheetLabel} row ${task.rowNumber}`;
               if (job) job.liveStatus = `${label} (${checked}/${totalTasks})`;
               log(profileId, "check link", `bat dau ${label}: ${task.link}`);
-              let status = "";
-              const checkedTask = await checkTaskWithRetry(browser, page, task, timeoutMs, profileId, nickLabel, label, workerSlot, workerTotal);
-              status = checkedTask.status;
-              page = checkedTask.page;
-              await writeStatus(plan.client, plan.title, plan.nick1Index, task, status);
-              checked += 1;
-              if (shouldRetryStatus(status)) retryable += 1;
-              log(profileId, "ghi Sheet", `${label} => ${status}`, status === "lỗi check" ? "warn" : "success");
+              progress.summary.inFlight += 1;
+              progress.summary.attempts += 1;
+              try {
+                let status = "";
+                const checkedTask = await checkTaskWithRetry(browser, page, task, timeoutMs, profileId, nickLabel, label, workerSlot, workerTotal);
+                status = checkedTask.status;
+                page = checkedTask.page;
+                await page.goto("about:blank").catch(() => {});
+                await writeStatus(plan.client, plan.title, plan.nick1Index, task, status);
+                progress.wrote(plan, task, status);
+                checked += 1;
+                if (shouldRetryStatus(status)) retryable += 1;
+                if (job) job.liveStatus = `${nickLabel}: da check ${checked}/${totalTasks}; ${status}`;
+                log(profileId, "ghi Sheet", `${label} => ${status}`, status === "lỗi check" ? "warn" : "success");
+              } finally {
+                progress.summary.inFlight -= 1;
+                // Unload scripts/DOM between links (including during slow
+                // Sheet writes or peer barriers), retaining this reusable tab.
+                if (!page.isClosed() && page.url() !== "about:blank") await page.goto("about:blank").catch(() => {});
+              }
             }
           } finally {
             await page.close({ runBeforeUnload: false }).catch(() => {});
@@ -542,6 +530,7 @@ export function createMarketplaceLinkOrderTool({
       log(profileId, "loi tong", `${nickLabel} loi: ${error.message || error}`, "error");
       return { profileId, error: error.message || String(error), checked, total: totalTasks, permanent: Boolean(browser?.__marketplaceAccess?.error) };
     } finally {
+      progress.summary.activeProfiles -= 1;
       if (runtime.activeManagers instanceof Map) runtime.activeManagers.delete(profileId);
       try { if (loginPage && !loginPage.isClosed()) await loginPage.close({ runBeforeUnload: false }); } catch {}
       try { if (browser) await browser.disconnect(); } catch {}
@@ -597,6 +586,8 @@ export function createMarketplaceLinkOrderTool({
       item.sheetRow = sheetRow;
     }
 
+    const progress = createLinkCheckProgress(runtime, profiles.length, shouldRetryStatus);
+    progress.register(plans);
     for (const item of profiles) {
       runtime.jobs.set(item.profileId, {
         profileId: item.profileId,
@@ -620,9 +611,11 @@ export function createMarketplaceLinkOrderTool({
       try {
         while (!runtime.stopRequested) {
           pass += 1;
+          progress.summary.pass = pass;
           let currentPlans = plans;
           try {
             if (pass > 1) currentPlans = await loadPlans(activeProfiles.length);
+            progress.register(currentPlans);
             const pendingLinks = currentPlans.reduce((total, plan) => total + Number(plan.sharedQueue?.total || 0), 0);
             if (!pendingLinks) break;
             if (pass > 1) {
@@ -639,6 +632,7 @@ export function createMarketplaceLinkOrderTool({
               config,
               plans: currentPlans,
               tabCount,
+              progress,
               direction: item.direction,
               workerSlot: index,
               workerTotal: activeProfiles.length
@@ -691,6 +685,7 @@ export function createMarketplaceLinkOrderTool({
           }
         }
       } finally {
+        progress.finish();
         runtime.running = false;
         runtime.currentTool = "";
       }

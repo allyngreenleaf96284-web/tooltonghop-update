@@ -60,6 +60,13 @@ test('five browsers check thirteen rows once and write the existing status colum
     assert.ok(writes.every(x=>x.values[0][0]==='sold' && /!C\d+$/.test(x.range)));
     assert.equal(new Set(visits.map(x=>x.url)).size,13);
     assert.deepEqual(ids.map(id=>visits.filter(x=>x.id===id).length),[3,3,3,2,2]);
+    assert.equal(runtime.linkOrderProgress.total,13);
+    assert.equal(runtime.linkOrderProgress.checked,13);
+    assert.equal(runtime.linkOrderProgress.completed,13);
+    assert.equal(runtime.linkOrderProgress.pending,0);
+    assert.equal(runtime.linkOrderProgress.inFlight,0);
+    assert.equal(runtime.linkOrderProgress.activeProfiles,0);
+    assert.equal(runtime.linkOrderProgress.running,false);
   }finally{runtime.stopRequested=true;await browser.close();}
 });
 

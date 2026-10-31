@@ -2816,6 +2816,18 @@ async function refreshToolStatus() {
   }
 }
 
+function linkOrderProgressPresentation(summary) {
+  if (!summary) return null;
+  const total = Number(summary.total || 0), completed = Number(summary.completed || 0);
+  const pending = Math.max(0, total - completed);
+  return {
+    stateLabel: summary.running ? (summary.pass > 1 ? "đang check lại" : "đang chạy") : pending ? "còn link chưa xong" : "xong",
+    countLabel: `Đã check ${summary.checked || 0} / ${total} link`,
+    textLabel: `Hoàn tất ${completed} · Còn ${pending} · Cần check lại ${summary.retryable || 0} · Đang xử lý ${summary.inFlight || 0} link · Nick hoạt động ${summary.activeProfiles || 0}/${summary.profileCount || 0} · Lượt ${summary.pass || 1}`,
+    percent: total ? Math.max(0, Math.min(100, completed / total * 100)) : 0
+  };
+}
+
 function renderToolProgress(data) {
   if ($("toggleLoginPause")) {
     $("toggleLoginPause").textContent = data.loginPaused ? "Tiếp tục tất cả (F8)" : "Tạm dừng tất cả (F8)";
@@ -2871,6 +2883,7 @@ function renderToolProgress(data) {
   const notificationProgress = buildProgress(state.notificationBatchIds, "xem thong bao");
   const checkOrderProgress = buildProgress(state.checkOrderBatchIds, "check order");
   const linkOrderProgress = buildProgress(state.linkOrderBatchIds, "check link order");
+  const linkCounters = linkOrderProgressPresentation(data.linkOrderProgress);
   renderToolProgressPanel({
     panelId: "checkOrderToolProgressPanel",
     stateId: "checkOrderToolProgressState",
@@ -2891,10 +2904,10 @@ function renderToolProgress(data) {
     textId: "linkOrderToolProgressText",
     barId: "linkOrderToolProgressBar",
     listId: "linkOrderToolProgressList",
-    stateLabel: linkOrderProgress.total ? (linkOrderProgress.batch?.active ? (linkOrderProgress.batch.phase === "retry" ? "đang retry" : "đang chạy") : "xong") : "idle",
-    countLabel: `${linkOrderProgress.completed} / ${linkOrderProgress.total}`,
-    textLabel: linkOrderProgress.summaryText,
-    percent: linkOrderProgress.percent,
+    stateLabel: linkCounters?.stateLabel || (linkOrderProgress.total ? "đang chạy" : "idle"),
+    countLabel: linkCounters?.countLabel || `${linkOrderProgress.completed} / ${linkOrderProgress.total}`,
+    textLabel: linkCounters?.textLabel || linkOrderProgress.summaryText,
+    percent: linkCounters?.percent ?? linkOrderProgress.percent,
     jobs: linkOrderProgress.jobs
   });
   const fullProgress = buildProgress(state.fullBatchIds, "lam full");

@@ -3056,6 +3056,7 @@ function getToolStatusPayload() {
     currentTool: toolRuntime.currentTool || "",
     loginPaused: toolRuntime.loginPaused === true,
     batch: toolRuntime.batch || null,
+    linkOrderProgress: toolRuntime.linkOrderProgress || null,
     jobs: [...toolRuntime.jobs.values()],
     logs: toolRuntime.logs.slice(-1000),
     autoSync: {
