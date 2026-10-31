@@ -1,6 +1,7 @@
 import { buildStandardName } from "./profile_name.js";
 import { createLoginPause } from "./login_pause.js";
 import { createLoginOperator } from "./login_operator.js";
+import { createLoginDisplay } from "./login_display.js";
 import {
   ensureMarketplaceCreatePageReady,
   ensureUsMarketplaceLocation,
@@ -21,6 +22,12 @@ function clampConcurrency(value, fallback = 1) {
   const parsed = Math.floor(Number(value));
   if (!Number.isFinite(parsed)) return Math.max(1, Math.min(6, fallback));
   return Math.max(1, Math.min(6, parsed));
+}
+
+function displayUid(sheetRow) {
+  const value = Object.entries(sheetRow || {}).find(([key]) => key.trim().toLowerCase() === "uid")?.[1];
+  const uid = String(value || "").trim();
+  return /^\d{5,20}$/.test(uid) ? uid : "";
 }
 
 function expandSheetUpdate(update) {
@@ -72,16 +79,16 @@ function detectBar(state) {
 
 export function tileBounds(workerSlot = 0, workerTotal = 1, area = { left: 0, top: 0, width: 1920, height: 1040 }) {
   const total = Math.max(1, Math.min(6, Number(workerTotal || 1)));
-  const columns = Math.ceil(Math.sqrt(total)), rows = Math.ceil(total / columns);
+  const columns = Math.max(1, Math.min(Math.ceil(Math.sqrt(total)), Math.floor(area.width / 500)));
+  const rows = Math.ceil(total / columns);
   const slot = Math.max(0, Math.min(total - 1, workerSlot));
   const width = Math.floor(area.width / columns), height = Math.floor(area.height / rows);
   return { left: area.left + (slot % columns) * width, top: area.top + Math.floor(slot / columns) * height, width, height };
 }
-async function pageTileBounds(page, slot, total) {
-  const area = await page.evaluate(() => ({ left: screen.availLeft || 0, top: screen.availTop || 0,
-    width: screen.availWidth, height: screen.availHeight })).catch(() => null);
-  return tileBounds(slot, total, area?.width > 0 && area?.height > 0 ? area : undefined);
+async function pageTileBounds(page, slot, total, display) {
+  return tileBounds(slot, total, await display.area(page));
 }
+
 const zoomPages = new WeakSet();
 
 async function readViewportMetrics(page) {
@@ -96,15 +103,15 @@ async function readViewportMetrics(page) {
   })).catch(() => null);
 }
 
-async function applyStableViewport(page, workerSlot = 0, workerTotal = 1, zoomPercent = 50) {
+export async function applyStableViewport(page, workerSlot = 0, workerTotal = 1, zoomPercent = 50, display = createLoginDisplay()) {
   if (!page || page.isClosed?.()) return null;
-  const bounds = await pageTileBounds(page, workerSlot, workerTotal);
+  const bounds = await pageTileBounds(page, workerSlot, workerTotal, display);
   const viewport = {
-    width: Math.max(320, bounds.width - 24),
-    height: Math.max(200, bounds.height - 110),
+    width: Math.max(1, bounds.width - 24),
+    height: Math.max(1, bounds.height - 110),
     deviceScaleFactor: 1
   };
-  await page.setViewport?.(viewport).catch(() => {});
+  if (typeof page.setViewport === "function") await page.setViewport(viewport);
   const zoom = normalizeLoginZoomPercent(zoomPercent) / 100;
   const setZoom = (value) => {
     const apply = () => { if (document.documentElement) document.documentElement.style.zoom = String(value); };
@@ -119,30 +126,30 @@ async function applyStableViewport(page, workerSlot = 0, workerTotal = 1, zoomPe
   return { ...viewport, zoom, bounds, actual: await readViewportMetrics(page) };
 }
 
-function patchStableWindowTiling(manager, workerSlot = 0, workerTotal = 1, zoomPercent = 50) {
+function patchStableWindowTiling(manager, workerSlot = 0, workerTotal = 1, zoomPercent = 50, display) {
   const original = manager.maximizeBrowserWindow;
   manager.__toolWorkerSlot = workerSlot;
   manager.__toolWorkerTotal = workerTotal;
   for (const name of ["setMarketplaceZoom", "applyMarketplaceZoom"]) {
-    if (typeof manager[name] === "function") manager[name] = (page) => applyStableViewport(page, workerSlot, workerTotal, zoomPercent);
+    if (typeof manager[name] === "function") manager[name] = (page) => applyStableViewport(page, workerSlot, workerTotal, zoomPercent, display);
   }
   manager.maximizeBrowserWindow = async (browser, page = null) => {
     const targetPage = page || (await browser.pages().catch(() => []))[0];
     if (!targetPage) return original?.call(manager, browser, page);
-    const bounds = await pageTileBounds(targetPage, workerSlot, workerTotal);
+    const bounds = await pageTileBounds(targetPage, workerSlot, workerTotal, display);
     let session;
     try {
-      session = await targetPage.createCDPSession();
+      session = typeof targetPage.createCDPSession === "function"
+        ? await targetPage.createCDPSession() : await targetPage.target().createCDPSession();
       const windowInfo = await session.send("Browser.getWindowForTarget").catch(() => null);
       if (windowInfo?.windowId !== undefined) {
+        await session.send("Browser.setWindowBounds", { windowId: windowInfo.windowId, bounds: { windowState: "normal" } });
         await session.send("Browser.setWindowBounds", {
           windowId: windowInfo.windowId,
-          bounds: { windowState: "normal", left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height }
+          bounds: { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height }
         });
       }
-      await applyStableViewport(targetPage, workerSlot, workerTotal, zoomPercent);
-    } catch {
-      await original?.call(manager, browser, page).catch(() => {});
+      await applyStableViewport(targetPage, workerSlot, workerTotal, zoomPercent, display);
     } finally {
       await session?.detach?.().catch(() => {});
     }
@@ -180,6 +187,8 @@ export function createToolLogin({
   } });
   const operator = createLoginOperator(runtime, pauseControl);
   const restartLeases = new Map();
+  const display = createLoginDisplay({ onFallback: (error) =>
+    addRuntimeLog(`Khong doc duoc man hinh Windows; dung chung kich thuoc du phong: ${error.message}`, "warn", "", { tool: "tool login", step: "chia man hinh" }) });
   function log(profileId, step, message, type = "info", detail = "") {
     addRuntimeLog(`[${profileId}] ${message}`, type, profileId, { tool: "tool login", step, detail });
   }
@@ -248,7 +257,7 @@ export function createToolLogin({
 
   async function runOne(profileId, sheetRow, config, sheetSession, workerSlot, workerTotal) {
     const manager = getManager({ fresh: true });
-    patchStableWindowTiling(manager, workerSlot, workerTotal, config.loginZoomPercent);
+    patchStableWindowTiling(manager, workerSlot, workerTotal, config.loginZoomPercent, display);
     if (typeof manager.getProfileById !== "function") {
       manager.getProfileById = async (id) => {
         const profiles = await manager.listProfiles();
@@ -258,6 +267,7 @@ export function createToolLogin({
     const row = buildToolRow(profileId, sheetRow);
     const uid = profileUid(row, profileId);
     const job = runtime.jobs.get(profileId);
+    job.uid = displayUid(sheetRow);
     const writer = createLiveSheetWriter(sheetSession, profileId);
     let browser = null;
     let page = null;
@@ -322,8 +332,8 @@ export function createToolLogin({
         browser = await manager.connectBrowser(profileId);
         page = await browser.newPage();
         await page.bringToFront().catch(() => {});
-        if (typeof manager.maximizeBrowserWindow === "function") await manager.maximizeBrowserWindow(browser, page).catch(() => {});
-        await applyStableViewport(page, workerSlot, workerTotal, config.loginZoomPercent);
+        if (typeof manager.maximizeBrowserWindow === "function") await manager.maximizeBrowserWindow(browser, page);
+        await applyStableViewport(page, workerSlot, workerTotal, config.loginZoomPercent, display);
       }, 120000);
       await pauseControl.attach(page);
       await operator.attach(page, profileId);
@@ -381,7 +391,7 @@ export function createToolLogin({
         job.loginPaused = false;
         operator.remove(profileId);
         return await runFullProfile(profileId, sheetSession.rows.get(profileId) || sheetRow, config, sheetSession, workerSlot, workerTotal, {
-          existingSession: { browser, page, location: { ...location }, configureManager: (fullManager) => patchStableWindowTiling(fullManager, workerSlot, workerTotal, config.loginZoomPercent) }
+          existingSession: { browser, page, location: { ...location }, configureManager: (fullManager) => patchStableWindowTiling(fullManager, workerSlot, workerTotal, config.loginZoomPercent, display) }
         });
       }
 
@@ -482,9 +492,10 @@ export function createToolLogin({
     const sheetSession = await createSheetRowSession(config, ids);
     pauseControl.reset();
     restartLeases.clear();
+    display.reset();
     const concurrency = Math.min(clampConcurrency(config.loginConcurrency, 4), ids.length);
     for (const id of ids) {
-      runtime.jobs.set(id, { profileId: id, tool: "tool login", status: "queued", liveStatus: `dang cho ${concurrency} luong`, logs: [], startedAt: "", finishedAt: "", result: null, sheetWriteError: "" });
+      runtime.jobs.set(id, { profileId: id, uid: displayUid(sheetSession.rows.get(id)), tool: "tool login", status: "queued", liveStatus: `dang cho ${concurrency} luong`, logs: [], startedAt: "", finishedAt: "", result: null, sheetWriteError: "" });
     }
     runtime.running = true;
     runtime.stopRequested = false;

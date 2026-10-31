@@ -873,6 +873,40 @@ label {
   grid-template-columns: 170px 92px 72px minmax(0, 1fr);
 }
 
+#loginToolProgressPanel {
+  resize: both;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 100%;
+  min-width: min(100%, 480px);
+  height: 420px;
+  min-height: 260px;
+  box-sizing: border-box;
+}
+
+#loginToolProgressPanel.hidden { display: none; }
+#loginToolProgressPanel > :not(#loginToolProgressList) { flex-shrink: 0; }
+#loginToolProgressList { flex: 1 1 auto; min-height: 80px; max-height: none; align-content: start; }
+#loginToolProgressList .tool-progress-item { min-width: 650px; }
+#loginToolProgressList .tool-progress-column-head { position: sticky; top: 0; z-index: 1; background: #0f172a; }
+.login-progress-help { padding: 8px 12px; color: var(--muted); }
+.copy-login-uid {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  border-radius: 0;
+  color: var(--cyan);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: copy;
+  user-select: all;
+}
+.copy-login-uid:hover { text-decoration: underline; background: none; }
+.copy-login-uid:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
+
 .tool-progress-column-head {
   color: var(--muted);
   font-size: 11px;

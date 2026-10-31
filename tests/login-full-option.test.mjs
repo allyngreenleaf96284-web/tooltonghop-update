@@ -27,7 +27,7 @@ test("Login enters Full only for 3v with the option on, and honours Stop during 
       const writes = [], events = [];
       let name = "61594499510154-Nuevo, California", fullCalls = 0;
       const sheet = {
-        rows: new Map([["p1", { "tên profile hiện tại": name }]]),
+        rows: new Map([["p1", { uid: "61594499510154", "tên profile hiện tại": name }]]),
         async updateOne(id, update) { writes.push(update); }, async flushAll() {
           if (stop && writes.some(update => update.chiTiet === "3v - dang chuyen sang lam Full")) runtime.stopRequested = true;
         }
@@ -67,6 +67,7 @@ test("Login enters Full only for 3v with the option on, and honours Stop during 
       for (let attempt = 0; attempt < 2000 && runtime.running; attempt += 1) await pause(10);
       assert.equal(runtime.running, false);
       const job = runtime.jobs.get("p1");
+      assert.equal(job.uid, "61594499510154");
       assert.equal(job.status, stop ? "stopped" : "success", JSON.stringify(job.result));
       assert.equal(fullCalls, enabled && bars === 3 && !stop ? 1 : 0);
       if (!stop && !(enabled && bars === 3)) {

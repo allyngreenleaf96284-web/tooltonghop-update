@@ -3225,7 +3225,7 @@ function renderToolProgressPanel({
   });
   const timeColumnHead = showTimeColumn ? `
     <div class="tool-progress-item tool-progress-column-head has-time-column">
-      <span>Profile</span><span>Trạng thái</span><span>Time</span><span>Tiến độ</span>
+      <span>UID</span><span>Trạng thái</span><span>Time</span><span>Tiến độ</span>
     </div>` : "";
   list.innerHTML = timeColumnHead + orderedJobs.slice(0, 80).map((job) => {
     const rawStatus = String(job.status || "queued").toLowerCase();
@@ -3245,9 +3245,15 @@ function renderToolProgressPanel({
     const timeCell = showTimeColumn
       ? `<span class="tool-progress-time"${timerEndsAt ? ` data-login-twofa-ends-at="${escapeAttr(String(timerEndsAt))}"` : ""}>${job.loginPaused && job.twofaCountdownEndsAt ? formatLoginTwofaCountdown(Date.now() + Math.max(0, job.twofaCountdownEndsAt - job.loginPausedAt)) : timerEndsAt ? formatLoginTwofaCountdown(timerEndsAt) : ""}</span>`
       : "";
+    const uidValue = String(job.uid || state.profiles.find((profile) => String(profile.id) === String(job.profileId))?.uid || "").trim();
+    const identityCell = showTimeColumn
+      ? (/^\d{5,20}$/.test(uidValue)
+        ? `<button type="button" class="copy-login-uid" data-copy-login-uid="${escapeAttr(uidValue)}" title="Bấm để sao chép UID">${escapeHtml(uidValue)}</button>`
+        : "—")
+      : `${escapeHtml(job.profileId || "")}${job.currentName ? `<br><small>${escapeHtml(job.currentName)}</small>` : ""}`;
     return `
     <div class="tool-progress-item${showTimeColumn ? " has-time-column" : ""}"${job.tool === "tool login" ? ` data-login-profile-row="${escapeAttr(job.profileId)}" tabindex="0"` : ""}>
-      <span>${escapeHtml(job.profileId || "")}${job.currentName ? `<br><small>${escapeHtml(job.currentName)}</small>` : ""}</span>
+      <span>${identityCell}</span>
       <span class="job-status ${escapeAttr(rawStatus)}">${escapeHtml(displayStatus)}</span>
       ${timeCell}
       <span>${escapeHtml(`${phaseText}: ${job.liveStatus || ""}`)}
@@ -3259,6 +3265,29 @@ function renderToolProgressPanel({
 
 let loginPauseRequestPending = false;
 let selectedLoginProfile = "";
+async function copyLoginUid(uid) {
+  if (!/^\d{5,20}$/.test(uid)) return;
+  const status = $("loginUidCopyStatus");
+  try {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(uid);
+    } catch {
+      const previousFocus = document.activeElement;
+      const input = document.createElement("textarea");
+      input.value = uid;
+      input.style.cssText = "position:fixed;left:-9999px;top:0";
+      document.body.append(input);
+      try {
+        input.select();
+        if (!document.execCommand("copy")) throw new Error("Copy failed");
+      } finally { input.remove(); previousFocus?.focus({ preventScroll: true }); }
+    }
+    if (status) status.textContent = `Đã sao chép ${uid}`;
+  } catch {
+    if (status) status.textContent = "Chưa sao chép được. Bôi chọn UID và nhấn Ctrl+C.";
+  }
+}
 const loginRetryPending = new Set();
 async function retryLoginProfile(profileId) {
   if (!profileId) { $("loginStatusText").textContent = "Chọn dòng nick cần chạy lại rồi bấm F10."; return; }
@@ -3292,6 +3321,8 @@ $("toggleLoginPause")?.addEventListener("click", () => toggleLoginPause());
 document.addEventListener("click", (event) => {
   const row = event.target.closest?.("[data-login-profile-row]");
   if (row) selectedLoginProfile = row.dataset.loginProfileRow;
+  const uid = event.target.closest?.("[data-copy-login-uid]");
+  if (uid) void copyLoginUid(uid.dataset.copyLoginUid);
   const retry = event.target.closest?.("[data-login-retry-id]");
   if (retry) void retryLoginProfile(retry.dataset.loginRetryId);
   const manual = event.target.closest?.("[data-login-manual-id]");
