@@ -107,7 +107,8 @@ async function startHttpLinkChecks({config,readPlan,runtime,log,createClient=cre
           await client.verifyUs(controller.signal);
           // Verify the supplied session belongs to this account before sharing work.
           const session=await client.get("https://www.facebook.com/me?locale=en_US",{signal:controller.signal});
-          if(session.status!==200||/\/login|\/checkpoint|\/two_step_verification/.test(session.url))throw new Error("Cookie het han hoac can xac minh dang nhap.");
+          if(session.status!==200)throw new Error(`Facebook tra HTTP ${session.status} khi kiem tra phien; chua xac nhan duoc dang nhap.`);
+          if(/\/login|\/checkpoint|\/two_step_verification/.test(session.url))throw new Error("Cookie het han hoac can xac minh dang nhap.");
           const sessionEvidence=session.html.match(/"USER_ID"\s*:\s*"(\d+)"/)?.[1] || session.html.match(/"actorID"\s*:\s*"(\d+)"/)?.[1];
           if(sessionEvidence!==nick.uid)throw new Error("Chua xac nhan duoc phien dang nhap tu cookie; can kiem tra lai nick.");
           progress.summary.activeProfiles++;

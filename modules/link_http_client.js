@@ -1,6 +1,7 @@
 import http from "node:http";
 import https from "node:https";
 import tls from "node:tls";
+import { isIP } from "node:net";
 import { createGunzip, createBrotliDecompress, createInflate } from "node:zlib";
 
 export function normalizeHttpAccounts(value) {
@@ -32,6 +33,15 @@ export function accountUid(cookie) {
   return uid;
 }
 
+function connectionError(stage, code = "", status = 0) {
+  const safeCode = /^[A-Z0-9_]+$/.test(String(code)) ? String(code) : "";
+  const hint = status === 407 ? " — proxy tu choi tai khoan/mat khau" : status === 502 ? " — proxy khong ket noi duoc may chu dich" : "";
+  const error = new Error(`${stage}${status ? `: HTTP ${status}` : safeCode ? `: ${safeCode}` : ""}${hint}.`);
+  error.proxyDiagnostic = true;
+  if (safeCode) error.code = safeCode;
+  return error;
+}
+
 class TunnelAgent extends https.Agent {
   constructor(proxy) { super({ keepAlive: true, maxSockets: 20, maxFreeSockets: 4 }); this.proxy = proxy; this.opening = new Set(); }
   destroy() { for(const connection of this.opening) connection.destroy(); this.opening.clear(); super.destroy(); }
@@ -40,7 +50,7 @@ class TunnelAgent extends https.Agent {
     const transport = proxy.protocol === "https:" ? https : http;
     const headers = {};
     if (proxy.username) headers["Proxy-Authorization"] = `Basic ${Buffer.from(`${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}`).toString("base64")}`;
-    const request = transport.request({ hostname: proxy.hostname, port: proxy.port, method: "CONNECT",
+    const request = transport.request({ hostname: proxy.hostname.replace(/^\[|\]$/g,""), port: proxy.port, method: "CONNECT",
       path: `${options.host}:${options.port || 443}`, headers, agent: false });
     this.opening.add(request);
     let done = false, socket;
@@ -51,36 +61,37 @@ class TunnelAgent extends https.Agent {
       if (error) { request.destroy(); socket?.destroy(); }
       callback(error, secure);
     };
-    const timer = setTimeout(() => finish(new Error("Proxy connection timeout.")), 15000);
+    const timer = setTimeout(() => finish(connectionError(`Proxy CONNECT -> ${options.host}`, "ETIMEDOUT")), 15000);
     request.on("connect", (response, connected, head) => {
       socket = connected;
       this.opening.add(connected);
-      if (response.statusCode !== 200) return finish(new Error("Proxy CONNECT failed."));
+      if (response.statusCode !== 200) return finish(connectionError(`Proxy CONNECT -> ${options.host}`, "", response.statusCode));
       if (head.length) connected.unshift(head);
       const secure = tls.connect({ socket: connected, servername: options.servername || options.host, rejectUnauthorized: true });
       socket = secure;
       this.opening.delete(connected);this.opening.add(secure);
       secure.once("secureConnect", () => finish(null, secure));
-      secure.once("error", () => finish(new Error("Proxy TLS failed.")));
+      secure.once("error", (error) => finish(connectionError(`TLS -> ${options.host}`, error.code)));
     });
-    request.once("error", () => finish(new Error("Proxy connection failed.")));
+    request.once("error", (error) => finish(connectionError("Ket noi toi cong proxy", error.code)));
     request.end();
     return undefined;
   }
 }
 
-export function createHttpCheckClient({ cookie, proxy }) {
+export function createHttpCheckClient({ cookie, proxy }, { lookupCountry } = {}) {
   const agent = new TunnelAgent(parseCheckProxy(proxy));
   const cookies = new Map(cookie.split(";").map((part) => { const i = part.indexOf("="); return [part.slice(0,i).trim(), part.slice(i+1).trim()]; }).filter(([key]) => key));
-  async function get(rawUrl, { timeoutMs = 20000, signal, facebook = true } = {}, redirects = 0) {
+  async function get(rawUrl, { timeoutMs = 20000, signal, facebook = true, throughProxy = true } = {}, redirects = 0) {
     const url = new URL(rawUrl);
-    const allowed = facebook ? ["www.facebook.com", "facebook.com", "m.facebook.com"] : ["ipinfo.io"];
+    const allowed = facebook ? ["www.facebook.com", "facebook.com", "m.facebook.com"] : ["ipinfo.io", "api64.ipify.org"];
     if (url.protocol !== "https:" || !allowed.includes(url.hostname) || (url.port && url.port !== "443")) throw new Error("URL check khong duoc ho tro.");
+    if (facebook && !throughProxy) throw new Error("Facebook bat buoc di qua proxy.");
     return new Promise((resolve, reject) => {
       const headers = { "Accept": "text/html,application/json", "Accept-Encoding": "gzip, br", "Accept-Language": "en-US,en;q=0.9",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36" };
-      if (facebook) headers.Cookie = [...cookies].map(([key,value]) => `${key}=${value}`).join("; ");
-      const request = https.get(url, { agent, headers, signal }, (response) => {
+      if (facebook && cookies.size) headers.Cookie = [...cookies].map(([key,value]) => `${key}=${value}`).join("; ");
+      const request = https.get(url, { agent: throughProxy ? agent : undefined, headers, signal }, (response) => {
         if (facebook) for (const line of response.headers["set-cookie"] || []) {
           const pair = line.split(";")[0], i = pair.indexOf("=");
           if (i > 0) cookies.set(pair.slice(0,i), pair.slice(i+1));
@@ -88,7 +99,7 @@ export function createHttpCheckClient({ cookie, proxy }) {
         if ([301,302,303,307,308].includes(response.statusCode) && response.headers.location) {
           response.resume();
           if (redirects >= 4) return reject(new Error("Qua nhieu lan chuyen trang."));
-          return get(new URL(response.headers.location,url).href,{timeoutMs,signal,facebook},redirects+1).then(resolve,reject);
+          return get(new URL(response.headers.location,url).href,{timeoutMs,signal,facebook,throughProxy},redirects+1).then(resolve,reject);
         }
         const encoding=response.headers["content-encoding"];
         const body=encoding==="gzip"?createGunzip():encoding==="br"?createBrotliDecompress():encoding==="deflate"?createInflate():response;
@@ -99,17 +110,28 @@ export function createHttpCheckClient({ cookie, proxy }) {
         body.on("error",()=>{request.destroy();reject(new Error("Khong doc duoc noi dung HTTP."));});
         response.on("error", () => reject(new Error("Phan hoi bi ngat.")));
       });
-      const timer = setTimeout(() => request.destroy(new Error("HTTP check timeout.")),timeoutMs);
+      const timer = setTimeout(() => request.destroy(connectionError(`HTTPS -> ${url.hostname}`, "ETIMEDOUT")),timeoutMs);
       request.once("close",()=>clearTimeout(timer));
-      request.once("error",(error)=>reject(new Error(error.name === "AbortError" ? "Da dung check HTTP." : "Loi ket noi HTTP/proxy.")));
+      request.once("error",(error)=>reject(error.proxyDiagnostic ? error : error.name === "AbortError" ? new Error("Da dung check HTTP.") : connectionError(`HTTPS -> ${url.hostname}${throughProxy ? " qua proxy" : " (tra quoc gia IP)"}`,error.code)));
     });
   }
   return {
     get,
     async verifyUs(signal) {
-      const response = await get("https://ipinfo.io/json", {facebook:false,signal,timeoutMs:15000});
-      let info; try {info=JSON.parse(response.html);} catch {throw new Error("Khong xac minh duoc quoc gia proxy.");}
-      if (response.status !== 200 || info.country !== "US") throw new Error("Proxy chua duoc xac nhan la IP My (US).");
+      // IPv6-only exits cannot reach IPv4-only geo providers. Obtain the exit
+      // through a dual-stack endpoint first. Geography lookup sends only that
+      // public IP, directly; it never receives Facebook cookies or proxy auth.
+      const response = await get("https://api64.ipify.org?format=json", {facebook:false,signal,timeoutMs:15000});
+      let ip;try{ip=JSON.parse(response.html).ip;}catch{}
+      if(response.status!==200||!isIP(ip || ""))throw new Error("Khong lay duoc IP dau ra IPv4/IPv6 cua proxy.");
+      let info;
+      if(lookupCountry) info=await lookupCountry(ip,signal);
+      else {
+        const country=await get(`https://ipinfo.io/${encodeURIComponent(ip)}/json`,{facebook:false,throughProxy:false,signal,timeoutMs:15000});
+        if(country.status!==200)throw new Error(`Tra quoc gia IP dau ra: HTTP ${country.status}; chua xac minh duoc proxy My.`);
+        try {info=JSON.parse(country.html);}catch{throw new Error("Khong doc duoc quoc gia IP dau ra.");}
+      }
+      if (info?.country !== "US") throw new Error("Proxy chua duoc xac nhan la IP My (US).");
       return true;
     },
     close() { agent.destroy(); }

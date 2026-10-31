@@ -10,7 +10,7 @@ import http from 'node:http';
 import https from 'node:https';
 import net from 'node:net';
 import { gzipSync } from 'node:zlib';
-import { accountUid, parseCheckProxy, classifyHttpListing } from '../modules/link_http_client.js';
+import { accountUid, parseCheckProxy, classifyHttpListing, createHttpCheckClient } from '../modules/link_http_client.js';
 import { runHttpLinkChecks, createHttpSheetWriter } from '../modules/link_http_runner.js';
 const require=createRequire(import.meta.url),exec=promisify(execFile);
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -23,6 +23,15 @@ test('proxy/cookie parsing accepts supported forms and rejects missing auth sess
   assert.throws(()=>parseCheckProxy('socks5://localhost:1080'));
   assert.equal(accountUid('c_user=10001; xs=fixture;'),'10001');
   assert.throws(()=>accountUid('c_user=10001;'));assert.throws(()=>accountUid('c_user=10001; xs=x\r\nInjected: y'));
+});
+
+test('proxy authentication errors retain HTTP 407 without exposing credentials',async()=>{
+  const proxy=http.createServer();
+  proxy.on('connect',(req,socket)=>socket.end('HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\n\r\n'));
+  await new Promise(resolve=>proxy.listen(0,'127.0.0.1',resolve));
+  const client=createHttpCheckClient({cookie:'c_user=10001; xs=fixture;',proxy:`127.0.0.1:${proxy.address().port}:fixture-user:fixture-secret`});
+  try{await assert.rejects(client.verifyUs(),error=>/HTTP 407/.test(error.message)&&!error.message.includes('fixture-secret')&&!error.message.includes('fixture-user'));}
+  finally{client.close();await new Promise(resolve=>proxy.close(resolve));}
 });
 
 test('HTML classification requires evidence for the requested listing and never guesses gray Buy now',()=>{
@@ -114,10 +123,10 @@ test('native HTTP client tunnels TLS through authenticated proxy, reuses cookie 
   let secure,proxy;
   const sockets=new Set(),seen=[],connects=[];
   try{
-    await exec(openssl,['req','-x509','-newkey','rsa:2048','-nodes','-keyout',path.join(directory,'key.pem'),'-out',path.join(directory,'cert.pem'),'-days','1','-subj','/CN=www.facebook.com','-addext','subjectAltName=DNS:www.facebook.com,DNS:ipinfo.io']);
+    await exec(openssl,['req','-x509','-newkey','rsa:2048','-nodes','-keyout',path.join(directory,'key.pem'),'-out',path.join(directory,'cert.pem'),'-days','1','-subj','/CN=www.facebook.com','-addext','subjectAltName=DNS:www.facebook.com,DNS:api64.ipify.org']);
     secure=https.createServer({key:await readFile(path.join(directory,'key.pem')),cert:await readFile(path.join(directory,'cert.pem'))},(req,res)=>{
       seen.push({host:req.headers.host,cookie:req.headers.cookie||''});res.setHeader('Content-Type','application/json');
-      if(req.headers.host==='ipinfo.io')return res.end('{"country":"US"}');
+      if(req.headers.host==='api64.ipify.org')return res.end('{"ip":"2001:db8::1"}');
       res.setHeader('Set-Cookie','xs=updated-fixture; Path=/');res.setHeader('Content-Encoding','gzip');res.end(gzipSync('{"USER_ID":"10001"}'));
     });
     await new Promise(resolve=>secure.listen(0,'127.0.0.1',resolve));
@@ -127,9 +136,9 @@ test('native HTTP client tunnels TLS through authenticated proxy, reuses cookie 
     });
     await new Promise(resolve=>proxy.listen(0,'127.0.0.1',resolve));
     const moduleUrl=new URL('../modules/link_http_client.js',import.meta.url).href;
-    const script=`import {createHttpCheckClient} from ${JSON.stringify(moduleUrl)};const client=createHttpCheckClient({cookie:'c_user=10001; xs=original-fixture;',proxy:'http://user:pass@127.0.0.1:${proxy.address().port}'});try{await client.verifyUs();const reply=await client.get('https://www.facebook.com/me');if(JSON.parse(reply.html).USER_ID!=='10001')throw Error('bad gzip');await client.get('https://www.facebook.com/me');console.log('ok');}finally{client.close();}`;
+    const script=`import {createHttpCheckClient} from ${JSON.stringify(moduleUrl)};const client=createHttpCheckClient({cookie:'c_user=10001; xs=original-fixture;',proxy:'http://user:pass@127.0.0.1:${proxy.address().port}'},{lookupCountry:async(ip)=>{if(ip!=='2001:db8::1')throw Error('bad IPv6 exit');return {country:'US'};}});try{await client.verifyUs();const reply=await client.get('https://www.facebook.com/me');if(JSON.parse(reply.html).USER_ID!=='10001')throw Error('bad gzip');await client.get('https://www.facebook.com/me');console.log('ok');}finally{client.close();}`;
     const result=await exec(process.execPath,['--input-type=module','-e',script],{env:{...process.env,NODE_EXTRA_CA_CERTS:path.join(directory,'cert.pem')},timeout:20000});
     assert.match(result.stdout,/ok/);assert.ok(connects.every(value=>value==='Basic '+Buffer.from('user:pass').toString('base64')));
-    assert.equal(seen[0].host,'ipinfo.io');assert.equal(seen[0].cookie,'');assert.match(seen[2].cookie,/xs=updated-fixture/);
+    assert.equal(seen[0].host,'api64.ipify.org');assert.equal(seen[0].cookie,'');assert.match(seen[2].cookie,/xs=updated-fixture/);
   }finally{for(const socket of sockets)socket.destroy();if(proxy)await new Promise(resolve=>proxy.close(resolve));if(secure)await new Promise(resolve=>secure.close(resolve));await rm(directory,{recursive:true,force:true});}
 });
