@@ -4,6 +4,8 @@ import path from "node:path";
 import { buildFullSuccessToken, buildStandardName, buildMarketplaceIneligibleName, buildCaptchaProfileName } from "./profile_name.js";
 import { withFacebookLocale, isMarketplaceIneligibleError, assertMarketplaceAccess, isFacebookCaptchaError } from "./facebook_locale.js";
 import { chooseListingCondition } from "./listing_condition.js";
+import { readMarketplaceSidebarLocation, openMarketplaceLocationDialog, readLocationFromDialog,
+  selectMarketplaceLocation, applyMarketplaceLocation } from "./marketplace_location.js";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const US_STATES = new Set([
@@ -243,174 +245,6 @@ async function readLatestHideProfileName(manager, profileId, fallbackName = "") 
   return String(latestProfile?.name || fallbackName || profileId).trim();
 }
 
-async function readMarketplaceSidebarLocation(page) {
-  return page.evaluate(() => {
-    const normalize = (value) => String(value || "").replace(/\s+/g, " ").trim();
-    const visible = (element) => {
-      if (!(element instanceof HTMLElement)) return false;
-      const rect = element.getBoundingClientRect();
-      const style = window.getComputedStyle(element);
-      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
-    };
-    const directButton = Array.from(document.querySelectorAll("[role='button'][aria-label^='Location:']"))
-      .find((element) => visible(element) && element.getBoundingClientRect().left < 420);
-    if (directButton instanceof HTMLElement) {
-      const label = normalize(directButton.getAttribute("aria-label") || "");
-      return normalize(label.replace(/^Location:\s*/i, ""));
-    }
-    const headings = Array.from(document.querySelectorAll("span, div, h1, h2, h3, h4"))
-      .filter((element) => visible(element))
-      .map((element) => ({ element, text: normalize(element.innerText || element.textContent || "") }))
-      .filter((item) => /^location$/i.test(item.text));
-    const heading = headings[0]?.element;
-    if (!heading) return "";
-
-    const sidebar = heading.closest("div[role='navigation'], nav, div") || heading.parentElement;
-    if (!sidebar) return "";
-    const lines = Array.from(sidebar.querySelectorAll("a, [role='link'], span, div"))
-      .filter((element) => visible(element))
-      .map((element) => {
-        const text = normalize(element.innerText || element.textContent || "");
-        const rect = element.getBoundingClientRect();
-        return { element, text, rect };
-      })
-      .filter((item) =>
-        item.rect.left < 420 &&
-        item.rect.top > heading.getBoundingClientRect().bottom - 5 &&
-        item.text.includes(",") &&
-        /within\s+\d+/i.test(item.text)
-      )
-      .sort((a, b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left);
-    const chosen = lines[0];
-    if (!chosen) return "";
-    return normalize(chosen.text.split("·")[0] || chosen.text);
-  });
-}
-
-async function clickMarketplaceSidebarLocation(page) {
-  const directButton = await page.evaluate(() => {
-    const visible = (element) => {
-      if (!(element instanceof HTMLElement)) return false;
-      const rect = element.getBoundingClientRect();
-      const style = window.getComputedStyle(element);
-      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
-    };
-    const target = Array.from(document.querySelectorAll("[role='button'][aria-label^='Location:']"))
-      .find((element) => visible(element) && element.getBoundingClientRect().left < 420);
-    if (!(target instanceof HTMLElement)) return null;
-    const rect = target.getBoundingClientRect();
-    return {
-      x: rect.left + Math.min(rect.width * 0.5, rect.width - 8),
-      y: rect.top + rect.height / 2
-    };
-  });
-  if (directButton) {
-    await page.mouse.move(directButton.x, directButton.y);
-    await sleep(100);
-    await page.mouse.click(directButton.x, directButton.y);
-    return true;
-  }
-  const target = await page.evaluate(() => {
-    const normalize = (value) => String(value || "").replace(/\s+/g, " ").trim();
-    const visible = (element) => {
-      if (!(element instanceof HTMLElement)) return false;
-      const rect = element.getBoundingClientRect();
-      const style = window.getComputedStyle(element);
-      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
-    };
-    const headings = Array.from(document.querySelectorAll("span, div, h1, h2, h3, h4"))
-      .filter((element) => visible(element))
-      .map((element) => ({ element, text: normalize(element.innerText || element.textContent || "") }))
-      .filter((item) => /^location$/i.test(item.text));
-    const heading = headings[0]?.element;
-    if (!heading) return false;
-
-    const sidebar = heading.closest("div[role='navigation'], nav, div") || heading.parentElement;
-    if (!sidebar) return false;
-    const lines = Array.from(sidebar.querySelectorAll("a, [role='link'], span, div"))
-      .filter((element) => visible(element))
-      .map((element) => {
-        const text = normalize(element.innerText || element.textContent || "");
-        const rect = element.getBoundingClientRect();
-        return { element, text, rect };
-      })
-      .filter((item) =>
-        item.rect.left < 420 &&
-        item.rect.top > heading.getBoundingClientRect().bottom - 5 &&
-        item.text.includes(",") &&
-        /within\s+\d+/i.test(item.text)
-      )
-      .sort((a, b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left);
-    const chosen = lines[0];
-    if (!chosen) return null;
-    const clickable = chosen.element.closest("a, button, [role='button'], [role='link']") || chosen.element.parentElement || chosen.element;
-    const rect = (clickable instanceof HTMLElement ? clickable : chosen.element).getBoundingClientRect();
-    if (!rect || rect.width <= 0 || rect.height <= 0) return null;
-    return {
-      x: rect.left + Math.min(rect.width * 0.6, rect.width - 8),
-      y: rect.top + rect.height / 2
-    };
-  });
-  if (!target) return false;
-  await page.mouse.move(target.x, target.y);
-  await sleep(100);
-  await page.mouse.click(target.x, target.y);
-  return true;
-}
-
-async function waitForChangeLocationDialog(page) {
-  await page.waitForFunction(
-    () => {
-      const dialogs = Array.from(document.querySelectorAll("[role='dialog']"));
-      return dialogs.some((dialog) => /change location/i.test(dialog.innerText || dialog.textContent || ""));
-    },
-    { timeout: 15000 }
-  );
-}
-
-async function readLocationFromDialog(page) {
-  const selectors = [
-    "[role='dialog'] input[aria-label='Location']",
-    "[role='dialog'] input[aria-label*='City']",
-    "[role='dialog'] input[placeholder*='City']",
-    "[role='dialog'] input[placeholder*='city']",
-    "[role='dialog'] input[aria-label*='Location']",
-    "[role='dialog'] input[type='text']"
-  ];
-  for (const selector of selectors) {
-    const handle = await page.$(selector);
-    if (handle) {
-      const value = await handle.evaluate((element) => String(element.value || "").trim());
-      if (value) return value;
-    }
-  }
-  return "";
-}
-
-async function clickDialogApply(page) {
-  return page.evaluate(() => {
-    const dialog = Array.from(document.querySelectorAll("[role='dialog']")).find((item) =>
-      /change location/i.test(item.innerText || item.textContent || "")
-    );
-    if (!(dialog instanceof HTMLElement)) return false;
-    const visible = (element) => {
-      if (!(element instanceof HTMLElement)) return false;
-      const rect = element.getBoundingClientRect();
-      const style = window.getComputedStyle(element);
-      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
-    };
-    const applyButton = Array.from(dialog.querySelectorAll("button, [role='button']")).find((element) =>
-      visible(element) && /apply/i.test(String(element.innerText || element.textContent || ""))
-    );
-    if (!(applyButton instanceof HTMLElement)) return false;
-    const ariaDisabled = String(applyButton.getAttribute("aria-disabled") || "").toLowerCase() === "true";
-    const disabled = ariaDisabled || applyButton.matches?.(":disabled");
-    if (disabled) return false;
-    applyButton.click();
-    return true;
-  });
-}
-
 async function readMarketplaceCreateState(page) {
   return page.evaluate(() => {
     const normalize = (value) => String(value || "").replace(/\s+/g, " ").trim();
@@ -509,214 +343,56 @@ export async function ensureMarketplaceCreatePageReady(manager, page, row) {
   throw error;
 }
 
-async function typeDialogLocationAndPickFirstSuggestion(page, target) {
-  const selectors = [
-    "[role='dialog'] input[aria-label='Location']",
-    "[role='dialog'] input[aria-label*='City']",
-    "[role='dialog'] input[placeholder*='City']",
-    "[role='dialog'] input[placeholder*='city']",
-    "[role='dialog'] input[aria-label*='Location']",
-    "[role='dialog'] input[type='text']"
-  ];
-  let locationInput = null;
-  for (const selector of selectors) {
-    locationInput = await page.$(selector);
-    if (locationInput) break;
-  }
-  if (!locationInput) throw new Error("Khong tim thay o nhap dia chi trong dialog.");
-
-  await locationInput.click({ clickCount: 3 });
-  await sleep(150);
-  await locationInput.press("Backspace").catch(() => {});
-  await sleep(150);
-  await locationInput.type(String(target || "").trim(), { delay: 50 });
-  await sleep(1800);
-
-  await page.keyboard.press("ArrowDown").catch(() => {});
-  await sleep(250);
-  await page.keyboard.press("Enter").catch(() => {});
-  await sleep(1600);
-
-  const applyReadyAfterKeyboard = await page.evaluate(() => {
-    const dialog = Array.from(document.querySelectorAll("[role='dialog']")).find((item) =>
-      /change location/i.test(item.innerText || item.textContent || "")
-    );
-    if (!(dialog instanceof HTMLElement)) return false;
-    const visible = (element) => {
-      if (!(element instanceof HTMLElement)) return false;
-      const rect = element.getBoundingClientRect();
-      const style = window.getComputedStyle(element);
-      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
-    };
-    const applyButton = Array.from(dialog.querySelectorAll("button, [role='button']")).find((element) =>
-      visible(element) && /apply/i.test(String(element.innerText || element.textContent || ""))
-    );
-    if (!(applyButton instanceof HTMLElement)) return false;
-    const ariaDisabled = String(applyButton.getAttribute("aria-disabled") || "").toLowerCase() === "true";
-    const disabled = ariaDisabled || applyButton.matches?.(":disabled");
-    return !disabled;
-  });
-  if (applyReadyAfterKeyboard) {
-    return String(await readLocationFromDialog(page).catch(() => "") || "").trim() || String(target || "").trim();
-  }
-
-  const firstSuggestion = await page.evaluate(() => {
-    const dialog = Array.from(document.querySelectorAll("[role='dialog']")).find((item) =>
-      /change location/i.test(item.innerText || item.textContent || "")
-    );
-    if (!(dialog instanceof HTMLElement)) return null;
-    const visible = (element) => {
-      if (!(element instanceof HTMLElement)) return false;
-      const rect = element.getBoundingClientRect();
-      const style = window.getComputedStyle(element);
-      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
-    };
-    const input = dialog.querySelector("input[type='text'], input[type='search'], input[aria-label], input");
-    const inputRect = input instanceof HTMLElement ? input.getBoundingClientRect() : null;
-    const radiusNode = Array.from(dialog.querySelectorAll("*"))
-      .find((element) => visible(element) && /^radius$/i.test(String(element.textContent || "").replace(/\s+/g, " ").trim()));
-    const lowerBound = inputRect ? inputRect.bottom + 6 : 0;
-    const upperBound = radiusNode instanceof HTMLElement ? radiusNode.getBoundingClientRect().top - 6 : Number.POSITIVE_INFINITY;
-    const candidates = Array.from(dialog.querySelectorAll("div, span, li, [role='option'], [role='listitem'], [role='button']"))
-      .filter((element) => visible(element))
-      .map((element) => {
-        const text = String(element.innerText || element.textContent || "").replace(/\s+/g, " ").trim();
-        const rect = element.getBoundingClientRect();
-        return { element, text, rect };
-      })
-      .filter((item) => {
-        if (!item.text || item.text.length < 4) return false;
-        if (item.rect.top <= lowerBound || item.rect.top >= upperBound) return false;
-        if (item.rect.width < 220 || item.rect.height < 26) return false;
-        if (/^change location$/i.test(item.text) || /^location$/i.test(item.text) || /^radius$/i.test(item.text)) return false;
-        return true;
-      })
-      .sort((a, b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left);
-    const first = candidates[0];
-    if (!first) return null;
-    return {
-      text: first.text,
-      leftX: first.rect.left + Math.min(48, Math.max(18, first.rect.width * 0.12)),
-      centerX: first.rect.left + first.rect.width / 2,
-      rightX: first.rect.right - Math.min(28, Math.max(18, first.rect.width * 0.08)),
-      y: first.rect.top + first.rect.height / 2
-    };
-  });
-  if (firstSuggestion?.y) {
-    const clickPoints = [firstSuggestion.leftX, firstSuggestion.centerX, firstSuggestion.rightX]
-      .filter((value) => Number.isFinite(value));
-    for (const x of clickPoints) {
-      await page.mouse.move(x, firstSuggestion.y);
-      await sleep(120);
-      await page.mouse.down().catch(() => {});
-      await sleep(70);
-      await page.mouse.up().catch(() => {});
-      await sleep(1000);
-      const applyReady = await page.evaluate(() => {
-        const dialog = Array.from(document.querySelectorAll("[role='dialog']")).find((item) =>
-          /change location/i.test(item.innerText || item.textContent || "")
-        );
-        if (!(dialog instanceof HTMLElement)) return false;
-        const visible = (element) => {
-          if (!(element instanceof HTMLElement)) return false;
-          const rect = element.getBoundingClientRect();
-          const style = window.getComputedStyle(element);
-          return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
-        };
-        const applyButton = Array.from(dialog.querySelectorAll("button, [role='button']")).find((element) =>
-          visible(element) && /apply/i.test(String(element.innerText || element.textContent || ""))
-        );
-        if (!(applyButton instanceof HTMLElement)) return false;
-        const ariaDisabled = String(applyButton.getAttribute("aria-disabled") || "").toLowerCase() === "true";
-        const disabled = ariaDisabled || applyButton.matches?.(":disabled");
-        return !disabled;
-      });
-      if (applyReady) {
-        return String(await readLocationFromDialog(page).catch(() => "") || "").trim() || String(firstSuggestion.text || "").trim() || String(target || "").trim();
-      }
-    }
-  }
-  const applyReadyAfterClick = await page.evaluate(() => {
-    const dialog = Array.from(document.querySelectorAll("[role='dialog']")).find((item) =>
-      /change location/i.test(item.innerText || item.textContent || "")
-    );
-    if (!(dialog instanceof HTMLElement)) return false;
-    const visible = (element) => {
-      if (!(element instanceof HTMLElement)) return false;
-      const rect = element.getBoundingClientRect();
-      const style = window.getComputedStyle(element);
-      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
-    };
-    const applyButton = Array.from(dialog.querySelectorAll("button, [role='button']")).find((element) =>
-      visible(element) && /apply/i.test(String(element.innerText || element.textContent || ""))
-    );
-    if (!(applyButton instanceof HTMLElement)) return false;
-    const ariaDisabled = String(applyButton.getAttribute("aria-disabled") || "").toLowerCase() === "true";
-    const disabled = ariaDisabled || applyButton.matches?.(":disabled");
-    return !disabled;
-  });
-  if (!applyReadyAfterClick) {
-    throw new Error("Chua chon duoc goi y dia chi dau tien.");
-  }
-  return String(await readLocationFromDialog(page).catch(() => "") || "").trim() || String(firstSuggestion?.text || "").trim();
-}
-
-export async function ensureUsMarketplaceLocation(manager, page, row) {
+export async function ensureUsMarketplaceLocation(manager, page, row, { onProgress = () => {} } = {}) {
   let lastError = null;
+  const progress = (message) => {
+    manager.sendLog?.(`[${row.uid}] ${message}`, "info");
+    onProgress(message);
+  };
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
-      await manager.gotoWithRetry(page, withFacebookLocale("https://www.facebook.com/marketplace/"), row, 2);
-      await sleep(2000);
-      await manager.dismissCheckpointIfNeeded?.(page, row).catch(() => {});
-
-      const sidebarLocation = String(await readMarketplaceSidebarLocation(page).catch(() => "") || "").trim();
-      if (sidebarLocation) {
-        manager.sendLog?.(`[${row.uid}] dia chi tren Marketplace: "${sidebarLocation}"`, "info");
+      if (attempt === 1) {
+        progress("Location: dang mo Marketplace");
+        await manager.gotoWithRetry(page, withFacebookLocale("https://www.facebook.com/marketplace/"), row, 2);
+        await manager.dismissCheckpointIfNeeded?.(page, row);
       }
+      await assertMarketplaceAccess(page);
+      const sidebarLocation = String(await readMarketplaceSidebarLocation(page) || "").trim();
       if (sidebarLocation && isUsLocation(sidebarLocation)) {
+        progress(`Location: da o My, giu nguyen ${sidebarLocation}`);
         return { initialLocation: sidebarLocation, currentLocation: sidebarLocation };
       }
-
-      const opened = await clickMarketplaceSidebarLocation(page);
-      if (!opened) throw new Error("Khong bam duoc dong location tren Marketplace.");
-      await waitForChangeLocationDialog(page);
-      await sleep(1200);
-
-      const initialLocation = String(await readLocationFromDialog(page).catch(() => "") || "").trim() || sidebarLocation;
-      manager.sendLog?.(`[${row.uid}] dia chi ban dau trong dialog: "${initialLocation || "(trong)"}"`, "info");
+      progress(`Location: cho mo hop dia chi, lan ${attempt}/2 (toi da 30 giay)`);
+      await openMarketplaceLocationDialog(page);
+      const initialLocation = String(await readLocationFromDialog(page) || sidebarLocation || "").trim();
       if (initialLocation && isUsLocation(initialLocation)) {
-        await page.keyboard.press("Escape").catch(() => {});
-        await sleep(500);
+        await page.keyboard.press("Escape");
         return { initialLocation, currentLocation: initialLocation };
       }
-
       const target = randomItem(loadUsLocationLines());
-      manager.sendLog?.(`[${row.uid}] dia chi khong phai My, doi sang "${target}"`, "warn");
-      const picked = await typeDialogLocationAndPickFirstSuggestion(page, target);
-      if (picked) {
-        manager.sendLog?.(`[${row.uid}] da chon goi y dau: "${picked}"`, "info");
-      } else {
-        manager.sendLog?.(`[${row.uid}] khong doc duoc text goi y dau, van tiep tuc theo "${target}"`, "warn");
-      }
-
-      let currentLocation = String(await readLocationFromDialog(page).catch(() => "") || "").trim();
-      if (!currentLocation) {
-        await sleep(1500);
-        currentLocation = String(await readLocationFromDialog(page).catch(() => "") || "").trim();
-      }
-      if (!currentLocation) currentLocation = picked || target;
-      manager.sendLog?.(`[${row.uid}] dia chi sau khi chon goi y: "${currentLocation || "(trong)"}"`, "info");
-
-      const applied = await clickDialogApply(page);
-      if (!applied) throw new Error("Khong bam duoc nut Apply.");
-      await sleep(2500);
-
-      return { initialLocation, currentLocation };
+      progress(`Location: nhap ${target}, cho goi y (toi da 30 giay)`);
+      const selected = String(await selectMarketplaceLocation(page, target) || "").trim();
+      if (!isUsLocation(selected)) throw new Error(`Location: goi y da chon chua phai dia chi My: ${selected || "trong"}.`);
+      progress(`Location: luu ${selected}, cho Apply hoan tat`);
+      await applyMarketplaceLocation(page);
+      progress("Location: dang xac nhan dia chi da luu tren Marketplace");
+      const deadline = Date.now() + 15000;
+      do {
+        await assertMarketplaceAccess(page);
+        const actual = await readMarketplaceSidebarLocation(page);
+        if (actual && isUsLocation(actual)) {
+          progress(`Location: da luu ${actual}`);
+          return { initialLocation, currentLocation: actual };
+        }
+        await sleep(300);
+      } while (Date.now() < deadline);
+      throw new Error("Location: da bam Apply nhung dia chi tren Marketplace chua doi sang My.");
     } catch (error) {
+      if (isMarketplaceIneligibleError(error) || isFacebookCaptchaError(error) ||
+          ["LOGIN_PAUSED", "LOGIN_RETRY", "LOGIN_MANUAL_DONE"].includes(error.code) || error.status === "stopped") throw error;
       lastError = error;
-      manager.sendLog?.(`[${row.uid}] doi location loi lan ${attempt}: ${error.message}`, "warn");
-      await page.keyboard.press("Escape").catch(() => {});
-      await sleep(1200);
+      progress(`Location: lan ${attempt}/2 chua xong: ${error.message}${attempt < 2 ? "; thu lai tren trang hien tai" : ""}`);
+      if (attempt < 2) await sleep(1000);
     }
   }
   throw lastError || new Error("Khong doi duoc location Marketplace.");

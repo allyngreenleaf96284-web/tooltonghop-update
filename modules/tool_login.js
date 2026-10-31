@@ -376,7 +376,11 @@ export function createToolLogin({
         currentName = cleanedName;
       }
 
-      const resolved = await step(profileId, job, "kiem tra va doi bang My", () => ensureUsMarketplaceLocation(manager, page, row), 180000);
+      const resolved = await step(profileId, job, "kiem tra va doi bang My", () => ensureUsMarketplaceLocation(manager, page, row, { onProgress: (message) => {
+        if (!pauseControl.isCurrent()) return;
+        job.liveStatus = message;
+        log(profileId, "kiem tra va doi bang My", message);
+      } }), 300000);
       location.initial = String(resolved?.initialLocation || "").trim();
       location.current = String(resolved?.currentLocation || location.initial).trim();
       if (location.initial) await writer.update({ diaChiBanDau: location.initial });
