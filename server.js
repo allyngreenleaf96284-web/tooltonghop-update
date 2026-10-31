@@ -13,6 +13,7 @@ import { createToolLogin, normalizeLoginZoomPercent } from "./modules/tool_login
 import { createDienMatKhau } from "./modules/dienmatkhau.js";
 import { createDangBai } from "./modules/dangbai.js";
 import { normalizeListingCondition } from "./modules/listing_condition.js";
+import { SELLER_ADDRESS_ERROR, markSellerAddressInvalid, sellerAddressIsBlocked, sellerSsn, setSellerUid, writeSellerUidCells } from "./modules/seller_info_status.js";
 import { accountIdentityRecord, resolveFallbackAccountIdentity } from "./modules/account_identity.js";
 import { createConfigStore } from "./modules/config_store.js";
 import { createTuongTac } from "./modules/tuongtac.js";
@@ -2571,13 +2572,13 @@ async function withSellerInfoLock(task) {
   }
 }
 
-async function readSellerInfoSheet(config) {
+async function readSellerInfoSheet(config, { forceRefresh = false } = {}) {
   if (!config.sellerSpreadsheetId || !config.credentialsPath) {
     throw new Error("Ban can cau hinh Seller Info Spreadsheet ID va Service Account JSON.");
   }
   const cacheKey = `${config.sellerSpreadsheetId}|${config.credentialsPath}`;
   if (
-    sellerInfoCache.key === cacheKey &&
+    !forceRefresh && sellerInfoCache.key === cacheKey &&
     sellerInfoCache.data &&
     Date.now() - sellerInfoCache.loadedAt < sellerInfoCache.ttlMs
   ) {
@@ -2612,12 +2613,12 @@ async function readSellerInfoSheet(config) {
 async function allocateSellerInfoRow(config, profileUid) {
   return withSellerInfoLock(async () => {
     const sheet = await readSellerInfoSheet(config);
-    const available = sheet.rows.find((row) => !String(row.raw.uid || row.raw.UID || "").trim());
+    const blockedSsns = new Set(sheet.rows.filter(sellerAddressIsBlocked).map((row) => sellerSsn(row.raw)).filter(Boolean));
+    const available = sheet.rows.find((row) => !String(row.values[sheet.uidIndex] || "").trim() && !blockedSsns.has(sellerSsn(row.raw)));
     if (!available) throw new Error("Seller Info Sheet khong con dong trong cot uid de dung.");
     const lockValue = `dang dung:${profileUid}`;
-    available.values[sheet.uidIndex] = lockValue;
-    available.raw.uid = lockValue;
-    await sheet.client.updateRowValues(sheet.title, available.rowNumber, available.values);
+    setSellerUid(sheet, available, lockValue);
+    await writeSellerUidCells(sheet, [available], lockValue);
     return {
       sheetTitle: sheet.title,
       rowNumber: available.rowNumber,
@@ -2631,13 +2632,15 @@ async function allocateSellerInfoRow(config, profileUid) {
 
 async function updateSellerInfoUid(config, allocation, value) {
   if (!allocation) return false;
+  if (allocation.addressInvalid && value !== SELLER_ADDRESS_ERROR) return false;
   return withSellerInfoLock(async () => {
-    const sheet = await readSellerInfoSheet(config);
+    const sheet = await readSellerInfoSheet(config, { forceRefresh: value === SELLER_ADDRESS_ERROR });
+    if (value === SELLER_ADDRESS_ERROR) return markSellerAddressInvalid(sheet, allocation);
     const row = sheet.rows.find((item) => item.rowNumber === allocation.rowNumber);
-    if (!row) return false;
-    row.values[sheet.uidIndex] = String(value || "");
-    row.raw.uid = String(value || "");
-    await sheet.client.updateRowValues(sheet.title, allocation.rowNumber, row.values);
+    if (!row || sellerAddressIsBlocked(row)) return false;
+    if (allocation.sheetTitle !== sheet.title || sellerSsn(row.raw) !== sellerSsn(allocation.raw)) return false;
+    setSellerUid(sheet, row, String(value || ""));
+    await writeSellerUidCells(sheet, [row], String(value || ""));
     return true;
   });
 }

@@ -4,6 +4,8 @@ import path from "node:path";
 import { buildFullSuccessToken, buildStandardName, buildMarketplaceIneligibleName, buildCaptchaProfileName } from "./profile_name.js";
 import { withFacebookLocale, isMarketplaceIneligibleError, assertMarketplaceAccess, isFacebookCaptchaError } from "./facebook_locale.js";
 import { chooseListingCondition } from "./listing_condition.js";
+import { SELLER_ADDRESS_ERROR, isSellerAddressError } from "./seller_info_status.js";
+import { installSellerAddressRecovery } from "./seller_address_recovery.js";
 import { readMarketplaceSidebarLocation, openMarketplaceLocationDialog, readLocationFromDialog,
   selectMarketplaceLocation, applyMarketplaceLocation } from "./marketplace_location.js";
 
@@ -770,6 +772,7 @@ export function createLamFull({
         restoreProgressCapture();
         lastError = error;
         if (isMarketplaceIneligibleError(error)) throw error;
+        if (error.sellerAddressRecoveryHandled) throw error;
         const mappedStatus = String(error?.status || "").trim().toLowerCase();
         if (mappedStatus === "seller_info_invalid") {
           if (typeof onSellerInfoInvalid !== "function" || attempt >= maxAttempts) throw error;
@@ -829,6 +832,7 @@ export function createLamFull({
     let restoreLocationCapture = () => {};
     let restoreProgressCapture = () => {};
     let restoreManagerLoginGuards = () => {};
+    let restoreSellerAddressRecovery = () => {};
 
     try {
       job.status = "running";
@@ -851,6 +855,28 @@ export function createLamFull({
 
       sellerAllocation = await step(profileId, job, "lay seller info", async () => allocateSellerInfoRow(config, uid), { timeoutMs: 30000 });
       row.raw = { ...row.raw, ...sellerAllocation.raw };
+      restoreSellerAddressRecovery = installSellerAddressRecovery(manager, {
+        row,
+        onProgress: (message) => { job.liveStatus = message; log(profileId, "seller address", message); },
+        quarantine: async () => {
+          sellerAllocation.addressInvalid = true;
+          const marked = await updateSellerInfoUid(config, sellerAllocation, SELLER_ADDRESS_ERROR);
+          if (marked === false) throw new Error("Khong danh dau duoc nhom Seller Info loi dia chi.");
+          log(profileId, "seller address", `Da danh dau loi dia chi cho ${marked?.updated || 1} dong Seller Info cung SSN.`, "warn");
+        },
+        replace: async () => {
+          sellerAllocation = await step(profileId, job, "lay seller info moi sau loi dia chi", async () => allocateSellerInfoRow(config, uid), { timeoutMs: 30000 });
+          row.raw = { ...row.raw, ...sellerAllocation.raw };
+          submittedSellerInfo = false;
+          // The legacy filler skips empty optional fields. Clear old optional
+          // values when replacing a seller on the same open form.
+          const seller = manager.getSellerProfile?.(row);
+          if (seller && typeof manager.setFieldValueByExactLabel === "function") {
+            if (!seller.middleName) await manager.setFieldValueByExactLabel(page, "Middle name (optional)", "").catch(() => {});
+            if (!seller.aptSuite) await manager.setFieldValueByExactLabel(page, ["Apt/suite (optional)", "Apt/suite", "Flat/Suite (optional)", "Flat/Suite"], "").catch(() => {});
+          }
+        }
+      });
       await writeSheet(sheetWriter, profileId, { trangThai: "", chiTiet: "đang chạy làm full" });
 
       if (!options.existingSession) {
@@ -906,7 +932,7 @@ export function createLamFull({
         currentName,
         () => { noRollback = true; },
         async (error, retryAttempt) => {
-          const reason = String(error?.sellerInfoReason || "sai seller info").trim() || "sai seller info";
+          const reason = isSellerAddressError(error) ? SELLER_ADDRESS_ERROR : String(error?.sellerInfoReason || "sai seller info").trim() || "sai seller info";
           if (sellerAllocation) {
             const oldRowNumber = sellerAllocation.rowNumber || "";
             await updateSellerInfoUid(config, sellerAllocation, reason);
@@ -1027,6 +1053,7 @@ export function createLamFull({
       log(profileId, error.step || "loi tong", `loi lam full: ${mapped.detail}`, "error");
       return update;
     } finally {
+      restoreSellerAddressRecovery();
       restoreLocationCapture();
       restoreProgressCapture();
       restoreManagerLoginGuards();
