@@ -1,7 +1,7 @@
 {
   "name": "Tool Tong Hop Full",
   "channel": "full",
-  "version": "2026.10.31.12",
+  "version": "2026.10.31.13",
   "rawBase": "https://raw.githubusercontent.com/allyngreenleaf96284-web/tooltonghop-update/main",
   "createdAt": "2026-09-17T00:00:00.000Z",
   "files": [
@@ -87,8 +87,8 @@
     },
     {
       "path": "modules/marketplace_link_order.js",
-      "sha256": "63a12a12eac862d4d90651c84d16d5e77dd0fa63b8875e67c882a00af35ace99",
-      "size": 31178
+      "sha256": "41f09c211ba75b9c53571b06b4d94bb45296672b231f4472b6f69efbe924f6f0",
+      "size": 28229
     },
     {
       "path": "modules/nineproxy_cloud.js",
@@ -132,13 +132,13 @@
     },
     {
       "path": "public/app.js",
-      "sha256": "b66685a16b409f1606b9acc6c86944288518ddf5dae6b2dc2627dbeca15e493b",
-      "size": 198070
+      "sha256": "83350ba425158196ed2f21469d37bc6c6de45ad964a824249c22a1fc2cd508d8",
+      "size": 194820
     },
     {
       "path": "public/index.html",
-      "sha256": "18661325c0f3c5e972ef567cdbe94c0eab3097b3d00415c67aa174b3f16b0701",
-      "size": 106022
+      "sha256": "0d979de7820f63c37d9cc32b1e0b442a013b8da4bee0d902f04ab96ebc5787ed",
+      "size": 105059
     },
     {
       "path": "public/styles.css",
@@ -157,8 +157,8 @@
     },
     {
       "path": "server.js",
-      "sha256": "2638f7b925c952fd5bd3960924a4df25a34dd0ed2ddc6ade4e6cb8d71c008733",
-      "size": 179380
+      "sha256": "e52c9198d43779afe656d193653620a85aa60f8bad57f676df14ec58fa3cce6e",
+      "size": 178097
     },
     {
       "path": "modules/login_pause.js",
@@ -217,8 +217,8 @@
     },
     {
       "path": "modules/link_http_runner.js",
-      "sha256": "4c721a3a150541b498e0e58571f23705469dbd750db869d773aa9be141ad2434",
-      "size": 14118
+      "sha256": "1ee6b434cf3830b5a4cfb790b6c7b8c8b3a6c887fcab51e041a2539c5b5a9089",
+      "size": 11152
     },
     {
       "path": "modules/link_http_html.js",
@@ -229,6 +229,16 @@
       "path": "modules/link_browser_verify.js",
       "sha256": "63a58746b1eea9766a0469b418c52587786cea08017542180ea0f6c743821a24",
       "size": 6297
+    },
+    {
+      "path": "modules/link_check_display.js",
+      "sha256": "828e7f4294e91e6b1bed067c64227f5c69bd07cde95706c23d46a283b2b91e4d",
+      "size": 2231
+    },
+    {
+      "path": "modules/link_check_writer.js",
+      "sha256": "f1fcb5ddc2d346db8baa86b834d1ede6c835c8a2dbd1ff3fb2b1931e6b54b441",
+      "size": 3334
     }
   ]
 }

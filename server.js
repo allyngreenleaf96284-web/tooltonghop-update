@@ -1,5 +1,4 @@
 ﻿import { createServer } from "node:http";
-import { normalizeHttpAccounts } from "./modules/link_http_client.js";
 import { copyFile, mkdir, readFile, writeFile, stat } from "node:fs/promises";
 import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { createHash, createSign } from "node:crypto";
@@ -154,10 +153,9 @@ const DEFAULT_CONFIG = {
   marketplaceCheckNick2Id: "",
   marketplaceCheckExtraNickIds: [],
   marketplaceCheckMode: "hide",
-  marketplaceHttpAccounts: [],
-  marketplaceHttpConcurrency: 2,
-  marketplaceCheckTabsPerNick: 5,
-  marketplaceCheckTimeoutMs: 90000,
+  marketplaceCheckTabsPerNick: 1,
+  marketplaceCheckZoomPercent: 50,
+  marketplaceCheckTimeoutMs: 30000,
   interactionConcurrency: 4,
   pageConcurrency: 4,
   avatarConcurrency: 2,
@@ -1088,14 +1086,13 @@ async function readConfig() {
     );
     loaded.marketplaceCheckSpreadsheetId = loaded.marketplaceCheckSpreadsheetIds[0] || "";
     loaded.marketplaceCheckSheetName = String(loaded.marketplaceCheckSheetName || "").trim();
-    loaded.marketplaceCheckMode = loaded.marketplaceCheckMode === "http" ? "http" : "hide";
-    loaded.marketplaceHttpAccounts = normalizeHttpAccounts(loaded.marketplaceHttpAccounts);
-    loaded.marketplaceHttpConcurrency = clampConcurrency(loaded.marketplaceHttpConcurrency, 2, 10);
+    loaded.marketplaceCheckMode = "hide";
     loaded.marketplaceCheckNick1Id = String(loaded.marketplaceCheckNick1Id || "").trim();
     loaded.marketplaceCheckNick2Id = String(loaded.marketplaceCheckNick2Id || "").trim();
     loaded.marketplaceCheckExtraNickIds = Array.isArray(loaded.marketplaceCheckExtraNickIds) ? loaded.marketplaceCheckExtraNickIds.map(normalizeProfileIdText).filter(Boolean) : [];
-    loaded.marketplaceCheckTabsPerNick = clampConcurrency(loaded.marketplaceCheckTabsPerNick, DEFAULT_CONFIG.marketplaceCheckTabsPerNick, 20);
-    loaded.marketplaceCheckTimeoutMs = Math.max(30000, Math.min(240000, Math.floor(Number(loaded.marketplaceCheckTimeoutMs || DEFAULT_CONFIG.marketplaceCheckTimeoutMs))));
+    loaded.marketplaceCheckTabsPerNick = 1;
+    loaded.marketplaceCheckZoomPercent = Math.max(25, Math.min(200, Number(loaded.marketplaceCheckZoomPercent) || 50));
+    loaded.marketplaceCheckTimeoutMs = Math.max(10000, Math.min(240000, Math.floor(Number(loaded.marketplaceCheckTimeoutMs || DEFAULT_CONFIG.marketplaceCheckTimeoutMs))));
     loaded.interactionConcurrency = clampConcurrency(loaded.interactionConcurrency, DEFAULT_CONFIG.interactionConcurrency, 4);
     loaded.pageConcurrency = clampConcurrency(loaded.pageConcurrency, DEFAULT_CONFIG.pageConcurrency, 4);
     loaded.avatarConcurrency = clampConcurrency(loaded.avatarConcurrency, DEFAULT_CONFIG.avatarConcurrency, 2);
@@ -1163,14 +1160,13 @@ async function saveConfig(input) {
       input.marketplaceCheckSpreadsheetId !== undefined ? input.marketplaceCheckSpreadsheetId : current.marketplaceCheckSpreadsheetId
     ),
     marketplaceCheckSheetName: String(input.marketplaceCheckSheetName !== undefined ? input.marketplaceCheckSheetName : current.marketplaceCheckSheetName || "").trim(),
-    marketplaceCheckMode: (input.marketplaceCheckMode ?? current.marketplaceCheckMode) === "http" ? "http" : "hide",
-    marketplaceHttpAccounts: normalizeHttpAccounts(input.marketplaceHttpAccounts ?? current.marketplaceHttpAccounts),
-    marketplaceHttpConcurrency: clampConcurrency(input.marketplaceHttpConcurrency ?? current.marketplaceHttpConcurrency, 2, 10),
+    marketplaceCheckMode: "hide",
     marketplaceCheckNick1Id: String(input.marketplaceCheckNick1Id !== undefined ? input.marketplaceCheckNick1Id : current.marketplaceCheckNick1Id || "").trim(),
     marketplaceCheckNick2Id: String(input.marketplaceCheckNick2Id !== undefined ? input.marketplaceCheckNick2Id : current.marketplaceCheckNick2Id || "").trim(),
     marketplaceCheckExtraNickIds: (Array.isArray(input.marketplaceCheckExtraNickIds) ? input.marketplaceCheckExtraNickIds : current.marketplaceCheckExtraNickIds || []).map(normalizeProfileIdText).filter(Boolean),
-    marketplaceCheckTabsPerNick: clampConcurrency(input.marketplaceCheckTabsPerNick, current.marketplaceCheckTabsPerNick || DEFAULT_CONFIG.marketplaceCheckTabsPerNick, 20),
-    marketplaceCheckTimeoutMs: Math.max(30000, Math.min(240000, Math.floor(Number(input.marketplaceCheckTimeoutMs ?? current.marketplaceCheckTimeoutMs ?? DEFAULT_CONFIG.marketplaceCheckTimeoutMs)) || DEFAULT_CONFIG.marketplaceCheckTimeoutMs)),
+    marketplaceCheckTabsPerNick: 1,
+    marketplaceCheckZoomPercent: Math.max(25, Math.min(200, Number(input.marketplaceCheckZoomPercent ?? current.marketplaceCheckZoomPercent) || 50)),
+    marketplaceCheckTimeoutMs: Math.max(10000, Math.min(240000, Math.floor(Number(input.marketplaceCheckTimeoutMs ?? current.marketplaceCheckTimeoutMs ?? DEFAULT_CONFIG.marketplaceCheckTimeoutMs)) || DEFAULT_CONFIG.marketplaceCheckTimeoutMs)),
     interactionConcurrency: clampConcurrency(input.interactionConcurrency, current.interactionConcurrency || DEFAULT_CONFIG.interactionConcurrency, 4),
     pageConcurrency: clampConcurrency(input.pageConcurrency, current.pageConcurrency || DEFAULT_CONFIG.pageConcurrency, 4),
     avatarConcurrency: clampConcurrency(input.avatarConcurrency, current.avatarConcurrency || DEFAULT_CONFIG.avatarConcurrency, 2),
@@ -1328,14 +1324,13 @@ async function saveConfigV2(input) {
       input.marketplaceCheckSpreadsheetId !== undefined ? input.marketplaceCheckSpreadsheetId : current.marketplaceCheckSpreadsheetId
     ),
     marketplaceCheckSheetName: String(input.marketplaceCheckSheetName !== undefined ? input.marketplaceCheckSheetName : current.marketplaceCheckSheetName || "").trim(),
-    marketplaceCheckMode: (input.marketplaceCheckMode ?? current.marketplaceCheckMode) === "http" ? "http" : "hide",
-    marketplaceHttpAccounts: normalizeHttpAccounts(input.marketplaceHttpAccounts ?? current.marketplaceHttpAccounts),
-    marketplaceHttpConcurrency: clampConcurrency(input.marketplaceHttpConcurrency ?? current.marketplaceHttpConcurrency, 2, 10),
+    marketplaceCheckMode: "hide",
     marketplaceCheckNick1Id: String(input.marketplaceCheckNick1Id !== undefined ? input.marketplaceCheckNick1Id : current.marketplaceCheckNick1Id || "").trim(),
     marketplaceCheckNick2Id: String(input.marketplaceCheckNick2Id !== undefined ? input.marketplaceCheckNick2Id : current.marketplaceCheckNick2Id || "").trim(),
     marketplaceCheckExtraNickIds: (Array.isArray(input.marketplaceCheckExtraNickIds) ? input.marketplaceCheckExtraNickIds : current.marketplaceCheckExtraNickIds || []).map(normalizeProfileIdText).filter(Boolean),
-    marketplaceCheckTabsPerNick: clampConcurrency(input.marketplaceCheckTabsPerNick, current.marketplaceCheckTabsPerNick || DEFAULT_CONFIG.marketplaceCheckTabsPerNick, 20),
-    marketplaceCheckTimeoutMs: Math.max(30000, Math.min(240000, Math.floor(Number(input.marketplaceCheckTimeoutMs ?? current.marketplaceCheckTimeoutMs ?? DEFAULT_CONFIG.marketplaceCheckTimeoutMs)) || DEFAULT_CONFIG.marketplaceCheckTimeoutMs)),
+    marketplaceCheckTabsPerNick: 1,
+    marketplaceCheckZoomPercent: Math.max(25, Math.min(200, Number(input.marketplaceCheckZoomPercent ?? current.marketplaceCheckZoomPercent) || 50)),
+    marketplaceCheckTimeoutMs: Math.max(10000, Math.min(240000, Math.floor(Number(input.marketplaceCheckTimeoutMs ?? current.marketplaceCheckTimeoutMs ?? DEFAULT_CONFIG.marketplaceCheckTimeoutMs)) || DEFAULT_CONFIG.marketplaceCheckTimeoutMs)),
     interactionConcurrency: clampConcurrency(input.interactionConcurrency, current.interactionConcurrency || DEFAULT_CONFIG.interactionConcurrency, 4),
     pageConcurrency: clampConcurrency(input.pageConcurrency, current.pageConcurrency || DEFAULT_CONFIG.pageConcurrency, 4),
     avatarConcurrency: clampConcurrency(input.avatarConcurrency, current.avatarConcurrency || DEFAULT_CONFIG.avatarConcurrency, 2),
@@ -3581,11 +3576,6 @@ async function handleApi(req, res) {
     if (req.method === "POST" && url.pathname === "/api/tools/check-link-order") {
       const body = await parseBody(req);
       const savedConfig = await saveConfigV2({ ...(await readConfig()), ...body });
-      if (savedConfig.marketplaceCheckMode === "http") {
-        if (toolRuntime.batch?.active) throw new Error("Dang co batch tool khac chay; hay dung batch truoc.");
-        const data = await marketplaceLinkOrderModule.run(savedConfig);
-        return jsonResponse(res, 200, { ok: true, config: savedConfig, data });
-      }
       const config = await resolveAccountSheetConfig(savedConfig);
       const nick1 = String(config.marketplaceCheckNick1Id || "").trim();
       const nick2 = String(config.marketplaceCheckNick2Id || "").trim();

@@ -735,7 +735,7 @@
             <div>
               <div class="eyebrow">Marketplace Link Tool</div>
               <h2>Check link order</h2>
-              <p id="linkOrderStatusText">Thêm các nick check; link được chia đều cho từng nick, không trùng dòng và cùng ghi cột tình trạng nick 1.</p>
+              <p id="linkOrderStatusText">Mỗi nick Hide là một luồng và một cửa sổ riêng, tự chia đều màn hình. Link được giao cho cửa sổ rảnh, không trùng dòng.</p>
             </div>
             <div class="actions">
               <button id="stopLinkOrderBtn" class="ghost-btn danger-btn" type="button"><span>Dừng hẳn</span></button>
@@ -746,7 +746,7 @@
           <section class="table-panel">
             <div class="table-title">
               <span>Cấu hình check link order</span>
-              <span>Chỉ xử lý dòng còn trống ở cột tình trạng nick 1.</span>
+              <span>Xử lý dòng trống, không rõ hoặc lỗi check ở cột tình trạng nick 1.</span>
             </div>
             <div class="tool-config-grid check-order-config-grid">
               <div class="link-order-sheet-manager wide-field">
@@ -760,15 +760,6 @@
                 Tên tab
                 <input id="marketplaceCheckSheetName" placeholder="Để trống = tab đầu tiên" />
               </label>
-              <label>Chế độ check
-                <select id="marketplaceCheckMode"><option value="hide">Hide — trình duyệt</option><option value="http">HTTP — thử nghiệm, cookie + proxy</option></select>
-              </label>
-              <div id="linkHttpSettings" class="wide-field hidden">
-                <label>Số request đồng thời mỗi nick (1–10)<input id="marketplaceHttpConcurrency" type="number" min="1" max="10" value="2" /></label>
-                <button id="addLinkHttpNick" type="button" class="ghost-btn small-btn">Thêm nick HTTP</button>
-                <div id="linkHttpAccounts"></div>
-                <p>Cookie và proxy lưu trên máy này. Proxy HTTP/HTTPS phải ra IP Mỹ. Link thiếu dữ liệu hoặc nút mua vô hiệu hóa sẽ được xác minh bằng Chrome/Edge chạy ẩn (tối đa 2 lượt đồng thời). Chỉ ghi kết quả đã xác nhận; link chưa xác minh được được giữ lại.</p>
-              </div>
               <div id="linkHideAccounts" class="wide-field">
               <label>
                 ID GPM/HideMyAcc nick 1
@@ -784,16 +775,16 @@
               </div>
               </div>
               <label>
-                Số tab mỗi nick
-                <input id="marketplaceCheckTabsPerNick" type="number" min="1" max="20" step="1" />
+                Thu nhỏ nội dung (%)
+                <input id="marketplaceCheckZoomPercent" type="number" min="25" max="200" step="5" value="50" />
               </label>
               <label>
                 Timeout mỗi link ms
-                <input id="marketplaceCheckTimeoutMs" type="number" min="30000" max="240000" step="5000" />
+                <input id="marketplaceCheckTimeoutMs" type="number" min="10000" max="240000" step="5000" />
               </label>
             <button id="saveLinkOrderConfig" class="primary action-wide" type="button"><span>Lưu cấu hình check link</span></button>
             </div>
-            <div class="link-order-sheet-note">Các nick chạy song song, mỗi dòng giao cho một nick. Hide chia đều link và chặn tài nguyên nặng ở tab check. HTTP tự giao link cho nick rảnh; trường hợp chưa chắc chắn dùng trình duyệt ẩn với cùng cookie/proxy để xác minh.</div>
+            <div class="link-order-sheet-note">Mỗi nick = một cửa sổ check. Tất cả cửa sổ dùng chung mức thu nhỏ và kích thước, sắp xếp trong vùng màn hình không có taskbar. Giữ JavaScript và CSS; chặn ảnh, video, font để tải nhẹ hơn.</div>
           </section>
 
           <section id="linkOrderToolProgressPanel" class="tool-progress hidden">

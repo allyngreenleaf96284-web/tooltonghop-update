@@ -298,12 +298,8 @@ async function loadConfig() {
     $("linkCheckExtraNicks").replaceChildren();
     for (const id of config.marketplaceCheckExtraNickIds || []) addLinkCheckNick(id);
   }
-  if ($("marketplaceCheckMode")) $("marketplaceCheckMode").value = config.marketplaceCheckMode || "hide";
-  if ($("marketplaceHttpConcurrency")) $("marketplaceHttpConcurrency").value = config.marketplaceHttpConcurrency || 2;
-  if ($("linkHttpAccounts")) { $("linkHttpAccounts").replaceChildren(); for (const account of config.marketplaceHttpAccounts || []) addLinkHttpNick(account); }
-  updateLinkCheckMode();
-  if ($("marketplaceCheckTabsPerNick")) $("marketplaceCheckTabsPerNick").value = config.marketplaceCheckTabsPerNick || 5;
-  if ($("marketplaceCheckTimeoutMs")) $("marketplaceCheckTimeoutMs").value = config.marketplaceCheckTimeoutMs || 90000;
+  if ($("marketplaceCheckZoomPercent")) $("marketplaceCheckZoomPercent").value = config.marketplaceCheckZoomPercent || 50;
+  if ($("marketplaceCheckTimeoutMs")) $("marketplaceCheckTimeoutMs").value = config.marketplaceCheckTimeoutMs || 30000;
   if ($("fullConcurrency")) $("fullConcurrency").value = config.fullConcurrency || 4;
   if ($("loginConcurrency")) $("loginConcurrency").value = config.loginConcurrency || 4;
   if ($("loginZoomPercent")) $("loginZoomPercent").value = config.loginZoomPercent ?? 50;
@@ -419,12 +415,9 @@ async function saveConfig() {
       marketplaceCheckSheetName: $("marketplaceCheckSheetName")?.value || "",
       marketplaceCheckNick1Id: $("marketplaceCheckNick1Id")?.value || "",
       marketplaceCheckNick2Id: $("marketplaceCheckNick2Id")?.value || "",
-      marketplaceCheckMode: $("marketplaceCheckMode")?.value || "hide",
-      marketplaceHttpAccounts: linkHttpAccounts(),
-      marketplaceHttpConcurrency: Math.max(1, Math.min(10, Number($("marketplaceHttpConcurrency")?.value || 2))),
       marketplaceCheckExtraNickIds: extraLinkCheckNickIds(),
-      marketplaceCheckTabsPerNick: Math.max(1, Math.min(20, Number($("marketplaceCheckTabsPerNick")?.value || 5))),
-      marketplaceCheckTimeoutMs: Math.max(30000, Math.min(240000, Number($("marketplaceCheckTimeoutMs")?.value || 90000))),
+      marketplaceCheckZoomPercent: Math.max(25, Math.min(200, Number($("marketplaceCheckZoomPercent")?.value || 50))),
+      marketplaceCheckTimeoutMs: Math.max(10000, Math.min(240000, Number($("marketplaceCheckTimeoutMs")?.value || 30000))),
       loginConcurrency: Number($("loginConcurrency")?.value || 4),
       loginZoomPercent: Math.max(25, Math.min(200, Number($("loginZoomPercent")?.value || 50))),
       loginUnknownRetryCount: Math.max(0, Math.min(3, Number($("loginUnknownRetryCount")?.value || 0))),
@@ -1882,27 +1875,6 @@ async function startCheckOrder(profileIds) {
   }
 }
 
-function linkHttpAccounts() {
-  return Array.from(document.querySelectorAll("[data-link-http-account]")).map(row => ({cookie: row.querySelector("[data-cookie]").value.trim(), proxy: row.querySelector("[data-proxy]").value.trim()})).filter(item => item.cookie || item.proxy);
-}
-function addLinkHttpNick(account = {}) {
-  const row = document.createElement("div"); row.dataset.linkHttpAccount = "1";
-  const cookie = document.createElement("input"); cookie.type = "password"; cookie.autocomplete = "off"; cookie.dataset.cookie = "1"; cookie.placeholder = "Cookie Facebook: c_user=...; xs=...;"; cookie.setAttribute("aria-label", "Cookie Facebook"); cookie.value = account.cookie || "";
-  const proxy = document.createElement("input"); proxy.type = "password"; proxy.autocomplete = "off"; proxy.dataset.proxy = "1"; proxy.placeholder = "Proxy Mỹ: host:port hoặc host:port:user:pass"; proxy.setAttribute("aria-label", "Proxy Mỹ"); proxy.value = account.proxy || "";
-  const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "Xóa nick"; remove.onclick = () => row.remove();
-  const cookieLabel = document.createElement("label"); cookieLabel.textContent = "Cookie Facebook"; cookieLabel.append(cookie);
-  const proxyLabel = document.createElement("label"); proxyLabel.textContent = "Proxy Mỹ"; proxyLabel.append(proxy);
-  row.append(cookieLabel, proxyLabel, remove); $("linkHttpAccounts")?.append(row); return cookie;
-}
-function updateLinkCheckMode() {
-  const http = $("marketplaceCheckMode")?.value === "http";
-  $("linkHttpSettings")?.classList.toggle("hidden", !http);
-  $("linkHideAccounts")?.classList.toggle("hidden", http);
-  if ($("marketplaceCheckTabsPerNick")) $("marketplaceCheckTabsPerNick").closest("label").classList.toggle("hidden", http);
-}
-$("marketplaceCheckMode")?.addEventListener("change", updateLinkCheckMode);
-$("addLinkHttpNick")?.addEventListener("click", () => addLinkHttpNick().focus());
-
 function extraLinkCheckNickIds() {
   return Array.from(document.querySelectorAll("[data-link-check-nick]")).map((input) => input.value.trim()).filter(Boolean);
 }
@@ -1926,9 +1898,8 @@ async function startLinkOrder() {
   const nick2 = $("marketplaceCheckNick2Id")?.value.trim() || "";
   const marketplaceCheckSheetLinks = currentMarketplaceSheetLinks();
   const extraNicks = extraLinkCheckNickIds();
-  const httpMode = $("marketplaceCheckMode")?.value === "http";
-  if (httpMode ? !linkHttpAccounts().length : (!nick1 && !nick2 && !extraNicks.length)) {
-    $("linkOrderStatusText").textContent = "Bạn cần thêm ít nhất một nick check (HTTP: cookie và proxy).";
+  if (!nick1 && !nick2 && !extraNicks.length) {
+    $("linkOrderStatusText").textContent = "Bạn cần thêm ít nhất một nick Hide để check.";
     return;
   }
   if (!marketplaceCheckSheetLinks.length) {
@@ -1944,12 +1915,9 @@ async function startLinkOrder() {
       marketplaceCheckSheetName: $("marketplaceCheckSheetName")?.value || "",
       marketplaceCheckNick1Id: nick1,
       marketplaceCheckNick2Id: nick2,
-      marketplaceCheckMode: httpMode ? "http" : "hide",
-      marketplaceHttpAccounts: linkHttpAccounts(),
-      marketplaceHttpConcurrency: Math.max(1, Math.min(10, Number($("marketplaceHttpConcurrency")?.value || 2))),
       marketplaceCheckExtraNickIds: extraNicks,
-      marketplaceCheckTabsPerNick: Math.max(1, Math.min(20, Number($("marketplaceCheckTabsPerNick")?.value || 5))),
-      marketplaceCheckTimeoutMs: Math.max(30000, Math.min(240000, Number($("marketplaceCheckTimeoutMs")?.value || 90000)))
+      marketplaceCheckZoomPercent: Math.max(25, Math.min(200, Number($("marketplaceCheckZoomPercent")?.value || 50))),
+      marketplaceCheckTimeoutMs: Math.max(10000, Math.min(240000, Number($("marketplaceCheckTimeoutMs")?.value || 30000)))
     };
     const { data, config } = await api("/api/tools/check-link-order", {
       method: "POST",
@@ -1958,7 +1926,7 @@ async function startLinkOrder() {
     state.config = config || state.config;
     state.linkOrderBatchIds = data.profileIds || [nick1, nick2, ...extraNicks].filter(Boolean);
     primeToolProgress(state.linkOrderBatchIds, "bắt đầu: check link order", "linkorder");
-    $("linkOrderStatusText").textContent = data.mode === "http" ? `HTTP: ${data.started} nick, ${data.totalLinks} link, ${data.requestsPerNick} request/nick. Link thiếu dữ liệu/nút mua vô hiệu hóa sẽ được xác minh bằng trình duyệt ẩn.` : `Đã bắt đầu ${data.started} nick qua ${data.sheets || 1} Sheet, mỗi nick ${data.tabsPerNick || body.marketplaceCheckTabsPerNick} tab. Sheet sẽ chạy tuần tự.`;
+    $("linkOrderStatusText").textContent = `Đã bắt đầu ${data.started} cửa sổ Hide, tự chia đều màn hình. Cửa sổ rảnh sẽ nhận link tiếp theo; ${data.sheets || 1} Sheet chạy tuần tự.`;
     await refreshToolStatus();
     startToolStatusPolling();
   } catch (error) {
@@ -2855,7 +2823,7 @@ function linkOrderProgressPresentation(summary) {
   return {
     stateLabel: !summary.running && summary.sheetPending > 0 ? "chờ ghi Sheet" : summary.running ? (summary.pass > 1 ? "đang check lại" : "đang chạy") : pending ? "còn link chưa xong" : "xong",
     countLabel: `Đã check ${summary.checked || 0} / ${total} link`,
-    textLabel: `Hoàn tất ${completed} · Còn ${pending} · Cần check lại ${summary.retryable || 0} · Đang xử lý ${summary.inFlight || 0} link · Nick hoạt động ${summary.activeProfiles || 0}/${summary.profileCount || 0} · Lượt ${summary.pass || 1}${summary.mode === "http" ? ` · Đã ghi Sheet ${Math.max(0, Number(summary.checked || 0) - Number(summary.sheetPending || 0))} · Chờ ghi Sheet ${summary.sheetPending || 0} · Chờ xác minh ${summary.awaitingVerification || 0}${summary.sheetWriteError ? ` · ${summary.sheetWriteError}` : ""}` : ""}`,
+    textLabel: `Hoàn tất ${completed} · Còn ${pending} · Cần check lại ${summary.retryable || 0} · Đang xử lý ${summary.inFlight || 0} link · Nick hoạt động ${summary.activeProfiles || 0}/${summary.profileCount || 0} · Lượt ${summary.pass || 1} · Đã ghi Sheet ${Math.max(0, Number(summary.checked || 0) - Number(summary.sheetPending || 0))} · Chờ ghi Sheet ${summary.sheetPending || 0}${summary.sheetWriteError ? ` · ${summary.sheetWriteError}` : ""}`,
     percent: total ? Math.max(0, Math.min(100, completed / total * 100)) : 0
   };
 }

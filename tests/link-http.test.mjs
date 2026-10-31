@@ -106,20 +106,13 @@ test('three cookie/proxy accounts run concurrently without Hide, share unique ta
   }finally{await rm(directory,{recursive:true,force:true});}
 });
 
-test('HTTP account editor has exactly cookie and proxy fields, removes rows, and toggles modes',async()=>{
+test('check UI exposes only Hide accounts and a shared zoom setting',async()=>{
   const source=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
-  const code=source.slice(source.indexOf('function linkHttpAccounts()'),source.indexOf('function extraLinkCheckNickIds()'));
-  const browser=await require('puppeteer-core').launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
-  try{
-    const page=await browser.newPage();await page.setContent('<select id="marketplaceCheckMode"><option value="hide">Hide</option><option value="http">HTTP</option></select><div id="linkHttpSettings"><button id="addLinkHttpNick">Add</button><div id="linkHttpAccounts"></div></div><div id="linkHideAccounts"></div><label><input id="marketplaceCheckTabsPerNick"></label>');
-    await page.evaluate('window.$=id=>document.getElementById(id);'+code);
-    await page.select('#marketplaceCheckMode','http');await page.click('#addLinkHttpNick');
-    assert.equal(await page.$$eval('[data-link-http-account] input',nodes=>nodes.length),2);
-    await page.type('[data-cookie]','c_user=10001; xs=fixture;');await page.type('[data-proxy]','localhost:8000');
-    assert.deepEqual(await page.evaluate(()=>linkHttpAccounts()),[{cookie:'c_user=10001; xs=fixture;',proxy:'localhost:8000'}]);
-    assert.equal(await page.$eval('#linkHideAccounts',node=>node.classList.contains('hidden')),true);
-    await page.click('[data-link-http-account] button');assert.equal(await page.$$eval('[data-link-http-account]',nodes=>nodes.length),0);
-  }finally{await browser.close();}
+  const html=await readFile(new URL('../public/index.html',import.meta.url),'utf8');
+  assert.ok(!source.includes('function linkHttpAccounts()'));
+  assert.ok(!html.includes('id="marketplaceCheckMode"'));
+  assert.ok(!html.includes('id="linkHttpSettings"'));
+  assert.ok(html.includes('id="marketplaceCheckZoomPercent"'));
 });
 
 test('a rejected session does not consume links assigned to healthy sessions',async()=>{

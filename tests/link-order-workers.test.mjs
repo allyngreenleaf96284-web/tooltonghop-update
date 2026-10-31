@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { mkdtemp, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { partitionLinkTasks, linkCheckProfileIds } from '../modules/marketplace_link_order.js';
 
 test('legacy profiles and extra profiles are normalized and duplicates cannot open twice', () => {
@@ -30,10 +33,11 @@ const require=createRequire(import.meta.url);
 test('five browsers check thirteen rows once and write the existing status column', async()=>{
   const puppeteer=require('puppeteer-core');
   const browser=await puppeteer.launch({executablePath:process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
+  const directory=await mkdtemp(path.join(os.tmpdir(),'link-hide-run-'));
   const runtime={jobs:new Map(),running:false};
-  const writes=[],visits=[];
+  const writes=[],visits=[],pages=[];
   const ids=['p1','p2','p3','p4','p5'];
-  const tool=createMarketplaceLinkOrderTool({runtime,addRuntimeLog(message,type){if(type === "error" || type === "warn") console.log(message);},
+  const tool=createMarketplaceLinkOrderTool({runtime,journalPath:path.join(directory,"pending.json"),addRuntimeLog(message,type){if(type === "error" || type === "warn") console.log(message);},
     getGoogleAccessToken:async()=> 'fixture',
     SheetsClient:class {
       async metadata(){return {sheets:[{properties:{title:'Links',sheetId:0}}]};}
@@ -44,8 +48,8 @@ test('five browsers check thirteen rows once and write the existing status colum
     dangNhap:{ensureFacebookLogin:async()=>{}},
     getHideManager:()=>({
       async connectBrowser(id){return {async newPage(){
-        const page=await browser.newPage();await page.setRequestInterception(true);
-        page.on('request',request=>{if(request.isNavigationRequest())visits.push({id,url:request.url()});void request.respond({status:200,contentType:'text/html; charset=utf-8',body:'<h1>Sold · Fixture product</h1><p>$20</p>'});});return page;
+        const page=await browser.newPage();pages.push({id,page});await page.setRequestInterception(true);
+        page.on('request',request=>{if(request.isNavigationRequest())visits.push({id,url:request.url()});void request.respond({status:200,contentType:'text/html; charset=utf-8',body:'<h1>Sold · Fixture product</h1><p>$20</p>'}).catch(()=>{});});const goto=page.goto.bind(page);page.goto=async(...args)=>{if(id==='p1')await new Promise(resolve=>setTimeout(resolve,700));return goto(...args);};return page;
       },async disconnect(){}};},async stopHideMyAccProfile(){}
     })
   });
@@ -59,7 +63,10 @@ test('five browsers check thirteen rows once and write the existing status colum
     assert.equal(new Set(writes.map(x=>x.range)).size,13);
     assert.ok(writes.every(x=>x.values[0][0]==='sold' && /!C\d+$/.test(x.range)));
     assert.equal(new Set(visits.map(x=>x.url)).size,13);
-    assert.deepEqual(ids.map(id=>visits.filter(x=>x.id===id).length),[3,3,3,2,2]);
+    assert.equal(pages.length,5,'only one visible check page per profile');
+    assert.ok(ids.every(id=>visits.some(x=>x.id===id)));
+    assert.ok(visits.filter(x=>x.id==='p1').length < Math.max(...ids.map(id=>visits.filter(x=>x.id===id).length)), 'fast profiles take work while slow profile is loading');
+    assert.equal(runtime.linkOrderProgress.sheetPending,0);
     assert.equal(runtime.linkOrderProgress.total,13);
     assert.equal(runtime.linkOrderProgress.checked,13);
     assert.equal(runtime.linkOrderProgress.completed,13);
@@ -67,7 +74,7 @@ test('five browsers check thirteen rows once and write the existing status colum
     assert.equal(runtime.linkOrderProgress.inFlight,0);
     assert.equal(runtime.linkOrderProgress.activeProfiles,0);
     assert.equal(runtime.linkOrderProgress.running,false);
-  }finally{runtime.stopRequested=true;await browser.close();}
+  }finally{runtime.stopRequested=true;await browser.close();await rm(directory,{recursive:true,force:true});}
 });
 
 test('Add nick check creates editable inputs and removing one preserves the others', async()=>{

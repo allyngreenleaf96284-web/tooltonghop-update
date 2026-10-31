@@ -23,7 +23,7 @@ for (const [title, button, expected] of [
     const page = await browser.newPage();
     try {
       await page.setContent(`<aside><h1>Marketplace</h1></aside><main style="margin-left:400px"><h1>${title}</h1><p>$45</p>${button}<p>Details</p><p>Condition: New</p></main>`);
-      assert.equal(await classifyCurrentPage(page, 500), expected);
+      assert.equal(await classifyCurrentPage(page, expected === "thâm buy now" ? 2500 : 500), expected);
     } finally { await page.close(); }
   });
 }
@@ -33,4 +33,12 @@ test('hidden pending heading and description mentioning sold do not override liv
     await page.setContent('<h1 style="display:none">Pending · Hidden</h1><main><h1>LEGO System</h1><p>Other sets sold separately</p><button>Send seller a message</button></main>');
     assert.equal(await classifyCurrentPage(page, 500), 'send seller a message');
   } finally { await page.close(); }
+});
+
+test('initially disabled checkout becomes active before the gray confirmation window', async()=>{
+  const page=await browser.newPage();
+  try {
+    await page.setContent('<h1>Fixture</h1><button disabled>Buy now</button><script>setTimeout(()=>document.querySelector("button").disabled=false,150)</script>');
+    assert.equal(await classifyCurrentPage(page,2500),'buy now');
+  }finally{await page.close();}
 });
