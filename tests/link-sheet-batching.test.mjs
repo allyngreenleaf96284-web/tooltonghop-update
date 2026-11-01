@@ -4,15 +4,15 @@ import {mkdtemp,readFile,rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {createLinkSheetWriter} from '../modules/link_check_writer.js';
-test('1000 results use one request; TXT survives successful flush',async()=>{
+test('100 results use one request; TXT survives successful flush',async()=>{
  const dir=await mkdtemp(path.join(os.tmpdir(),'sheet-batch-'));
  try {
-  const calls=[];const values=Array.from({length:1001},(_,i)=>['',`https://example.test/${i}`]);
+  const calls=[];const values=Array.from({length:101},(_,i)=>['',`https://example.test/${i}`]);
   const plan={spreadsheetId:'fixture',title:'Links',linkIndex:1,nick1Index:2,values,client:{batchUpdateValues:async data=>calls.push(data)}};
   const writer=await createLinkSheetWriter([plan],path.join(dir,'pending.json'));
-  for(let i=1;i<=1000;i++)await writer.write(plan,{rowNumber:i+1,link:values[i][1]},'sold','browser');
-  assert.equal(calls.length,0);await writer.flush();assert.equal(calls.length,1);assert.equal(calls[0].length,1000);assert.equal(writer.pendingCount,0);
-  const txt=await readFile(writer.exportPath,'utf8');assert.equal(txt.trim().split('\n').length,1000);assert.match(txt,/\tsold/);
+  for(let i=1;i<=100;i++)await writer.write(plan,{rowNumber:i+1,link:values[i][1]},'sold','browser');
+  assert.equal(calls.length,0);await writer.flush();assert.equal(calls.length,1);assert.equal(calls[0].length,100);assert.equal(writer.pendingCount,0);
+  const txt=await readFile(writer.exportPath,'utf8');assert.equal(txt.trim().split('\n').length,100);assert.match(txt,/\tsold/);
  }finally{await rm(dir,{recursive:true,force:true});}
 });
 test('expired Sheet token refreshes once and retries same write',async()=>{

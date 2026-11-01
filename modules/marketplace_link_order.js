@@ -600,7 +600,7 @@ export function createMarketplaceLinkOrderTool({
             progress.summary.sheetPending = writer.pendingCount; progress.summary.sheetReview = writer.reviewCount;
             let flushing = false;
             flushTimer = setInterval(async () => {
-              if (flushing || writer.pendingCount < 1000) return;
+              if (flushing || writer.pendingCount < 100) return;
               flushing = true;
               try { await writer.flush(); progress.summary.sheetWriteError = ""; }
               catch (error) { progress.summary.sheetWriteError = `Ghi Sheet loi: ${error.status || ""} ${error.message}. Ket qua da luu tren may de ghi lai.`; }

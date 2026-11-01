@@ -28,8 +28,8 @@ export async function createLinkSheetWriter(plans, journalPath=defaultJournal) {
       const snapshot=await locked(async()=>[...pending.values()]);
       for(const plan of plans){
         const items=snapshot.filter(item=>item.spreadsheetId===plan.spreadsheetId&&item.title===plan.title);
-        for(let offset=0;offset<items.length;offset+=1000){
-          const batch=items.slice(offset,offset+1000);
+        for(let offset=0;offset<items.length;offset+=100){
+          const batch=items.slice(offset,offset+100);
           // Read immediately before writing: row numbers from the check queue may be stale.
           const values=typeof plan.client.getValues === "function" ? await plan.client.getValues(plan.title) : plan.values;
           const rows=new Map();
