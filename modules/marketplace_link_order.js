@@ -456,7 +456,7 @@ export function createMarketplaceLinkOrderTool({
             try {
               const status = await checkTask(page, task, timeoutMs, profileId, label);
               await writer.write(plan, task, status, "browser");
-              progress.summary.sheetPending = writer.pendingCount;
+              progress.summary.sheetPending = writer.pendingCount; progress.summary.sheetReview = writer.reviewCount;
               progress.wrote(plan, task, status);
               checked += 1;
               if (shouldRetryStatus(status) && !isUnknownStatus(status)) retryable += 1;
@@ -597,14 +597,14 @@ export function createMarketplaceLinkOrderTool({
             await writer.flush();
             for (const plan of currentPlans) plan.sharedQueue = createSharedQueue(plan, activeProfiles.length, pass === 1);
             progress.register(currentPlans);
-            progress.summary.sheetPending = writer.pendingCount;
+            progress.summary.sheetPending = writer.pendingCount; progress.summary.sheetReview = writer.reviewCount;
             let flushing = false;
             flushTimer = setInterval(async () => {
               if (flushing || writer.pendingCount < 1000) return;
               flushing = true;
               try { await writer.flush(); progress.summary.sheetWriteError = ""; }
               catch (error) { progress.summary.sheetWriteError = `Ghi Sheet loi: ${error.status || ""} ${error.message}. Ket qua da luu tren may de ghi lai.`; }
-              finally { progress.summary.sheetPending = writer.pendingCount; flushing = false; }
+              finally { progress.summary.sheetPending = writer.pendingCount; progress.summary.sheetReview = writer.reviewCount; flushing = false; }
             }, 1000);
             const pendingLinks = currentPlans.reduce((total, plan) => total + Number(plan.sharedQueue?.total || 0), 0);
             if (!pendingLinks) break;
@@ -629,7 +629,7 @@ export function createMarketplaceLinkOrderTool({
               workerTotal: activeProfiles.length
             })));
             await writer.flush();
-            progress.summary.sheetPending = writer.pendingCount;
+            progress.summary.sheetPending = writer.pendingCount; progress.summary.sheetReview = writer.reviewCount;
             if (runtime.stopRequested) break;
             const blockedIds = new Set(results.filter((result) => result.permanent).map((result) => result.profileId));
             activeProfiles = activeProfiles.filter((item) => !blockedIds.has(item.profileId));
@@ -662,7 +662,7 @@ export function createMarketplaceLinkOrderTool({
             if (writer) {
               try { await writer.flush(); progress.summary.sheetWriteError = ""; }
               catch (error) { progress.summary.sheetWriteError = `Ghi Sheet loi: ${error.status || ""} ${error.message}. Con ket qua tren may; bam Chay tiep de ghi lai Sheet.`; }
-              progress.summary.sheetPending = writer.pendingCount;
+              progress.summary.sheetPending = writer.pendingCount; progress.summary.sheetReview = writer.reviewCount;
             }
           }
 

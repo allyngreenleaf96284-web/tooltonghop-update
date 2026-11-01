@@ -85,7 +85,7 @@ test('durable writer replays failed batches, preserves other cells, and refuses 
     fail=false;const restored=await createHttpSheetWriter([plan],file);await restored.flush();
     assert.equal(restored.pendingCount,0);assert.equal(writes[0].range,"'O''Brien'!C2");assert.equal(plan.values[1][0],'u');
     await restored.write(plan,{rowNumber:2,link:plan.values[1][1]},'pending');plan.values[1][1]='different link';
-    await assert.rejects(restored.flush(),/da doi link/);assert.equal(writes.length,1);
+    await restored.flush();assert.equal(restored.pendingCount,0);assert.equal(restored.reviewCount,1);assert.equal(writes.length,1);
   }finally{await rm(directory,{recursive:true,force:true});}
 });
 
