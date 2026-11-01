@@ -14,7 +14,7 @@ export async function createLinkSheetWriter(plans, journalPath=defaultJournal) {
   catch(error){if(error.code!=="ENOENT")throw new Error("Khong doc duoc hang cho ghi Sheet; da giu nguyen file.");}
   const exportPath=journalPath.replace(/\.json$/i, "")+"-results.txt";
   const reviewPath=journalPath.replace(/\.json$/i, "")+"-review.txt";
-  let reviewCount=0;
+  let reviewCount=0, confirmedCount=0, lastWrite="";
   const pending=new Map(stored.map(item=>[cellKey(item),item]));
   let tail=Promise.resolve(), flushTail=Promise.resolve();
   const locked=(action)=>{const work=tail.then(action);tail=work.catch(()=>{});return work;};
@@ -51,6 +51,15 @@ export async function createLinkSheetWriter(plans, journalPath=defaultJournal) {
           });
           if(!ready.length)continue;
           await plan.client.batchUpdateValues(ready.map(({item,rowNumber})=>({range:`'${plan.title.replace(/'/g,"''")}'!${column(plan.nick1Index)}${rowNumber}`,values:[[item.status]]})));
+          if(typeof plan.client.getValues === "function"){
+            const verified=await plan.client.getValues(plan.title);
+            for(const {item,rowNumber} of ready){
+              if(String(verified[rowNumber-1]?.[plan.linkIndex]||"").trim()!==item.link || String(verified[rowNumber-1]?.[plan.nick1Index]||"").trim()!==item.status)
+                throw new Error(`Google Sheet chua xac nhan dung ket qua tai ${plan.title}!${column(plan.nick1Index)}${rowNumber}; giu hang cho de ghi lai.`);
+            }
+          }
+          confirmedCount+=ready.length;
+          lastWrite=`${plan.spreadsheetId} / ${plan.title} / cot ${column(plan.nick1Index)} / ${new Date().toISOString()}`;
           await locked(async()=>{
             for(const {item,rowNumber} of ready){
               if(pending.get(cellKey(item))?.version===item.version)pending.delete(cellKey(item));
@@ -68,6 +77,8 @@ export async function createLinkSheetWriter(plans, journalPath=defaultJournal) {
     flush,
     exportPath,
     reviewPath,
+    get confirmedCount(){return confirmedCount;},
+    get lastWrite(){return lastWrite;},
     get reviewCount(){return reviewCount;},
     get pendingCount(){return [...pending.values()].filter(item=>plans.some(plan=>plan.spreadsheetId===item.spreadsheetId&&plan.title===item.title)).length;},
     async discardUnconfirmed(){await locked(async()=>{for(const [key,item] of pending)if(plans.some(plan=>plan.spreadsheetId===item.spreadsheetId&&plan.title===item.title)&&(retryStatus(item.status)||(/thâm buy now/i.test(item.status)&&item.verifiedBy!=="browser")))pending.delete(key);await persist();});},

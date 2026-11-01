@@ -30,7 +30,7 @@ test('fresh Sheet rows relocate results; missing and duplicate links do not bloc
  try {
   const writes=[];const original=[['uid','link','status'],['a','link-a',''],['b','link-b',''],['c','link-c','']];
   const fresh=[original[0],['x','link-c',''],['y','link-c',''],['b','link-b',''],['a','link-a','']];
-  const plan={spreadsheetId:'fixture',title:'Links',linkIndex:1,nick1Index:2,values:original,client:{getValues:async()=>fresh,batchUpdateValues:async data=>writes.push(...data)}};
+  const plan={spreadsheetId:'fixture',title:'Links',linkIndex:1,nick1Index:2,values:original,client:{getValues:async()=>fresh,batchUpdateValues:async data=>{writes.push(...data);for(const x of data){const r=Number(x.range.match(/C(\d+)$/)[1]);fresh[r-1][2]=x.values[0][0];}}}};
   const writer=await createLinkSheetWriter([plan],path.join(dir,'pending.json'));
   await writer.write(plan,{rowNumber:2,link:'link-a'},'sold');
   await writer.write(plan,{rowNumber:2,link:'deleted'},'pending');
@@ -41,5 +41,16 @@ test('fresh Sheet rows relocate results; missing and duplicate links do not bloc
   assert.deepEqual(writes.map(x=>x.range),["'Links'!C5","'Links'!C4"]);
   assert.equal((await readFile(writer.reviewPath,'utf8')).trim().split('\n').length,2);
   assert.equal(original[1][0],'a');assert.equal(original[1][2],'sold');
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
+test('unconfirmed writes stay pending and are not counted as written',async()=>{
+ const dir=await mkdtemp(path.join(os.tmpdir(),'sheet-confirm-'));
+ try{
+  const plan={spreadsheetId:'fixture',title:'Links',linkIndex:1,nick1Index:2,values:[['uid','link','status'],['a','link-a','']],client:{getValues:async()=>plan.values,batchUpdateValues:async()=>({})}};
+  const writer=await createLinkSheetWriter([plan],path.join(dir,'pending.json'));
+  await writer.write(plan,{rowNumber:2,link:'link-a'},'sold');
+  await assert.rejects(writer.flush(),/chua xac nhan/);assert.equal(writer.confirmedCount,0);assert.equal(writer.pendingCount,1);
+  plan.client.batchUpdateValues=async()=>{plan.values[1][2]='sold';};
+  await writer.flush();assert.equal(writer.confirmedCount,1);assert.equal(writer.pendingCount,0);assert.match(writer.lastWrite,/fixture \/ Links \/ cot C/);
  }finally{await rm(dir,{recursive:true,force:true});}
 });
