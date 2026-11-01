@@ -600,10 +600,10 @@ export function createMarketplaceLinkOrderTool({
             progress.summary.sheetPending = writer.pendingCount;
             let flushing = false;
             flushTimer = setInterval(async () => {
-              if (flushing) return;
+              if (flushing || writer.pendingCount < 1000) return;
               flushing = true;
               try { await writer.flush(); progress.summary.sheetWriteError = ""; }
-              catch { progress.summary.sheetWriteError = "Chua ghi duoc Sheet; ket qua da luu tren may de ghi lai."; }
+              catch (error) { progress.summary.sheetWriteError = `Ghi Sheet loi: ${error.status || ""} ${error.message}. Ket qua da luu tren may de ghi lai.`; }
               finally { progress.summary.sheetPending = writer.pendingCount; flushing = false; }
             }, 1000);
             const pendingLinks = currentPlans.reduce((total, plan) => total + Number(plan.sharedQueue?.total || 0), 0);
@@ -661,7 +661,7 @@ export function createMarketplaceLinkOrderTool({
             clearInterval(flushTimer);
             if (writer) {
               try { await writer.flush(); progress.summary.sheetWriteError = ""; }
-              catch { progress.summary.sheetWriteError = "Con ket qua da luu tren may; bam Chay tiep de ghi lai Sheet."; }
+              catch (error) { progress.summary.sheetWriteError = `Ghi Sheet loi: ${error.status || ""} ${error.message}. Con ket qua tren may; bam Chay tiep de ghi lai Sheet.`; }
               progress.summary.sheetPending = writer.pendingCount;
             }
           }

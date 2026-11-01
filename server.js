@@ -1882,7 +1882,7 @@ class SheetsClient {
 
   async waitGlobalWriteSlot(endpoint) {
     const state = SheetsClient.writeState;
-    const minGapMs = 600;
+    const minGapMs = 1500;
     const run = async () => {
       const elapsed = Date.now() - state.lastAt;
       if (elapsed < minGapMs) await new Promise((resolve) => setTimeout(resolve, minGapMs - elapsed));
@@ -1917,6 +1917,7 @@ class SheetsClient {
   async request(endpoint, options = {}) {
     const writeRequest = this.isWriteRequest(options);
     const maxAttempts = 6;
+    let refreshedAuth = false;
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       if (writeRequest) await this.waitGlobalWriteSlot(endpoint);
       else await this.waitGlobalReadSlot(endpoint);
@@ -1935,6 +1936,12 @@ class SheetsClient {
         error.status = response.status;
         throw error;
       } catch (error) {
+        if (error.status === 401 && !refreshedAuth && attempt < maxAttempts) {
+          refreshedAuth = true;
+          this.refreshingToken ||= getGoogleAccessToken(this.config.credentialsPath).finally(() => { this.refreshingToken = null; });
+          this.token = await this.refreshingToken;
+          continue;
+        }
         if (!this.isQuotaError(error) && !this.isRetryableNetworkError(error)) throw error;
         if (attempt >= maxAttempts) throw error;
         const state = writeRequest ? SheetsClient.writeState : SheetsClient.readState;
