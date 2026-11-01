@@ -1,5 +1,6 @@
 import { withFacebookLocale, isMarketplaceIneligibleError, assertMarketplaceAccess } from "./facebook_locale.js";
 import { installLightLinkCheck, createLinkCheckProgress } from "./link_check_light.js";
+import { prepareLinkCheckScrolling, recoverLinkCheckScroll } from "./link_check_scroll.js";
 import { createLinkSheetWriter } from "./link_check_writer.js";
 import { createLinkCheckDisplay, openCheckWindow } from "./link_check_display.js";
 
@@ -97,6 +98,7 @@ function normalizeStatusLabel(value) {
 export async function classifyCurrentPage(page, timeoutMs) {
   const deadline = Date.now() + Math.max(0, timeoutMs);
   let previous = "", stableSince = Date.now();
+  let scrollPhase = 0, nextScrollAt = Date.now() + 750;
   for (;;) {
     if (page.isClosed()) throw new Error("Tab check link da dong.");
     await assertMarketplaceAccess(page);
@@ -105,6 +107,10 @@ export async function classifyCurrentPage(page, timeoutMs) {
     if (result !== previous) { previous = result; stableSince = Date.now(); }
     if (result && result !== "không rõ" && (!/thâm buy now/i.test(result) || Date.now() - stableSince >= 2000)) return result;
     if (Date.now() >= deadline) return "không rõ";
+    if (!result && scrollPhase < 5 && Date.now() >= nextScrollAt) {
+      await recoverLinkCheckScroll(page, scrollPhase++);
+      nextScrollAt = Date.now() + 750;
+    }
     await sleep(Math.min(250, deadline - Date.now()));
   }
 }
@@ -124,7 +130,7 @@ async function readCurrentMarketplaceStatus(page) {
     }
 
     const visible = (el) => {
-      if (!el) return false;
+      if (!el || el.closest('[aria-hidden="true"], [inert]')) return false;
       const rect = el.getBoundingClientRect();
       const style = window.getComputedStyle(el);
       return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
@@ -132,8 +138,10 @@ async function readCurrentMarketplaceStatus(page) {
     const titleEl = Array.from(document.querySelectorAll("h1, h2, [role='heading']"))
       .filter(visible)
       .map((el) => ({ el, text: clean(el.innerText || el.textContent || ""), rect: el.getBoundingClientRect() }))
-      .filter((item) => item.text && !/^marketplace$/i.test(item.text))
-      .sort((a, b) => (b.rect.left - a.rect.left) || (a.rect.top - b.rect.top))[0];
+      .filter((item) => item.text && !item.el.closest('aside,nav,[role="navigation"],[role="feed"]')
+        && !/^(marketplace|details|seller information|today.s picks|related items|recommended(?: for you)?|shipping (?:and|&) returns)$/i.test(item.text))
+      .sort((a, b) => Number(b.el.matches('h1,[aria-level="1"]')) - Number(a.el.matches('h1,[aria-level="1"]'))
+        || (b.rect.left - a.rect.left) || (a.rect.top - b.rect.top))[0];
     const titleText = titleEl?.text || "";
     // New Marketplace layout places the status before the listing title,
     // without an Out of stock button. Require the UI separator, not a word
@@ -154,6 +162,7 @@ async function readCurrentMarketplaceStatus(page) {
           el.getAttribute("disabled") !== null ||
           style.pointerEvents === "none";
         return {
+          el,
           text,
           label: lower(text),
           top: rect.top,
@@ -168,11 +177,18 @@ async function readCurrentMarketplaceStatus(page) {
       })
       .filter((item) => actionWords.test(item.text));
 
+    // Restrict actions to the closest product section when its DOM provides
+    // one. Relative geometry remains valid even above/below the viewport.
+    let productScope = null;
+    for (let parent = titleEl?.el.parentElement; parent && parent !== document.body; parent = parent.parentElement) {
+      if (rawButtons.some(item => parent.contains(item.el))) { productScope = parent; break; }
+    }
     const panelButtons = rawButtons
-      .filter((item) => item.left >= Math.max(0, titleRect.left - 80))
-      .filter((item) => item.top >= Math.max(0, titleRect.bottom - 20))
+      .filter(item => !productScope || productScope.contains(item.el))
+      .filter((item) => item.left >= titleRect.left - 80)
+      .filter((item) => item.top >= titleRect.bottom - 20)
       .sort((a, b) => a.top - b.top || a.left - b.left);
-    const buttons = panelButtons.length ? panelButtons : rawButtons.filter(item => item.label !== "message").sort((a, b) => a.top - b.top || a.left - b.left);
+    const buttons = panelButtons;
     // Facebook also renders this as a composer label, not a button. Require
     // the actual input + Send control below the product title, rather than
     // matching words inside a description, sidebar or recommendation.
@@ -181,7 +197,7 @@ async function readCurrentMarketplaceStatus(page) {
     const composerLabel = !hasPurchaseAction && !messageButton && titleEl && [...document.querySelectorAll("label, span, p, div")].some(el => {
       if (!visible(el) || lower(el.innerText || el.textContent) !== "send seller a message") return false;
       const rect = el.getBoundingClientRect();
-      if (rect.left < Math.max(0, titleRect.left - 80) || rect.top < Math.max(0, titleRect.bottom - 20)) return false;
+      if (rect.left < titleRect.left - 80 || rect.top < titleRect.bottom - 20) return false;
       let parent = el.parentElement;
       for (let depth = 0; parent && parent !== document.body && depth < 4; depth++, parent = parent.parentElement) {
         const input = [...parent.querySelectorAll('textarea, input:not([type="hidden"]), [contenteditable="true"], [role="textbox"]')].some(visible);
@@ -217,7 +233,9 @@ async function readCurrentMarketplaceStatus(page) {
 
 async function classifyPage(page, url, timeoutMs) {
   const started = Date.now();
+  await prepareLinkCheckScrolling(page);
   await page.goto(withFacebookLocale(url), { waitUntil: "domcontentloaded", timeout: timeoutMs });
+  await recoverLinkCheckScroll(page, 0);
   return classifyCurrentPage(page, Math.max(0, timeoutMs - (Date.now() - started)));
 }
 
