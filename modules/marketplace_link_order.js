@@ -305,7 +305,7 @@ export function createMarketplaceLinkOrderTool({
       const row = values[index] || [];
       const link = String(row[linkIndex] || "").trim();
       const status = String(row[statusIndex] || "").trim();
-      if (!link || (status && !(includeUnknown && normalizeStatusLabel(status) === "send seller a message") && (!shouldRetryStatus(status) || (!includeUnknown && isUnknownStatus(status))))) continue;
+      if (!link || (status && (!shouldRetryStatus(status) || (!includeUnknown && isUnknownStatus(status))))) continue;
       tasks.push({ rowNumber: index + 1, link });
     }
     return tasks;

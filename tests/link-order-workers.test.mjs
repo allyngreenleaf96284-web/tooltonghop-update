@@ -37,12 +37,13 @@ test('five browsers check sixty rows once and write the existing status column',
   const runtime={jobs:new Map(),running:false};
   const writes=[],visits=[],pages=[],loginOptions=[];
   const ids=['p1','p2','p3','p4','p5'];
+  const sheetValues=[['uid','LINK SP','tình trạng nick 1'],...Array.from({length:60},(_,i)=>['u',`https://www.facebook.com/marketplace/item/${100+i}`,'']),['old','https://www.facebook.com/marketplace/item/999','send seller a message']];
   const tool=createMarketplaceLinkOrderTool({runtime,createWindowPage:browser=>browser.newPage(),journalPath:path.join(directory,"pending.json"),addRuntimeLog(message,type){if(type === "error" || type === "warn") console.log(message);},
     getGoogleAccessToken:async()=> 'fixture',
     SheetsClient:class {
       async metadata(){return {sheets:[{properties:{title:'Links',sheetId:0}}]};}
-      async getValues(){return [['uid','LINK SP','tình trạng nick 1'],...Array.from({length:60},(_,i)=>['u',`https://www.facebook.com/marketplace/item/${100+i}`,''])];}
-      async batchUpdateValues(data){writes.push(...data);}
+      async getValues(){return structuredClone(sheetValues);}
+      async batchUpdateValues(data){writes.push(...data);for(const entry of data){const row=Number(entry.range.match(/C(\d+)$/)[1]);sheetValues[row-1][2]=entry.values[0][0];}}
     },
     getRowsByProfileIds:async()=>new Map(ids.map(id=>[id,{uid:id}])),
     dangNhap:{ensureFacebookLogin:async(manager,page,row,id,progress,options)=>{loginOptions.push(options);}},
