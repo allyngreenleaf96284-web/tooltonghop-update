@@ -105,7 +105,7 @@ export async function classifyCurrentPage(page, timeoutMs) {
     const result = await readCurrentMarketplaceStatus(page);
     await assertMarketplaceAccess(page);
     if (result !== previous) { previous = result; stableSince = Date.now(); }
-    if (result && result !== "không rõ" && (!/thâm buy now/i.test(result) || Date.now() - stableSince >= 2000)) return result;
+    if (result && result !== "không rõ" && (!/thâm buy now/i.test(result) || Date.now() - stableSince >= 2000) && (result !== "send seller a message" || Date.now() - stableSince >= 8000)) return result;
     if (Date.now() >= deadline) return "không rõ";
     if (!result && scrollPhase < 5 && Date.now() >= nextScrollAt) {
       await recoverLinkCheckScroll(page, scrollPhase++);
@@ -179,12 +179,10 @@ async function readCurrentMarketplaceStatus(page) {
 
     // Restrict actions to the closest product section when its DOM provides
     // one. Relative geometry remains valid even above/below the viewport.
-    let productScope = null;
-    for (let parent = titleEl?.el.parentElement; parent && parent !== document.body; parent = parent.parentElement) {
-      if (rawButtons.some(item => parent.contains(item.el))) { productScope = parent; break; }
-    }
+    // Message may live in a small header wrapper while checkout actions are
+    // siblings farther down the product panel. Do not scope to the first button.
     const panelButtons = rawButtons
-      .filter(item => !productScope || productScope.contains(item.el))
+      .filter(item => !item.el.closest('nav,[role="navigation"],[role="feed"]'))
       .filter((item) => item.left >= titleRect.left - 80)
       .filter((item) => item.top >= titleRect.bottom - 20)
       .sort((a, b) => a.top - b.top || a.left - b.left);
@@ -307,7 +305,7 @@ export function createMarketplaceLinkOrderTool({
       const row = values[index] || [];
       const link = String(row[linkIndex] || "").trim();
       const status = String(row[statusIndex] || "").trim();
-      if (!link || (status && (!shouldRetryStatus(status) || (!includeUnknown && isUnknownStatus(status))))) continue;
+      if (!link || (status && !(includeUnknown && normalizeStatusLabel(status) === "send seller a message") && (!shouldRetryStatus(status) || (!includeUnknown && isUnknownStatus(status))))) continue;
       tasks.push({ rowNumber: index + 1, link });
     }
     return tasks;

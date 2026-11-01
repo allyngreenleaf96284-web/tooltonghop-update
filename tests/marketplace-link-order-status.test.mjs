@@ -27,7 +27,7 @@ for (const [title, button, expected] of [
     const page = await browser.newPage();
     try {
       await page.setContent(`<aside><h1>Marketplace</h1></aside><main style="margin-left:400px"><h1>${title}</h1><p>$45</p>${button}<p>Details</p><p>Condition: New</p></main>`);
-      assert.equal(await classifyCurrentPage(page, expected === "thâm buy now" ? 2500 : 500), expected);
+      assert.equal(await classifyCurrentPage(page, expected === "send seller a message" ? 8500 : expected === "thâm buy now" ? 2500 : 500), expected);
     } finally { await page.close(); }
   });
 }
@@ -35,7 +35,7 @@ test('hidden pending heading and description mentioning sold do not override liv
   const page = await browser.newPage();
   try {
     await page.setContent('<h1 style="display:none">Pending · Hidden</h1><main><h1>LEGO System</h1><p>Other sets sold separately</p><button>Send seller a message</button></main>');
-    assert.equal(await classifyCurrentPage(page, 500), 'send seller a message');
+    assert.equal(await classifyCurrentPage(page, 8500), 'send seller a message');
   } finally { await page.close(); }
 });
 
@@ -62,7 +62,7 @@ for (const inner of [false,true]) test(`actions remain readable after scrolling 
     await page.setContent(`<main id="product" style="margin-left:200px;${inner?'height:300px;overflow:auto;':''}"><h1>Fixture product</h1><button>Message</button><div style="height:1600px"></div></main>`);
     await page.evaluate(inner=>{if(inner)document.querySelector('#product').scrollTop=900;else window.scrollTo(0,900);},inner);
     assert.ok(await page.$eval('button',el=>el.getBoundingClientRect().bottom<0));
-    assert.equal(await classifyCurrentPage(page,500),'send seller a message');
+    assert.equal(await classifyCurrentPage(page,8500),'send seller a message');
   }finally{await page.close();}
 });
 
@@ -102,6 +102,19 @@ test('scroll recovery finds the product pane even when virtualization removed it
       const panel=document.querySelector('#panel');panel.scrollTop=800;
       panel.addEventListener('scroll',()=>{if(panel.scrollTop<100)document.querySelector('#product').innerHTML='<h1>Fixture product</h1><button>Message</button>';});
     });
-    assert.equal(await classifyCurrentPage(page,3000),'send seller a message');
+    assert.equal(await classifyCurrentPage(page,11000),'send seller a message');
   }finally{await page.close();}
+});
+
+test('checkout siblings override Message in a smaller title wrapper',async()=>{
+ const page=await browser.newPage();try{
+ await page.setContent('<main><header><h1>Product</h1><button>Message</button></header><section><button>Buy now</button><button>Make an offer</button></section></main>');
+ assert.equal(await classifyCurrentPage(page,1000),'buy now- make an offer');
+ }finally{await page.close();}
+});
+test('Message loading first cannot mask checkout rendered later',async()=>{
+ const page=await browser.newPage();try{
+ await page.setContent('<main><h1>Product</h1><button>Message</button><section id="checkout"></section><script>setTimeout(()=>document.querySelector("#checkout").innerHTML="<button>Buy now</button><button>Make an offer</button>",1200)</script></main>');
+ assert.equal(await classifyCurrentPage(page,4000),'buy now- make an offer');
+ }finally{await page.close();}
 });
