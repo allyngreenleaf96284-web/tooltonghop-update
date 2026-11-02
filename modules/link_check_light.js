@@ -15,12 +15,14 @@ export async function installLightLinkCheck(page) {
   installed.add(page);
 }
 
-export function createLinkCheckProgress(runtime, profileCount, retryStatus) {
+export function createLinkCheckProgress(runtime, profileCount, retryStatus, now = Date.now) {
   const rows = new Map();
-  const startedAt = Date.now();
+  const startedAt = now();
+  let speedStart = null, batchStart = null, batchCount = 0, checkMs = 0, saveMs = 0;
   const summary = runtime.linkOrderProgress = {
     total: 0, checked: 0, completed: 0, retryable: 0, pending: 0, manualReview: 0,
     inFlight: 0, activeProfiles: 0, profileCount, attempts: 0, pass: 1,
+    speed: { processed: 0, batches: 0, first100Ms: null, last100Ms: null, average100Ms: null, recent: [] },
     running: true, startedAt, finishedAt: null
   };
   const key = (plan, rowNumber) => JSON.stringify([plan.spreadsheetId, plan.title, rowNumber]);
@@ -49,7 +51,23 @@ export function createLinkCheckProgress(runtime, profileCount, retryStatus) {
       summary.total = rows.size;
       summary.pending = summary.total - summary.completed;
     },
-    wrote(plan, task, status) { setStatus(key(plan, task.rowNumber), status); },
+    startTask() { if(speedStart === null) speedStart = batchStart = now(); },
+    wrote(plan, task, status, timing = {}) {
+      setStatus(key(plan, task.rowNumber), status);
+      if(speedStart === null) speedStart = batchStart = now();
+      const speed=summary.speed, time=now();
+      speed.processed++;batchCount++;
+      checkMs+=Number(timing.checkMs||0);saveMs+=Number(timing.saveMs||0);
+      speed.average100Ms=(time-speedStart)*100/speed.processed;
+      if(batchCount===100){
+        const duration=time-batchStart;
+        speed.batches++;speed.first100Ms ??= duration;speed.last100Ms=duration;
+        speed.lastCheckMs=checkMs/100;speed.lastSaveMs=saveMs/100;
+        speed.recent.push({batch:speed.batches,durationMs:duration});
+        speed.recent=speed.recent.slice(-10);
+        batchStart=time;batchCount=0;checkMs=0;saveMs=0;
+      }
+    },
     finish() { summary.running = false; summary.finishedAt = Date.now(); }
   };
 }

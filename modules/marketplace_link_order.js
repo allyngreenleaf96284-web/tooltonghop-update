@@ -451,13 +451,16 @@ export function createMarketplaceLinkOrderTool({
             if (!task) break;
             const label = `${nickLabel} ${sheetLabel} row ${task.rowNumber}`;
             if (job) job.liveStatus = `${label}; da check ${checked} link`;
+            progress.startTask();
             progress.summary.inFlight += 1;
             progress.summary.attempts += 1;
             try {
+              const checkStarted=Date.now();
               const status = await checkTask(page, task, timeoutMs, profileId, label);
+              const checkFinished=Date.now();
               await writer.write(plan, task, status, "browser");
               progress.summary.sheetPending = writer.pendingCount; progress.summary.sheetReview = writer.reviewCount; progress.summary.sheetConfirmed = writer.confirmedCount; progress.summary.sheetLastWrite = writer.lastWrite;
-              progress.wrote(plan, task, status);
+              progress.wrote(plan, task, status, {checkMs:checkFinished-checkStarted,saveMs:Date.now()-checkFinished});
               checked += 1;
               if (shouldRetryStatus(status) && !isUnknownStatus(status)) retryable += 1;
               if (job) job.liveStatus = `${nickLabel}: da check ${checked} link; ${status}`;

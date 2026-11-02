@@ -2823,10 +2823,13 @@ function linkOrderProgressPresentation(summary) {
   if (!summary) return null;
   const total = Number(summary.total || 0), completed = Number(summary.completed || 0);
   const pending = Math.max(0, total - completed);
+  const speed=summary.speed;
+  const duration=ms=>ms == null ? "đang đo" : `${Math.floor(ms/60000)}p ${Math.round(ms%60000/1000)}s`;
+  const speedText=speed ? ` · Tốc độ (${speed.processed} lượt check mới): 100 đầu ${duration(speed.first100Ms)} / 100 gần nhất ${duration(speed.last100Ms)} / TB 100 ${duration(speed.average100Ms)}${speed.lastCheckMs == null ? "" : ` · TB/link: đọc trang ${(speed.lastCheckMs/1000).toFixed(1)}s, lưu máy ${(speed.lastSaveMs/1000).toFixed(2)}s`}${speed.recent.length ? ` · Các đợt 100: ${speed.recent.map(item=>`#${item.batch} ${duration(item.durationMs)}`).join("; ")}` : ""}` : "";
   return {
     stateLabel: !summary.running && summary.sheetPending > 0 ? "chờ ghi Sheet" : summary.running ? (summary.pass > 1 ? "đang check lại" : "đang chạy") : pending ? "còn link chưa xong" : "xong",
     countLabel: `Đã check ${summary.checked || 0} / ${total} link`,
-    textLabel: `Hoàn tất ${completed} · Còn ${pending} · Cần check lại ${Math.max(0, Number(summary.retryable || 0) - Number(summary.manualReview || 0))} · Cần xem tay ${summary.manualReview || 0} · Đang xử lý ${summary.inFlight || 0} link · Nick hoạt động ${summary.activeProfiles || 0}/${summary.profileCount || 0} · Lượt ${summary.pass || 1} · Đã ghi Sheet lượt này ${Number(summary.sheetConfirmed || 0)} · Chờ ghi Sheet ${summary.sheetPending || 0} (gom 100, ghi nốt khi dừng/kết thúc) · Sheet cần đối chiếu ${summary.sheetReview || 0}${summary.sheetLastWrite ? ` · Ghi gần nhất: ${summary.sheetLastWrite}` : ""}${summary.sheetWriteError ? ` · ${summary.sheetWriteError}` : ""}`,
+    textLabel: `${speedText ? speedText.slice(3)+" · " : ""}Hoàn tất ${completed} · Còn ${pending} · Cần check lại ${Math.max(0, Number(summary.retryable || 0) - Number(summary.manualReview || 0))} · Cần xem tay ${summary.manualReview || 0} · Đang xử lý ${summary.inFlight || 0} link · Nick hoạt động ${summary.activeProfiles || 0}/${summary.profileCount || 0} · Lượt ${summary.pass || 1} · Đã ghi Sheet lượt này ${Number(summary.sheetConfirmed || 0)} · Chờ ghi Sheet ${summary.sheetPending || 0} (gom 100, ghi nốt khi dừng/kết thúc) · Sheet cần đối chiếu ${summary.sheetReview || 0}${summary.sheetLastWrite ? ` · Ghi gần nhất: ${summary.sheetLastWrite}` : ""}${summary.sheetWriteError ? ` · ${summary.sheetWriteError}` : ""}`,
     percent: total ? Math.max(0, Math.min(100, completed / total * 100)) : 0
   };
 }
