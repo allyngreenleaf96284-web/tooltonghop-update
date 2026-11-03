@@ -119,6 +119,8 @@ async function readCurrentMarketplaceStatus(page) {
   const result = await page.evaluate(() => {
     const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
     const lower = (value) => clean(value).toLowerCase().replace(/[’`]/g, "'");
+    const currentUrl=new URL(location.href);
+    if(/(^|\.)facebook\.com$/i.test(currentUrl.hostname) && currentUrl.pathname.startsWith("/marketplace/") && currentUrl.searchParams.get("unavailable_product")==="1") return "hết hạn";
     const bodyText = document.body?.innerText || "";
     const bodyLower = lower(bodyText);
     if (
@@ -237,7 +239,7 @@ export async function classifyPage(page, url, timeoutMs) {
     // Navigate to the new document without waiting for DOMContentLoaded or load.
     const navigation=await session.send("Page.navigate", {url:withFacebookLocale(url)});
     if(navigation.errorText)throw new Error(navigation.errorText);
-    await page.waitForFunction(expected => location.pathname === new URL(expected).pathname || /\/(login|checkpoint|two_step_verification|marketplace\/ineligible)\//.test(location.pathname), {timeout:Math.max(1,timeoutMs-(Date.now()-started))}, withFacebookLocale(url));
+    await page.waitForFunction(expected => location.pathname === new URL(expected).pathname || (location.pathname.startsWith("/marketplace/") && new URL(location.href).searchParams.get("unavailable_product")==="1") || /\/(login|checkpoint|two_step_verification|marketplace\/ineligible)\//.test(location.pathname), {timeout:Math.max(1,timeoutMs-(Date.now()-started))}, withFacebookLocale(url));
     const status=await classifyCurrentPage(page, Math.max(0,timeoutMs-(Date.now()-started)));
     // Discard remaining downloads/work for a result already identified.
     await session.send("Page.stopLoading").catch(()=>{});

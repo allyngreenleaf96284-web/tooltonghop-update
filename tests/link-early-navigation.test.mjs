@@ -12,3 +12,11 @@ test('recognizes new product before a blocking script finishes loading',async()=
  finally{await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));}
 });
 
+test('expired listing redirect is detected instead of waiting for the old item path',async()=>{
+ const browser=await require('puppeteer-core').launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
+ try{
+  const page=await browser.newPage();await page.setRequestInterception(true);
+  page.on('request',request=>{const redirect=request.url().includes('/item/');void request.respond(redirect ? {status:302,headers:{location:'https://www.facebook.com/marketplace/phoenix/?unavailable_product=1'}} : {status:200,contentType:'text/html; charset=utf-8',body:"<div>This listing isn't available anymore</div><p>Take a look at these other items below.</p>"}).catch(()=>{});});
+  const start=Date.now();assert.equal(await classifyPage(page,'https://www.facebook.com/marketplace/item/123/',10000),'hết hạn');assert.ok(Date.now()-start<5000);
+ }finally{await browser.close();}
+});
