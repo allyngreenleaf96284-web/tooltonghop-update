@@ -240,13 +240,15 @@ export async function classifyPage(page, url, timeoutMs) {
   const session=await page.target().createCDPSession();
   try {
     // Navigate to the new document without waiting for DOMContentLoaded or load.
+    const previousUrl=page.url();
     const navigation=await session.send("Page.navigate", {url:withFacebookLocale(url)});
     if(navigation.errorText)throw new Error(navigation.errorText);
     const expectedPath=new URL(withFacebookLocale(url)).pathname.split("/").filter(Boolean).join("/");
     while(true){
       const current=new URL(page.url());
       const actualPath=current.pathname.split("/").filter(Boolean).join("/");
-      if(actualPath===expectedPath || current.searchParams.get("unavailable_product")==="1" || ["login","checkpoint","two_step_verification"].some(part=>actualPath.startsWith(part)) || actualPath.startsWith("marketplace/ineligible"))break;
+      const sharedListing=expectedPath.startsWith("share/") && actualPath.startsWith("marketplace/item/") && /(^|\.)facebook\.com$/i.test(current.hostname) && page.url()!==previousUrl;
+      if(sharedListing || actualPath===expectedPath || current.searchParams.get("unavailable_product")==="1" || ["login","checkpoint","two_step_verification"].some(part=>actualPath.startsWith(part)) || actualPath.startsWith("marketplace/ineligible"))break;
       if(Date.now()-started>=timeoutMs)throw new Error(`Chua chuyen den link can check; URL hien tai: ${current.origin}${current.pathname}`);
       await sleep(100);
     }

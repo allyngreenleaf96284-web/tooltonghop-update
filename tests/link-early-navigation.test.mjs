@@ -29,3 +29,12 @@ test('canonical item redirect without trailing slash does not stall Buy now',asy
  const start=Date.now();assert.equal(await classifyPage(page,'https://www.facebook.com/marketplace/item/123/',10000),'buy now- make an offer');assert.ok(Date.now()-start<5000);
  }finally{await browser.close();}
 });
+
+test('share link resolves to a listing with tracking parameters and reads checkout',async()=>{
+ const browser=await require('puppeteer-core').launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
+ try{
+ const page=await browser.newPage();await page.setContent('<h1>Sold · Previous listing</h1>');await page.setRequestInterception(true);
+ page.on('request',request=>{void request.respond(request.url().includes('/share/')&&!request.url().includes('/marketplace/')?{status:302,headers:{location:'https://www.facebook.com/marketplace/item/1784616779315466/?rdid=fixture&share_url=https%3A%2F%2Fwww.facebook.com%2Fshare%2Ffixture%2F#'}}:{status:200,contentType:'text/html; charset=utf-8',body:'<h1>New listing</h1><button>Buy now</button><button>Make an offer</button>'}).catch(()=>{});});
+ const start=Date.now();assert.equal(await classifyPage(page,'https://www.facebook.com/share/fixture/',10000),'buy now- make an offer');assert.ok(Date.now()-start<5000);
+ }finally{await browser.close();}
+});
