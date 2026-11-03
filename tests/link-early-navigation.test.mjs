@@ -20,3 +20,12 @@ test('expired listing redirect is detected instead of waiting for the old item p
   const start=Date.now();assert.equal(await classifyPage(page,'https://www.facebook.com/marketplace/item/123/',10000),'hết hạn');assert.ok(Date.now()-start<5000);
  }finally{await browser.close();}
 });
+
+test('canonical item redirect without trailing slash does not stall Buy now',async()=>{
+ const browser=await require('puppeteer-core').launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
+ try{
+ const page=await browser.newPage();await page.setRequestInterception(true);
+ page.on('request',request=>{const url=new URL(request.url());void request.respond(url.pathname.endsWith('/')?{status:302,headers:{location:'https://www.facebook.com/marketplace/item/123'}}:{status:200,contentType:'text/html; charset=utf-8',body:'<h1>Product</h1><button>Buy now</button><button>Make an offer</button>'}).catch(()=>{});});
+ const start=Date.now();assert.equal(await classifyPage(page,'https://www.facebook.com/marketplace/item/123/',10000),'buy now- make an offer');assert.ok(Date.now()-start<5000);
+ }finally{await browser.close();}
+});
