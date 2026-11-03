@@ -30,14 +30,14 @@ for (const n of [0, 2, 5, 13, 103]) {
 import { createRequire } from 'node:module';
 import { createMarketplaceLinkOrderTool } from '../modules/marketplace_link_order.js';
 const require=createRequire(import.meta.url);
-test('five browsers check sixty rows once and write the existing status column', async()=>{
+test('five browsers rotate all windows at global 100-link milestones and check 260 rows once and write the existing status column', async()=>{
   const puppeteer=require('puppeteer-core');
   const browser=await puppeteer.launch({executablePath:process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
   const directory=await mkdtemp(path.join(os.tmpdir(),'link-hide-run-'));
   const runtime={jobs:new Map(),running:false};
   const writes=[],visits=[],pages=[],loginOptions=[];
   const ids=['p1','p2','p3','p4','p5'];
-  const sheetValues=[['uid','LINK SP','tình trạng nick 1'],...Array.from({length:60},(_,i)=>['u',`https://www.facebook.com/marketplace/item/${100+i}`,'']),['old','https://www.facebook.com/marketplace/item/999','send seller a message']];
+  const sheetValues=[['uid','LINK SP','tình trạng nick 1'],...Array.from({length:260},(_,i)=>['u',`https://www.facebook.com/marketplace/item/${100+i}`,'']),['old','https://www.facebook.com/marketplace/item/999','send seller a message']];
   const tool=createMarketplaceLinkOrderTool({runtime,createWindowPage:browser=>browser.newPage(),journalPath:path.join(directory,"pending.json"),addRuntimeLog(message,type){if(type === "error" || type === "warn") console.log(message);},
     getGoogleAccessToken:async()=> 'fixture',
     SheetsClient:class {
@@ -57,24 +57,24 @@ test('five browsers check sixty rows once and write the existing status column',
   try{
     const result=await tool.run({credentialsPath:'fixture',marketplaceCheckSpreadsheetId:'fixture',marketplaceCheckNick1Id:'p1',marketplaceCheckNick2Id:'p2',marketplaceCheckExtraNickIds:['p3','p4','p5','p1'],marketplaceCheckTabsPerNick:3,marketplaceCheckTimeoutMs:10000});
     assert.equal(result.started,5);
-    const deadline=Date.now()+25000;
+    const deadline=Date.now()+60000;
     while(runtime.running && Date.now()<deadline)await new Promise(r=>setTimeout(r,50));
     assert.equal(runtime.running,false,JSON.stringify([...runtime.jobs.values()]));
-    assert.equal(writes.length,60);
-    assert.equal(new Set(writes.map(x=>x.range)).size,60);
+    assert.equal(writes.length,260);
+    assert.equal(new Set(writes.map(x=>x.range)).size,260);
     assert.ok(writes.every(x=>/!C\d+$/.test(x.range)));
-    assert.equal(writes.filter(x=>x.values[0][0]==='sold').length,58);
+    assert.equal(writes.filter(x=>x.values[0][0]==='sold').length,258);
     assert.equal(writes.filter(x=>x.values[0][0]==='send seller a message').length,1);
     assert.equal(writes.filter(x=>x.values[0][0]==='không rõ').length,1);
-    assert.equal(new Set(visits.map(x=>x.url)).size,60);
-    assert.equal(pages.length,15,'three check windows per profile');
+    assert.equal(new Set(visits.map(x=>x.url)).size,260);
+    assert.ok(pages.length>15,'windows replaced after shared milestones');assert.ok(pages.slice(0,15).every(({page})=>page.isClosed()),'first windows including login windows closed');assert.ok(runtime.linkOrderProgress.rotatedWindows>=15);
     assert.equal(loginOptions.length,5);assert.ok(loginOptions.every(options=>options.robustLanguage===true));
     assert.equal(result.windows,15);
     assert.ok(ids.every(id=>visits.some(x=>x.id===id)));
     assert.equal(runtime.linkOrderProgress.sheetPending,0);
-    assert.equal(runtime.linkOrderProgress.total,60);
-    assert.equal(runtime.linkOrderProgress.checked,60);
-    assert.equal(runtime.linkOrderProgress.completed,59);
+    assert.equal(runtime.linkOrderProgress.total,260);
+    assert.equal(runtime.linkOrderProgress.checked,260);
+    assert.equal(runtime.linkOrderProgress.completed,259);
     assert.equal(runtime.linkOrderProgress.pending,1);
     assert.equal(runtime.linkOrderProgress.manualReview,1);
     assert.equal(runtime.linkOrderProgress.pass,1,"unknown layout waits for manual review instead of restarting");

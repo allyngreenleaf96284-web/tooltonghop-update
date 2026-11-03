@@ -442,11 +442,13 @@ export function createMarketplaceLinkOrderTool({
       runtime.activeManagers.set(profileId, { manager, uid: row.uid || profileId, shouldFinish: () => false });
       browser = await manager.connectBrowser(profileId);
       loginPage = await ensureLoggedIn(manager, browser, profileId, nickLabel, row, workerSlot * tabCount, workerTotal * tabCount, job);
+      loginPage.__linkRotationEpoch=Math.floor(progress.summary.speed.processed/100);
       checkPages.push(loginPage);
       await installLightLinkCheck(loginPage);
       for (let index = 1; index < tabCount; index++) {
         if (runtime.stopRequested) throw stoppedError();
         const page = await createWindowPage(browser);
+        page.__linkRotationEpoch=Math.floor(progress.summary.speed.processed/100);
         checkPages.push(page);
         await installLightLinkCheck(page);
         await applyWindowTiling(browser, page, workerSlot * tabCount + index, workerTotal * tabCount);
@@ -467,13 +469,14 @@ export function createMarketplaceLinkOrderTool({
         log(profileId, "xep hang", `${nickLabel} bat dau ${sheetLabel}, lay link tu hang doi chung`);
         const workers = checkPages.map(async (initialPage, pageIndex) => {
           let page=initialPage;
-          let count=page.__linkCheckCount || 0;
+          let epoch=page.__linkRotationEpoch ?? Math.floor(progress.summary.speed.processed/100);
           while (true) {
             if (runtime.stopRequested) throw stoppedError();
             if (queue.aborted) throw new Error(queue.abortReason || "Hang doi Sheet da dung.");
             const task = claimSharedTask(queue);
             if (!task) break;
-            if(count>=100){
+            const targetEpoch=Math.floor(progress.summary.speed.processed/100);
+            if(epoch<targetEpoch){
               const replacement=await createWindowPage(browser);
               try {
                 await installLightLinkCheck(replacement);
@@ -482,8 +485,9 @@ export function createMarketplaceLinkOrderTool({
               checkPages[pageIndex]=replacement;
               if(loginPage===page)loginPage=replacement;
               await page.close({runBeforeUnload:false}).catch(()=>{});
-              page=replacement;count=0;
-              log(profileId,"doi tab",`${nickLabel}: thay cua so sau 100 link, giu nguyen phien dang nhap`,"info");
+              page=replacement;epoch=targetEpoch;page.__linkRotationEpoch=epoch;
+              progress.summary.rotatedWindows=(progress.summary.rotatedWindows||0)+1;
+              log(profileId,"doi tab",`${nickLabel}: thay cua so ${pageIndex+1}, moc chung ${targetEpoch*100} link; giu nguyen phien dang nhap`,"info");
             }
             const label = `${nickLabel} ${sheetLabel} row ${task.rowNumber}`;
             if (job) job.liveStatus = `${label}; da check ${checked} link`;
@@ -498,7 +502,7 @@ export function createMarketplaceLinkOrderTool({
               progress.summary.sheetPending = writer.pendingCount; progress.summary.sheetReview = writer.reviewCount; progress.summary.sheetConfirmed = writer.confirmedCount; progress.summary.sheetLastWrite = writer.lastWrite;
               progress.wrote(plan, task, status, {checkMs:checkFinished-checkStarted,saveMs:Date.now()-checkFinished});
               checked += 1;
-              page.__linkCheckCount=++count;
+
               if (shouldRetryStatus(status) && !isUnknownStatus(status)) retryable += 1;
               if (job) job.liveStatus = `${nickLabel}: da check ${checked} link; ${status}`;
               log(profileId, "check link", `${label} => ${status}; da luu cho ghi Sheet`, shouldRetryStatus(status) ? "warn" : "success");
