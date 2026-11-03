@@ -2380,6 +2380,12 @@ export function createDangNhap({ addRuntimeLog }) {
         updateLiveStatus(error.message);
         logLogin(profileId, "die cho", error.message, "error");
       });
+    if(options.prepareBeforeFacebook && !options.resumeAfterManualCaptcha){
+      await loginStep(profileId,updateLiveStatus,"login: chuan bi Chrome truoc Facebook","dang tat thong bao truoc khi vao Facebook",async()=>{
+        await suppressBrowserPrompts(page);
+        await blockFacebookNotificationsInChrome(page);
+      });
+    }
     if (!options.resumeAfterManualCaptcha) await loginStep(profileId, updateLiveStatus, "login: vao facebook.com", "dang vao facebook.com", async () => {
       await gotoWithFallback(manager, page, "https://www.facebook.com/", row, 3);
       await page.waitForSelector("body", { timeout: 10000 }).catch(() => {});

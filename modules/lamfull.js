@@ -1,3 +1,4 @@
+import { installSellerStateGuard } from "./seller_state_guard.js";
 import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -835,6 +836,7 @@ export function createLamFull({
     let restoreProgressCapture = () => {};
     let restoreManagerLoginGuards = () => {};
     let restoreSellerAddressRecovery = () => {};
+    let restoreSellerStateGuard = () => {};
     const restoreBankAccountName = installBankAccountNameGuard(manager);
 
     try {
@@ -858,6 +860,7 @@ export function createLamFull({
 
       sellerAllocation = await step(profileId, job, "lay seller info", async () => allocateSellerInfoRow(config, uid), { timeoutMs: 30000 });
       row.raw = { ...row.raw, ...sellerAllocation.raw };
+      restoreSellerStateGuard = installSellerStateGuard(manager);
       restoreSellerAddressRecovery = installSellerAddressRecovery(manager, {
         row,
         onProgress: (message) => { job.liveStatus = message; log(profileId, "seller address", message); },
@@ -905,7 +908,7 @@ export function createLamFull({
           await dangNhap.ensureFacebookLogin(manager, page, row, profileId, (status) => {
             if (job) job.liveStatus = status;
             log(profileId, "dang nhap", status);
-          });
+          }, { prepareBeforeFacebook: true });
         }, { timeoutMs: 300000 });
 
       }
@@ -1058,6 +1061,7 @@ export function createLamFull({
     } finally {
       restoreBankAccountName();
       restoreSellerAddressRecovery();
+      restoreSellerStateGuard();
       restoreLocationCapture();
       restoreProgressCapture();
       restoreManagerLoginGuards();
