@@ -1750,3 +1750,21 @@ tr.duplicate-row {
 .link-log-sidebar .activity-log { max-height:420px; overflow:auto; }
 @media(max-width:1100px){.link-monitor-layout{grid-template-columns:minmax(0,1fr)}.link-metric-groups{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:650px){.link-metric-groups{grid-template-columns:minmax(0,1fr)}}
+
+/* Metric cards must not inherit the profile table's 1320px minimum width. */
+.link-monitor-layout { grid-template-columns:minmax(0,1fr) 190px; }
+.link-metric-groups > section { min-width:0; }
+.link-metric-card { padding:14px; background:#101e32; border:1px solid #30415b; border-radius:10px; min-width:0; }
+.link-metric-card h3 { color:#7dd3fc; font-size:15px; margin:0 0 12px; }
+.link-metric-card dl { margin:0; }
+.link-metric-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px; align-items:baseline; padding:9px 0; border-bottom:1px solid #2a3a52; }
+.link-metric-row:last-child { border-bottom:0; }
+.link-metric-row dt { color:#c7d5e9; font-size:13px; overflow-wrap:anywhere; }
+.link-metric-row dd { color:#f0f7ff; font-size:17px; font-weight:700; font-variant-numeric:tabular-nums; margin:0; white-space:nowrap; }
+.link-speed-history { max-height:none; overflow:visible; }
+.link-speed-history dl { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:4px 20px; }
+.link-log-sidebar { height:auto; min-height:0; overflow:hidden; }
+.link-log-sidebar:not([open]) { padding:0; }
+.link-log-sidebar .activity-log { height:auto; min-height:0; max-height:360px; }
+@media(max-width:1200px){.link-monitor-layout{grid-template-columns:minmax(0,1fr)}.link-metric-groups{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:850px){.link-metric-groups{grid-template-columns:minmax(0,1fr)}}
