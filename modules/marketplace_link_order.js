@@ -102,10 +102,12 @@ export async function classifyCurrentPage(page, timeoutMs) {
   for (;;) {
     if (page.isClosed()) throw new Error("Tab check link da dong.");
     await assertMarketplaceAccess(page);
-    const result = await readCurrentMarketplaceStatus(page);
+    const reading = await readCurrentMarketplaceStatus(page);
+    const result = typeof reading === "string" ? reading : reading.status;
+    const messageWaitMs = reading?.confirmedComposer ? 750 : 8000;
     await assertMarketplaceAccess(page);
     if (result !== previous) { previous = result; stableSince = Date.now(); }
-    if (result && result !== "không rõ" && (!/thâm buy now/i.test(result) || Date.now() - stableSince >= 2000) && (result !== "send seller a message" || Date.now() - stableSince >= 8000)) return result;
+    if (result && result !== "không rõ" && (!/thâm buy now/i.test(result) || Date.now() - stableSince >= 2000) && (result !== "send seller a message" || Date.now() - stableSince >= messageWaitMs)) return result;
     if (Date.now() >= deadline) return "không rõ";
     if (!result && scrollPhase < 5 && Date.now() >= nextScrollAt) {
       await recoverLinkCheckScroll(page, scrollPhase++);
@@ -194,14 +196,14 @@ async function readCurrentMarketplaceStatus(page) {
     // matching words inside a description, sidebar or recommendation.
     const messageButton = panelButtons.some(item => /^(message|send seller a message)$/.test(item.label));
     const hasPurchaseAction = buttons.some(item => !/^(message|send seller a message)$/.test(item.label));
-    const composerLabel = !hasPurchaseAction && !messageButton && titleEl && [...document.querySelectorAll("label, span, p, div")].some(el => {
+    const composerLabel = !hasPurchaseAction && titleEl && [...document.querySelectorAll("label, span, p, div")].some(el => {
       if (!visible(el) || lower(el.innerText || el.textContent) !== "send seller a message") return false;
       const rect = el.getBoundingClientRect();
       if (rect.left < titleRect.left - 80 || rect.top < titleRect.bottom - 20) return false;
       let parent = el.parentElement;
       for (let depth = 0; parent && parent !== document.body && depth < 4; depth++, parent = parent.parentElement) {
         const input = [...parent.querySelectorAll('textarea, input:not([type="hidden"]), [contenteditable="true"], [role="textbox"]')].some(visible);
-        const send = [...parent.querySelectorAll('button, [role="button"]')].some(button => visible(button) && /^send$/i.test(clean(button.innerText || button.getAttribute("aria-label") || button.textContent)));
+        const send = [...parent.querySelectorAll('button, [role="button"]')].some(button => visible(button) && (/^send$/i.test(clean(button.innerText || button.textContent)) || /^send message to\s+\S/i.test(clean(button.getAttribute("aria-label")))));
         if (input && send) return true;
       }
       return false;
@@ -226,7 +228,8 @@ async function readCurrentMarketplaceStatus(page) {
       }
     }
     if (!labels.length && (messageButton || composerLabel)) labels.push("send seller a message");
-    return Array.from(new Set(labels)).join("- ");
+    const status=Array.from(new Set(labels)).join("- ");
+    return status === "send seller a message" && messageButton && composerLabel ? {status,confirmedComposer:true} : status;
   }).catch(() => "");
   return result;
 }

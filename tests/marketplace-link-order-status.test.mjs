@@ -118,3 +118,11 @@ test('Message loading first cannot mask checkout rendered later',async()=>{
  assert.equal(await classifyCurrentPage(page,4000),'buy now- make an offer');
  }finally{await page.close();}
 });
+test('complete Message action and seller composer are recognized quickly',async()=>{
+ const page=await browser.newPage();try{
+ await page.setContent('<main><h1>Product</h1><button>Message</button><footer><span>Send seller a message</span><textarea aria-label="Send seller a message"></textarea><button aria-label="Send message to Seller">Send</button></footer></main>');
+ const start=Date.now();assert.equal(await classifyCurrentPage(page,3000),'send seller a message');assert.ok(Date.now()-start<2500);
+ await page.setContent('<main><h1>Product</h1><button>Message</button><button>Buy now</button><button>Make an offer</button><footer><span>Send seller a message</span><textarea></textarea><button>Send</button></footer></main>');
+ assert.equal(await classifyCurrentPage(page,1000),'buy now- make an offer');
+ }finally{await page.close();}
+});
