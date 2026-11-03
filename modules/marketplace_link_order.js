@@ -229,12 +229,20 @@ async function readCurrentMarketplaceStatus(page) {
   return result;
 }
 
-async function classifyPage(page, url, timeoutMs) {
+export async function classifyPage(page, url, timeoutMs) {
   const started = Date.now();
   await prepareLinkCheckScrolling(page);
-  await page.goto(withFacebookLocale(url), { waitUntil: "domcontentloaded", timeout: timeoutMs });
-  await recoverLinkCheckScroll(page, 0);
-  return classifyCurrentPage(page, Math.max(0, timeoutMs - (Date.now() - started)));
+  const session=await page.target().createCDPSession();
+  try {
+    // Navigate to the new document without waiting for DOMContentLoaded or load.
+    const navigation=await session.send("Page.navigate", {url:withFacebookLocale(url)});
+    if(navigation.errorText)throw new Error(navigation.errorText);
+    await page.waitForFunction(expected => location.pathname === new URL(expected).pathname || /\/(login|checkpoint|two_step_verification|marketplace\/ineligible)\//.test(location.pathname), {timeout:Math.max(1,timeoutMs-(Date.now()-started))}, withFacebookLocale(url));
+    const status=await classifyCurrentPage(page, Math.max(0,timeoutMs-(Date.now()-started)));
+    // Discard remaining downloads/work for a result already identified.
+    await session.send("Page.stopLoading").catch(()=>{});
+    return status;
+  } finally { await session.detach().catch(()=>{}); }
 }
 
 export function partitionLinkTasks(tasks, count) {
@@ -443,12 +451,26 @@ export function createMarketplaceLinkOrderTool({
         const sheetLabel = `Sheet ${sheetIndex + 1}/${plans.length} ${plan.title}`;
         if (job) job.liveStatus = `${nickLabel}: ${sheetLabel}, hang doi chung ${queue.total} link`;
         log(profileId, "xep hang", `${nickLabel} bat dau ${sheetLabel}, lay link tu hang doi chung`);
-        const workers = checkPages.map(async page => {
+        const workers = checkPages.map(async (initialPage, pageIndex) => {
+          let page=initialPage;
+          let count=page.__linkCheckCount || 0;
           while (true) {
             if (runtime.stopRequested) throw stoppedError();
             if (queue.aborted) throw new Error(queue.abortReason || "Hang doi Sheet da dung.");
             const task = claimSharedTask(queue);
             if (!task) break;
+            if(count>=100){
+              const replacement=await createWindowPage(browser);
+              try {
+                await installLightLinkCheck(replacement);
+                await applyWindowTiling(browser,replacement,workerSlot*tabCount+pageIndex,workerTotal*tabCount);
+              }catch(error){await replacement.close({runBeforeUnload:false}).catch(()=>{});throw error;}
+              checkPages[pageIndex]=replacement;
+              if(loginPage===page)loginPage=replacement;
+              await page.close({runBeforeUnload:false}).catch(()=>{});
+              page=replacement;count=0;
+              log(profileId,"doi tab",`${nickLabel}: thay cua so sau 100 link, giu nguyen phien dang nhap`,"info");
+            }
             const label = `${nickLabel} ${sheetLabel} row ${task.rowNumber}`;
             if (job) job.liveStatus = `${label}; da check ${checked} link`;
             progress.startTask();
@@ -462,6 +484,7 @@ export function createMarketplaceLinkOrderTool({
               progress.summary.sheetPending = writer.pendingCount; progress.summary.sheetReview = writer.reviewCount; progress.summary.sheetConfirmed = writer.confirmedCount; progress.summary.sheetLastWrite = writer.lastWrite;
               progress.wrote(plan, task, status, {checkMs:checkFinished-checkStarted,saveMs:Date.now()-checkFinished});
               checked += 1;
+              page.__linkCheckCount=++count;
               if (shouldRetryStatus(status) && !isUnknownStatus(status)) retryable += 1;
               if (job) job.liveStatus = `${nickLabel}: da check ${checked} link; ${status}`;
               log(profileId, "check link", `${label} => ${status}; da luu cho ghi Sheet`, shouldRetryStatus(status) ? "warn" : "success");

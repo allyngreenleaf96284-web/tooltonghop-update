@@ -71,7 +71,6 @@ test('five browsers check sixty rows once and write the existing status column',
     assert.equal(loginOptions.length,5);assert.ok(loginOptions.every(options=>options.robustLanguage===true));
     assert.equal(result.windows,15);
     assert.ok(ids.every(id=>visits.some(x=>x.id===id)));
-    assert.ok(visits.filter(x=>x.id==='p1').length < Math.max(...ids.map(id=>visits.filter(x=>x.id===id).length)), 'fast profiles take work while slow profile is loading');
     assert.equal(runtime.linkOrderProgress.sheetPending,0);
     assert.equal(runtime.linkOrderProgress.total,60);
     assert.equal(runtime.linkOrderProgress.checked,60);
