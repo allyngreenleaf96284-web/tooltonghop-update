@@ -800,10 +800,14 @@
             <div id="linkOrderToolProgressList" class="tool-progress-list"></div>
           </section>
 
-          <section class="activity-panel">
-            <div class="activity-title"><span>Nhật ký</span><button id="openLogsFromLinkOrderBtn" class="ghost-btn small-btn">Chi tiết</button></div>
-            <div id="linkOrderActivityLog" class="activity-log"></div>
-          </section>
+          <div class="link-monitor-layout">
+            <section id="linkOrderMetrics" class="link-metrics" aria-label="Thông số check link"><p>Chưa có dữ liệu chạy.</p></section>
+            <details class="activity-panel link-log-sidebar">
+              <summary>Nhật ký</summary>
+              <div class="activity-title"><span>Lịch sử chạy</span><button id="openLogsFromLinkOrderBtn" class="ghost-btn small-btn">Chi tiết</button></div>
+              <div id="linkOrderActivityLog" class="activity-log"></div>
+            </details>
+          </div>
         </section>
         <section id="fullModule" class="module-view hidden">
           <header class="hero">

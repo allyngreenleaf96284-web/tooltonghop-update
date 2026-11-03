@@ -2834,6 +2834,21 @@ function linkOrderProgressPresentation(summary) {
   };
 }
 
+function renderLinkMetrics(summary) {
+  const target=$("linkOrderMetrics");if(!target)return;
+  if(!summary){target.innerHTML="<p>Chưa có dữ liệu chạy.</p>";return;}
+  const speed=summary.speed || {};
+  const duration=ms=>ms == null ? "Đang đo" : `${Math.floor(Math.round(ms/1000)/60)}p ${Math.round(ms/1000)%60}s`;
+  const seconds=ms=>ms == null ? "—" : `${(ms/1000).toFixed(2)}s`;
+  const groups=[
+    ["Tốc độ",[["Lượt check mới",speed.processed||0],["100 link đầu",duration(speed.first100Ms)],["100 link gần nhất",duration(speed.last100Ms)],["Trung bình / 100 link",duration(speed.average100Ms)],["Đọc trang / link",seconds(speed.lastCheckMs)],["Lưu máy / link",seconds(speed.lastSaveMs)]]],
+    ["Tiến độ",[["Hoàn tất",summary.completed||0],["Còn lại",Math.max(0,(summary.total||0)-(summary.completed||0))],["Cần check lại",Math.max(0,(summary.retryable||0)-(summary.manualReview||0))],["Cần xem tay",summary.manualReview||0],["Đang xử lý",summary.inFlight||0],["Nick hoạt động",`${summary.activeProfiles||0}/${summary.profileCount||0}`],["Lượt chạy",summary.pass||1],["Cửa sổ đã thay",summary.rotatedWindows||0]]],
+    ["Google Sheet",[["Đã ghi lượt này",summary.sheetConfirmed||0],["Chờ ghi (gom 100)",summary.sheetPending||0],["Cần đối chiếu",summary.sheetReview||0]]]
+  ];
+  const table=(heading,rows)=>`<section><h3>${escapeHtml(heading)}</h3><table><tbody>${rows.map(([label,value])=>`<tr><th scope="row">${escapeHtml(String(label))}</th><td>${escapeHtml(String(value))}</td></tr>`).join("")}</tbody></table></section>`;
+  target.innerHTML=`<div class="link-metric-groups">${groups.map(([heading,rows])=>table(heading,rows)).join("")}</div>${speed.recent?.length ? `<div class="link-speed-history">${table("Các đợt 100 link gần nhất",speed.recent.map(item=>[`Đợt ${item.batch}`,duration(item.durationMs)]))}</div>` : ""}<p class="link-write-destination">Ghi gần nhất: ${escapeHtml(summary.sheetLastWrite||"Chưa ghi trong lượt này")}</p>${summary.sheetWriteError ? `<p class="link-write-error">${escapeHtml(summary.sheetWriteError)}</p>` : ""}`;
+}
+
 function renderToolProgress(data) {
   if ($("toggleLoginPause")) {
     $("toggleLoginPause").textContent = data.loginPaused ? "Tiếp tục tất cả (F8)" : "Tạm dừng tất cả (F8)";
@@ -2912,10 +2927,11 @@ function renderToolProgress(data) {
     listId: "linkOrderToolProgressList",
     stateLabel: linkCounters?.stateLabel || (linkOrderProgress.total ? "đang chạy" : "idle"),
     countLabel: linkCounters?.countLabel || `${linkOrderProgress.completed} / ${linkOrderProgress.total}`,
-    textLabel: linkCounters?.textLabel || linkOrderProgress.summaryText,
+    textLabel: data.linkOrderProgress ? "Thông số chi tiết ở bảng bên dưới." : linkOrderProgress.summaryText,
     percent: linkCounters?.percent ?? linkOrderProgress.percent,
     jobs: linkOrderProgress.jobs
   });
+  renderLinkMetrics(data.linkOrderProgress);
   const fullProgress = buildProgress(state.fullBatchIds, "lam full");
   const loginProgress = buildProgress(state.loginBatchIds, "tool login");
   const postProgress = buildProgress(state.postBatchIds, "dang bai");
