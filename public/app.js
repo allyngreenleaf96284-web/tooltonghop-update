@@ -771,11 +771,19 @@ function renderRows() {
     return;
   }
 
-  rows.innerHTML = "";
+  const existing=new Map([...rows.querySelectorAll("tr[data-profile-id]")].map(row=>[row.dataset.profileId,row]));
+  if(!existing.size)rows.replaceChildren();
+  const wanted=new Set(profiles.map(profile=>profile.id));
+  for(const [id,row] of existing)if(!wanted.has(id))row.remove();
+  let position=0;
   const duplicateIds = new Set(state.duplicates.duplicateProfileIds || []);
   for (const profile of profiles) {
-    const tr = document.createElement("tr");
-    if (duplicateIds.has(profile.id)) tr.classList.add("duplicate-row");
+    const tr = existing.get(profile.id)||document.createElement("tr");
+    tr.dataset.profileId=profile.id;
+    const signature=JSON.stringify([profile,state.selectedIds.has(profile.id),duplicateIds.has(profile.id)]);
+    if(tr.dataset.renderSignature!==signature){
+    tr.dataset.renderSignature=signature;
+    tr.classList.toggle("duplicate-row",duplicateIds.has(profile.id));
     const action = profile.isRunning ? "Stop" : "Run";
     tr.innerHTML = `
       <td><input class="row-check" type="checkbox" data-id="${escapeAttr(profile.id)}" ${state.selectedIds.has(profile.id) ? "checked" : ""} /></td>
@@ -789,20 +797,13 @@ function renderRows() {
       <td>${escapeHtml(sheetValue(profile, "chi tiết", "chi tiet"))}</td>
       <td>${escapeHtml(profile.folderName)}</td>
     `;
-    rows.appendChild(tr);
+    }
+    if(rows.children[position]!==tr)rows.insertBefore(tr,rows.children[position]||null);
+    position++;
   }
 
-  rows.querySelectorAll(".run-btn").forEach((button) => {
-    button.addEventListener("click", () => toggleProfile(button.dataset.id, button.dataset.action, button));
-  });
-  rows.querySelectorAll(".row-check").forEach((checkbox) => {
-    checkbox.addEventListener("change", () => {
-      if (checkbox.checked) state.selectedIds.add(checkbox.dataset.id);
-      else state.selectedIds.delete(checkbox.dataset.id);
-      $("statSelected").textContent = state.selectedIds.size;
-      updateSelectAllState();
-    });
-  });
+  rows.onclick=event=>{const button=event.target.closest(".run-btn");if(button)toggleProfile(button.dataset.id,button.dataset.action,button);};
+  rows.onchange=event=>{const checkbox=event.target.closest(".row-check");if(!checkbox)return;if(checkbox.checked)state.selectedIds.add(checkbox.dataset.id);else state.selectedIds.delete(checkbox.dataset.id);$("statSelected").textContent=state.selectedIds.size;updateSelectAllState();};
   updateSelectAllState();
 }
 
@@ -1435,6 +1436,8 @@ function setActiveModule(moduleName) {
   $("proxyModule").classList.toggle("active", moduleName === "proxy");
   $("logsModule").classList.toggle("active", moduleName === "logs");
   render();
+  if(state.lastToolStatus)renderToolProgress(state.lastToolStatus);
+  renderLogs();
   if (moduleName === "proxy") refreshProxyStatus();
   if (moduleName === "logs") refreshToolStatus();
 }
@@ -2796,7 +2799,10 @@ function stopToolStatusPolling() {
   state.toolStatusTimer = null;
 }
 
+let toolStatusRequestActive=false;
 async function refreshToolStatus() {
+  if(toolStatusRequestActive)return;
+  toolStatusRequestActive=true;
   try {
     const { data } = await api("/api/tools/status");
     renderToolProgress(data);
@@ -2816,7 +2822,7 @@ async function refreshToolStatus() {
     }
   } catch {
     stopToolStatusPolling();
-  }
+  } finally { toolStatusRequestActive=false; }
 }
 
 function linkOrderProgressPresentation(summary) {
@@ -2835,7 +2841,7 @@ function linkOrderProgressPresentation(summary) {
 }
 
 function renderLinkMetrics(summary) {
-  const target=$("linkOrderMetrics");if(!target)return;
+  const target=$("linkOrderMetrics");if(!target || target.closest(".module-view.hidden"))return;
   if(!summary){target.innerHTML="<p>Chưa có dữ liệu chạy.</p>";return;}
   const speed=summary.speed || {};
   const duration=ms=>ms == null ? "Đang đo" : `${Math.floor(Math.round(ms/1000)/60)}p ${Math.round(ms/1000)%60}s`;
@@ -2850,6 +2856,7 @@ function renderLinkMetrics(summary) {
 }
 
 function renderToolProgress(data) {
+  state.lastToolStatus=data;
   if($("autoSheetSyncStatus") && data.autoSync){
     const sync=data.autoSync;
     $("autoSheetSyncStatus").textContent=sync.lastError ? `Đồng bộ Sheet lỗi: ${sync.lastError}` : `${sync.isTicking ? "Đang đồng bộ Sheet…" : "Tự đồng bộ Sheet: bật"}${sync.lastSyncedAt ? ` · Gần nhất ${new Date(sync.lastSyncedAt).toLocaleTimeString()}` : ""}${sync.deferredStructure ? " · Folder mới/xóa sẽ cập nhật khi batch kết thúc" : ""}`;
@@ -3154,7 +3161,7 @@ function syncRuntimeProfileRows() {
   const jobs = state.runtimeJobsById || new Map();
   for (const bodyId of RUNTIME_PROFILE_TABLE_BODIES) {
     const body = $(bodyId);
-    if (!body) continue;
+    if (!body || body.closest(".module-view.hidden")) continue;
     const table = body.closest("table");
     const headerRow = table?.querySelector("thead tr");
     if (headerRow && !headerRow.querySelector("[data-runtime-status-column]")) {
@@ -3180,7 +3187,8 @@ function syncRuntimeProfileRows() {
         cell.className = "runtime-status-cell";
         row.appendChild(cell);
       }
-      cell.innerHTML = `<span class="runtime-status runtime-${escapeAttr(presentation.tone)}">${escapeHtml(presentation.label)}</span>${presentation.detail ? `<small>${escapeHtml(presentation.detail)}</small>` : ""}`;
+      const statusHtml = `<span class="runtime-status runtime-${escapeAttr(presentation.tone)}">${escapeHtml(presentation.label)}</span>${presentation.detail ? `<small>${escapeHtml(presentation.detail)}</small>` : ""}`;
+      if(cell.innerHTML!==statusHtml)cell.innerHTML=statusHtml;
       row.classList.toggle("runtime-running-row", presentation.tone === "running");
     }
   }
@@ -3200,7 +3208,7 @@ function followRunningProfileRow() {
   if (!running) return;
   const profileId = String(running.profileId || "");
   const row = RUNTIME_PROFILE_TABLE_BODIES
-    .map((bodyId) => [...($(bodyId)?.querySelectorAll("tr[data-profile-id]") || [])].find((item) => item.dataset.profileId === profileId))
+    .map(bodyId=>{const body=$(bodyId);if(!body||body.closest(".module-view.hidden"))return null;return body.querySelector(`tr[data-profile-id="${CSS.escape(profileId)}"]`);})
     .find(Boolean);
   if (!row || row.closest(".module-view")?.classList.contains("hidden")) return;
   const tableWrap = row.closest(".table-wrap");
@@ -3235,6 +3243,7 @@ function renderToolProgressPanel({
   const textNode = $(textId);
   const barNode = $(barId);
   if (!panel || !list || !stateNode || !countNode || !textNode || !barNode) return;
+  if(panel.closest(".module-view.hidden"))return;
   if (!jobs.length) {
     panel.classList.add("hidden");
     list.innerHTML = "";
@@ -3407,6 +3416,7 @@ function visibleLogs() {
 }
 
 function renderLogs() {
+  if(state.activeModule!=="logs"){renderActivityLogs();return;}
   if (!$("logRows")) return;
   const logs = visibleLogs();
   $("logCount").textContent = `${logs.length} dòng`;
@@ -3415,7 +3425,8 @@ function renderLogs() {
     rows.innerHTML = `<div class="empty">Chưa có nhật ký phù hợp.</div>`;
     return;
   }
-  rows.innerHTML = `<div class="activity-list">${logs.map((log) => renderLogEntry(log)).join("")}</div>`;
+  const logHtml=`<div class="activity-list">${logs.map((log) => renderLogEntry(log)).join("")}</div>`;
+  if(rows.innerHTML!==logHtml)rows.innerHTML=logHtml;
   renderActivityLogs();
 }
 
@@ -3437,7 +3448,10 @@ function renderActivityLogs() {
 
 function renderActivityLogBox(id, logs) {
   const box = $(id);
-  if (!box) return;
+  if (!box || box.closest(".module-view.hidden") || box.closest("details:not([open])")) return;
+  const signature=logs.map(log=>log.id||JSON.stringify(log)).join("|");
+  if(box.dataset.logSignature===signature)return;
+  box.dataset.logSignature=signature;
   if (!logs.length) {
     box.innerHTML = `<div class="empty">Chưa có nhật ký.</div>`;
     return;
@@ -4090,3 +4104,6 @@ loadConfig()
     scheduleStateProxyRealtime();
   })
   .catch((error) => setStatus(error.message, true));
+
+// Populate a collapsed log only when the user opens it.
+document.querySelectorAll("details.link-log-sidebar").forEach(panel=>panel.addEventListener("toggle",()=>{if(panel.open)renderActivityLogs();}));
