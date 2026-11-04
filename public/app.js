@@ -847,6 +847,7 @@ function renderActiveModule() {
   if (state.activeModule === "pages") renderPageRows();
   if (state.activeModule === "avatar") renderAvatarRows();
   if (state.activeModule === "passwords") renderPasswordRows();
+  if (state.activeModule === "states") renderStateFillRows();
   if (state.activeModule === "proxy") renderProxyRows();
   syncRuntimeProfileRows();
 }
@@ -1448,6 +1449,8 @@ function setActiveModule(moduleName) {
   $("pageModule").classList.toggle("hidden", moduleName !== "pages");
   $("avatarModule").classList.toggle("hidden", moduleName !== "avatar");
   $("passwordModule").classList.toggle("hidden", moduleName !== "passwords");
+  $("stateFillModule")?.classList.toggle("hidden",moduleName!=="states");
+  $("stateFillModule")?.classList.toggle("active",moduleName==="states");
   $("proxyModule").classList.toggle("hidden", moduleName !== "proxy");
   $("logsModule").classList.toggle("hidden", moduleName !== "logs");
   $("profileModule").classList.toggle("active", moduleName === "profiles");
@@ -2896,6 +2899,9 @@ function renderLinkMetrics(summary) {
 
 function renderToolProgress(data) {
   state.lastToolStatus=data;
+  if(state.activeModule==="states" && (data.currentTool==="dien bang" || (data.jobs||[]).some(job=>job.tool==="dien bang"))){
+    const jobs=data.jobs||[];$("stateFillStatus").textContent=`Điền bang: ${jobs.filter(job=>["success","done","error"].includes(job.status)).length}/${jobs.length} · ${data.running?"Đang chạy":"Hoàn tất"}`;
+  }
   if($("autoSheetSyncStatus") && data.autoSync){
     const sync=data.autoSync;
     $("autoSheetSyncStatus").textContent=sync.lastError ? `Đồng bộ Sheet lỗi: ${sync.lastError}` : `${sync.isTicking ? "Đang đồng bộ Sheet…" : "Tự đồng bộ Sheet: bật"}${sync.lastSyncedAt ? ` · Gần nhất ${new Date(sync.lastSyncedAt).toLocaleTimeString()}` : ""}${sync.deferredStructure ? " · Folder mới/xóa sẽ cập nhật khi batch kết thúc" : ""}`;
@@ -3147,7 +3153,7 @@ const RUNTIME_PROFILE_TABLE_BODIES = [
   "renewStandaloneRows",
   "pageRows",
   "avatarRows",
-  "passwordRows"
+  "passwordRows", "stateFillRows"
 ];
 
 function runtimeJobPresentation(job) {
@@ -4158,3 +4164,25 @@ loadConfig()
 
 // Populate a collapsed log only when the user opens it.
 document.querySelectorAll("details.link-log-sidebar").forEach(panel=>panel.addEventListener("toggle",()=>{if(panel.open)renderActivityLogs();}));
+
+const stateFillSelected=new Set();
+function stateFillProfiles(){const query=($("stateFillSearch")?.value||"").trim().toLowerCase();return state.profiles.filter(profile=>(state.selectedFolderId==="all"||profile.folderId===state.selectedFolderId)&&(!query||`${profile.name} ${profile.uid}`.toLowerCase().includes(query))).sort(compareProfiles);}
+function renderStateFillRows(){
+ const profiles=stateFillProfiles(),rows=$("stateFillRows");if(!rows)return;
+ const visible=pageProfileTable(profiles,rows,renderStateFillRows);
+ rows.innerHTML=visible.map(profile=>`<tr><td><input type="checkbox" class="state-fill-check" data-id="${escapeAttr(profile.id)}" ${stateFillSelected.has(profile.id)?"checked":""}></td><td>${escapeHtml(profile.name)}</td><td>${escapeHtml(profile.uid||"")}</td><td>${escapeHtml(sheetValue(profile,"bang")||"")}</td><td>${escapeHtml(profile.folderName)}</td></tr>`).join("");
+ $("stateFillCount").textContent=`${profiles.length} profile · ${stateFillSelected.size} đã chọn`;
+ const selected=profiles.filter(profile=>stateFillSelected.has(profile.id)).length;
+ $("stateFillSelectAll").checked=profiles.length>0&&selected===profiles.length;$("stateFillSelectAll").indeterminate=selected>0&&selected<profiles.length;
+ rows.onchange=event=>{const input=event.target.closest(".state-fill-check");if(!input)return;if(input.checked)stateFillSelected.add(input.dataset.id);else stateFillSelected.delete(input.dataset.id);$("stateFillCount").textContent=`${profiles.length} profile · ${stateFillSelected.size} đã chọn`;};
+}
+async function runStateFill(ids){
+ if(!ids.length){$("stateFillStatus").textContent="Chọn ít nhất một profile.";return;}
+ try{await saveConfig();$("stateFillStatus").textContent="Đang bắt đầu điền bang…";await api("/api/tools/dien-bang",{method:"POST",body:JSON.stringify({profileIds:orderProfileIdsTopDown(ids,"stateFillRows")})});startToolStatusPolling();await refreshToolStatus();}
+ catch(error){$("stateFillStatus").textContent=error.message;}
+}
+$("stateFillSearch")?.addEventListener("input",renderStateFillRows);
+$("stateFillSelectAll")?.addEventListener("change",event=>{for(const profile of stateFillProfiles()){if(event.target.checked)stateFillSelected.add(profile.id);else stateFillSelected.delete(profile.id);}renderStateFillRows();});
+$("stateFillRunSelected")?.addEventListener("click",()=>runStateFill([...stateFillSelected]));
+$("stateFillRunAll")?.addEventListener("click",()=>runStateFill(stateFillProfiles().map(profile=>profile.id)));
+$("stateFillStop")?.addEventListener("click",stopCurrentTool);

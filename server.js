@@ -1,3 +1,4 @@
+import { createDienBang } from "./modules/dienbang.js";
 ﻿import { createServer } from "node:http";
 import { copyFile, mkdir, readFile, writeFile, stat } from "node:fs/promises";
 import { appendFileSync, existsSync, mkdirSync } from "node:fs";
@@ -3194,6 +3195,8 @@ const toolLoginModule = createToolLogin({
   runtime: toolRuntime
 });
 
+const dienBangModule=createDienBang({runtime:toolRuntime,createSheetRowSession,addRuntimeLog});
+
 const dienMatKhauModule = createDienMatKhau({
   addRuntimeLog,
   createSheetRowSession,
@@ -3683,6 +3686,12 @@ async function handleApi(req, res) {
         maxRetries: config.loginUnknownRetryCount
       });
       return jsonResponse(res, 200, { ok: true, data });
+    }
+    if(req.method === "POST" && url.pathname === "/api/tools/dien-bang"){
+      const body=await parseBody(req);
+      const config=await resolveAccountSheetConfig(await readConfig());
+      const data=await startAutoRetryBatch({runtime:toolRuntime,module:dienBangModule,tool:"dien bang",profileIds:body.profileIds||[],config,options:{},addRuntimeLog});
+      return jsonResponse(res,200,{ok:true,data});
     }
     if (req.method === "POST" && url.pathname === "/api/tools/dien-mat-khau") {
       const body = await parseBody(req);

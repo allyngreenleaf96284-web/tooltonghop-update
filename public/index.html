@@ -109,6 +109,7 @@
               <small>Ảnh đại diện Facebook</small>
             </span>
           </button>
+          <button class="module-item" data-module="states"><span class="module-icon">◆</span><span><strong>Điền bang</strong><small>Tên profile → bang Mỹ</small></span></button>
           <button class="module-item" data-module="passwords">
             <span class="module-icon">◆</span>
             <span>
@@ -2027,6 +2028,11 @@
           </section>
         </section>
 
+        <section id="stateFillModule" class="module-view hidden">
+          <header class="hero"><div><h2>Điền bang</h2><p id="stateFillStatus">Đọc tên profile hiện tại trong Sheet, lấy bang Mỹ xuất hiện sau cùng. Không tìm thấy thì giữ giá trị đang có.</p></div></header>
+          <section class="control-panel"><input id="stateFillSearch" placeholder="Tìm tên hoặc UID"><button id="stateFillRunSelected" class="primary">Điền bang đã chọn</button><button id="stateFillRunAll" class="ghost-btn">Điền toàn bộ danh sách đã lọc</button><button id="stateFillStop" class="ghost-btn">Dừng hẳn</button><span id="stateFillCount"></span></section>
+          <div class="table-wrap"><table><thead><tr><th><input id="stateFillSelectAll" type="checkbox" aria-label="Chọn toàn bộ danh sách điền bang"></th><th>Tên profile hiện tại</th><th>UID</th><th>Bang đang có</th><th>Folder</th></tr></thead><tbody id="stateFillRows"></tbody></table></div>
+        </section>
         <section id="passwordModule" class="module-view hidden">
           <header class="hero">
             <div>
