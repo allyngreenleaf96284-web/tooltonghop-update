@@ -2030,8 +2030,14 @@
 
         <section id="stateFillModule" class="module-view hidden">
           <header class="hero"><div><h2>Điền bang</h2><p id="stateFillStatus">Đọc tên profile hiện tại trong Sheet, lấy bang Mỹ xuất hiện sau cùng. Không tìm thấy thì giữ giá trị đang có.</p></div></header>
-          <section class="control-panel"><input id="stateFillSearch" placeholder="Tìm tên hoặc UID"><button id="stateFillRunSelected" class="primary">Điền bang đã chọn</button><button id="stateFillRunAll" class="ghost-btn">Điền toàn bộ danh sách đã lọc</button><button id="stateFillStop" class="ghost-btn">Dừng hẳn</button><span id="stateFillCount"></span></section>
-          <div class="table-wrap"><table><thead><tr><th><input id="stateFillSelectAll" type="checkbox" aria-label="Chọn toàn bộ danh sách điền bang"></th><th>Tên profile hiện tại</th><th>UID</th><th>Bang đang có</th><th>Folder</th></tr></thead><tbody id="stateFillRows"></tbody></table></div>
+          <section class="control-panel state-fill-controls"><input id="stateFillSearch" placeholder="Tìm tên hoặc UID"><button id="stateFillRunSelected" class="primary">Điền bang đã chọn</button><button id="stateFillRunMissing" class="primary alt-primary">Điền thiếu bang</button><button id="stateFillRunAll" class="ghost-btn">Điền toàn bộ danh sách đã lọc</button><button id="stateFillStop" class="ghost-btn">Dừng hẳn</button><span id="stateFillCount"></span></section>
+          <section class="tool-progress" id="stateFillProgressPanel">
+            <div class="tool-progress-title"><span>Tiến độ điền bang</span><span id="stateFillProgressState" class="chip">Chưa chạy</span></div>
+            <div class="tool-progress-bar-track"><div id="stateFillProgressBar" class="tool-progress-bar-fill" style="width:0%"></div></div>
+            <div id="stateFillProgressStats" class="profile-table-pager">Chọn profile hoặc bấm Điền thiếu bang để bắt đầu.</div>
+            <p id="stateFillProgressCurrent"></p>
+          </section>
+          <div class="table-wrap"><table><thead><tr><th><input id="stateFillSelectAll" type="checkbox" aria-label="Chọn toàn bộ danh sách điền bang"></th><th>Tên profile hiện tại</th><th>UID</th><th>Bang đang có</th><th>Folder</th><th>Kết quả điền bang</th></tr></thead><tbody id="stateFillRows"></tbody></table></div>
         </section>
         <section id="passwordModule" class="module-view hidden">
           <header class="hero">

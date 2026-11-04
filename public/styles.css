@@ -1772,3 +1772,5 @@ tr.duplicate-row {
 .profile-table-pager { display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:10px 12px; color:#d4e4f7; font-size:13px; }
 .profile-table-pager small { color:#9cb1cd; }
 .profile-table-pager button:disabled { opacity:.4; cursor:default; }
+
+.state-fill-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.state-fill-controls input{flex:1;min-width:210px}#stateFillProgressCurrent{padding:0 12px 12px;margin:0;color:#b9cde5}#stateFillProgressStats{font-variant-numeric:tabular-nums;line-height:1.8}

@@ -3100,6 +3100,7 @@ function getToolStatusPayload() {
     loginPaused: toolRuntime.loginPaused === true,
     batch: toolRuntime.batch || null,
     linkOrderProgress: toolRuntime.linkOrderProgress || null,
+    stateFillProgress: toolRuntime.stateFillProgress || null,
     jobs: [...toolRuntime.jobs.values()],
     logs: toolRuntime.logs.slice(-1000),
     autoSync: {
@@ -3690,8 +3691,14 @@ async function handleApi(req, res) {
     if(req.method === "POST" && url.pathname === "/api/tools/dien-bang"){
       const body=await parseBody(req);
       const config=await resolveAccountSheetConfig(await readConfig());
-      const data=await startAutoRetryBatch({runtime:toolRuntime,module:dienBangModule,tool:"dien bang",profileIds:body.profileIds||[],config,options:{},addRuntimeLog});
-      return jsonResponse(res,200,{ok:true,data});
+      if(toolRuntime.running)throw new Error("Đang có tool khác chạy.");
+      const ids=[...new Set((body.profileIds||[]).map(String))];
+      if(!ids.length)throw new Error("Chọn ít nhất một profile.");
+      void dienBangModule.runQueue(ids,config,{onlyMissing:body.onlyMissing===true}).catch(error=>{
+        if(toolRuntime.stateFillProgress)toolRuntime.stateFillProgress.error=error.message;
+        addRuntimeLog(`Điền bang: ${error.message}`,"error","",{tool:"dien bang"});
+      });
+      return jsonResponse(res,200,{ok:true,data:{started:ids.length}});
     }
     if (req.method === "POST" && url.pathname === "/api/tools/dien-mat-khau") {
       const body = await parseBody(req);
