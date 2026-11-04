@@ -1687,10 +1687,13 @@ async function getHideAccount(config) {
 
 async function resolveAccountSheetConfig(config, options = {}) {
   const { requireSheet = true, autoAssign = true } = options;
-  const account = await getHideAccount(config);
+  const detectedAccount = await getHideAccount(config);
+  const account = { ...detectedAccount, id: `${detectedAccount.provider}:primary` };
   const spreadsheetIds = normalizeSpreadsheetIds(config.spreadsheetIds?.length ? config.spreadsheetIds : [config.spreadsheetId]);
   const accountSheets = config.accountSheets && typeof config.accountSheets === "object" ? { ...config.accountSheets } : {};
-  let spreadsheetId = String(accountSheets[account.id] || "").trim();
+  const providerBindings=Object.entries(accountSheets).filter(([id,sheet])=>id.startsWith(`${account.provider}:`)&&spreadsheetIds.includes(sheet));
+  const legacyBinding=providerBindings.find(([,sheet])=>sheet===config.spreadsheetId) || providerBindings.find(([id])=>id===detectedAccount.id) || providerBindings.find(([id])=>id===config.lastHideAccountId) || providerBindings[0];
+  let spreadsheetId = String(accountSheets[account.id] || legacyBinding?.[1] || "").trim();
 
   if (spreadsheetId && !spreadsheetIds.includes(spreadsheetId)) {
     delete accountSheets[account.id];
@@ -1722,6 +1725,7 @@ async function resolveAccountSheetConfig(config, options = {}) {
   }
 
   if (spreadsheetId) {
+    accountSheets[account.id] = spreadsheetId;
     const existingAccountSheet = String(config.accountSheets?.[account.id] || "").trim();
     const existingKnown = config.knownHideAccounts?.[account.id] || {};
     const unchanged =
@@ -2065,7 +2069,7 @@ async function ensureSheets(client, titles) {
   const existing = new Map(meta.sheets.map((sheet) => [sheet.properties.title, sheet.properties.sheetId]));
   const requests = [];
   for (const title of titles) {
-    if (!existing.has(title)) requests.push({ addSheet: { properties: { title } } });
+    if (!existing.has(title)) { requests.push({ addSheet: { properties: { title } } }); existing.set(title, null); }
   }
   await client.batchUpdate(requests);
 }
@@ -2148,7 +2152,7 @@ async function readAllRows(client, sheetTitles, defaultHeaders) {
     const values = valuesByTitle.get(title) || [];
     const headers = values[0]?.length ? values[0] : defaultHeaders;
     const rows = values.slice(1).map((row) => rowToObject(headers, row));
-    result.set(title, { headers, rows });
+    result.set(title, { headers, rows, hasExplicitHeaders: Boolean(values[0]?.length) });
   }
   return result;
 }
@@ -2234,7 +2238,12 @@ function preserveStableSheetFields(nextRow, oldRow) {
   return nextRow;
 }
 
-async function syncSheets(config) {
+let managedSyncTail=Promise.resolve();
+function syncSheets(config) {
+  const work=managedSyncTail.then(()=>performSheetSync(config));
+  managedSyncTail=work.catch(()=>{});return work;
+}
+async function performSheetSync(config) {
   if (!config.spreadsheetId || !config.credentialsPath) {
     throw new Error("Bạn cần cấu hình Spreadsheet ID và Service Account JSON trước khi đồng bộ.");
   }
@@ -2254,12 +2263,21 @@ async function syncSheets(config) {
     ...new Set([
       ...previousManagedTitles.filter((title) => allTitles.includes(title)),
       ...activeTitles,
+      ...allTitles.filter(title=>title!==META_SHEET),
       config.trashSheetName
     ])
   ];
   const sheetsData = await readAllRows(client, syncTitles, config.headers);
+  // Recover old managed folder tabs left behind by earlier versions, even
+  // when their names have already disappeared from the metadata registry.
+  for(const [title,sheet] of sheetsData){
+    if(activeTitles.includes(title)||title===config.trashSheetName||previousManagedTitles.includes(title))continue;
+    if(sheet.hasExplicitHeaders && sheet.headers.some(header=>normalizeHeaderName(header)==="id hide"))previousManagedTitles.push(title);
+    else sheetsData.delete(title);
+  }
   const headers = mergeHeaders(config.headers, sheetsData);
 
+  const source = config.credentialSourceSpreadsheetId ? await cachedCredentialSource(config) : null;
   const existingById = new Map();
   const trashRows = [...(sheetsData.get(config.trashSheetName)?.rows || [])];
   const trashById = new Map();
@@ -2338,6 +2356,7 @@ async function syncSheets(config) {
       _from_sheet: ""
     };
     preserveStableSheetFields(nextRow, oldRow);
+    Object.assign(nextRow, missingCredentials(nextRow, source?.byUid));
     if (!rowsByTarget.has(profile.sheetTitle)) rowsByTarget.set(profile.sheetTitle, []);
     rowsByTarget.get(profile.sheetTitle).push(nextRow);
     updated += 1;
@@ -2345,8 +2364,14 @@ async function syncSheets(config) {
 
   for (const title of activeTitles) {
     const rows = rowsByTarget.get(title) || [];
-    await client.clearValues(title);
-    await client.updateValues(title, [headers, ...rows.map((row) => objectToRow(headers, row))]);
+    const values=[headers,...rows.map(row=>objectToRow(headers,row))];
+    const old=sheetsData.get(title);
+    const before=old ? [old.headers,...old.rows.map(row=>objectToRow(old.headers,row))] : [];
+    if(JSON.stringify(values)!==JSON.stringify(before)){
+      const padded=[...values];
+      while(padded.length<before.length)padded.push(headers.map(()=>""));
+      await client.updateValues(title,padded);
+    }
   }
 
   const nextTrashRows = trashRows.filter((row) => {
@@ -2363,12 +2388,14 @@ async function syncSheets(config) {
     new Set(hideState.duplicates.duplicateProfileIds),
     config.trashSheetName
   );
-  for (const oldTitle of previousManagedTitles) {
-    if (!activeTitles.includes(oldTitle) && allTitles.includes(oldTitle)) {
-      await client.clearValues(oldTitle);
-      await client.updateValues(oldTitle, [headers]);
-    }
+  const obsolete=previousManagedTitles.filter(title=>!activeTitles.includes(title)&&allTitles.includes(title)&&title!==config.trashSheetName&&title!==META_SHEET);
+  if(obsolete.length){
+    const backupDir=path.join(__dirname,"data","sheet-folder-backups");await mkdir(backupDir,{recursive:true});
+    await writeFile(path.join(backupDir,`${config.spreadsheetId}-${Date.now()}.json`),JSON.stringify(obsolete.map(title=>({title,...sheetsData.get(title)}))),"utf8");
+    await client.batchUpdate(obsolete.map(title=>({deleteSheet:{sheetId:sheetIdsByTitle.get(title)}})));
   }
+  if(activeTitles.length) await client.batchUpdate([config.trashSheetName,META_SHEET].filter(title=>!activeTitles.includes(title)).map(title=>({updateSheetProperties:{properties:{sheetId:sheetIdsByTitle.get(title),hidden:true},fields:"hidden"}})));
+
   await writeManagedTitles(client, activeTitles);
   const cacheRowsByTarget = new Map(activeTitles.map((title) => [title, {
     headers,
@@ -3079,7 +3106,8 @@ function getToolStatusPayload() {
       isTicking: backgroundSyncState.isTicking,
       lastCheckedAt: backgroundSyncState.lastCheckedAt || null,
       lastSyncedAt: backgroundSyncState.lastSyncedAt || null,
-      lastError: backgroundSyncState.lastError || ""
+      lastError: backgroundSyncState.lastError || "",
+      deferredStructure: backgroundSyncState.deferredStructure === true
     }
   };
 }
@@ -3883,18 +3911,58 @@ async function handleApi(req, res) {
   }
 }
 
-async function runBackgroundHideSheetSync() {
-  return false;
+const sourceCache=new Map();
+async function cachedCredentialSource(config){
+ const key=`${config.credentialsPath}|${config.credentialSourceSpreadsheetId}`,cached=sourceCache.get(key);
+ if(cached&&Date.now()-cached.at<300000)return cached.value;
+ const value=await readCredentialSourceMap(config,config.credentialSourceSpreadsheetId);
+ sourceCache.clear();sourceCache.set(key,{at:Date.now(),value});return value;
 }
-
-function startBackgroundHideSheetSync() {
-  backgroundSyncState.enabled = false;
-  backgroundSyncState.isTicking = false;
-  backgroundSyncState.lastError = "";
-  if (backgroundSyncState.timer) {
-    clearInterval(backgroundSyncState.timer);
-    backgroundSyncState.timer = null;
+function missingCredentials(row,source){
+ const value=name=>Object.entries(row||{}).find(([key])=>normalizeHeaderName(key)===name)?.[1];
+ if(String(value("mat khau")||"").trim())return {};
+ const uid=String(value("uid")||"").replace(/\D/g,"");const match=source?.get(uid);
+ if(!match?.password)return {};
+ const result={"mật khẩu":match.password};
+ if(!String(value("2fa")||"").trim()&&match.twofa)result["2fa"]=match.twofa;
+ if(!String(value("cookie")||"").trim()&&match.cookie)result.cookie=match.cookie;
+ return result;
+}
+async function runBackgroundHideSheetSync() {
+ if(backgroundSyncState.isTicking)return;
+ backgroundSyncState.isTicking=true;backgroundSyncState.lastCheckedAt=Date.now();
+ try{
+  const config=await resolveAccountSheetConfig(await readConfig(),{requireSheet:false});
+  if(!config.spreadsheetId||!config.credentialsPath)return;
+  const state=await getHideState(config);
+  backgroundSyncState.deferredStructure=false;
+  const signature=hashText(JSON.stringify([config.spreadsheetId,state.folders,state.profiles.map(p=>[p.id,p.name,p.folderId])]));
+  const structure=hashText(JSON.stringify([config.spreadsheetId,state.folders,state.profiles.map(p=>[p.id,p.folderId])]));
+  backgroundSyncState.deferredStructure=toolRuntime.running && backgroundSyncState.structure!==structure;
+  if(!toolRuntime.running && backgroundSyncState.structure!==structure){
+   await syncSheets(config);backgroundSyncState.structure=structure;backgroundSyncState.lastSignature=signature;
+  }else if(backgroundSyncState.lastSignature!==signature || Date.now()-(backgroundSyncState.lastCredentialScan||0)>60000){
+   const session=await createSheetRowSession(config,state.profiles.map(p=>p.id));
+   const source=config.credentialSourceSpreadsheetId ? await cachedCredentialSource(config):null;
+   for(const profile of state.profiles){
+    const row=session.rows.get(profile.id);if(!row)continue;
+    const update=missingCredentials(row,source?.byUid);
+    if(row["tên profile hiện tại"]!==profile.name)update["tên profile hiện tại"]=profile.name;
+    if(Object.keys(update).length)await session.updateOne(profile.id,update);
+   }
+   await session.flushAll();
+   if(backgroundSyncState.structure===structure)backgroundSyncState.lastSignature=signature;
+   backgroundSyncState.lastCredentialScan=Date.now();
   }
+  backgroundSyncState.lastSyncedAt=Date.now();backgroundSyncState.lastError="";
+ }catch(error){backgroundSyncState.lastError=String(error.message||error);}
+ finally{backgroundSyncState.isTicking=false;}
+}
+function startBackgroundHideSheetSync() {
+ backgroundSyncState.enabled=true;
+ if(backgroundSyncState.timer)clearInterval(backgroundSyncState.timer);
+ backgroundSyncState.timer=setInterval(()=>void runBackgroundHideSheetSync(),15000);
+ backgroundSyncState.timer.unref?.();
 }
 
 function startProxyMonitor() {

@@ -2850,6 +2850,10 @@ function renderLinkMetrics(summary) {
 }
 
 function renderToolProgress(data) {
+  if($("autoSheetSyncStatus") && data.autoSync){
+    const sync=data.autoSync;
+    $("autoSheetSyncStatus").textContent=sync.lastError ? `Đồng bộ Sheet lỗi: ${sync.lastError}` : `${sync.isTicking ? "Đang đồng bộ Sheet…" : "Tự đồng bộ Sheet: bật"}${sync.lastSyncedAt ? ` · Gần nhất ${new Date(sync.lastSyncedAt).toLocaleTimeString()}` : ""}${sync.deferredStructure ? " · Folder mới/xóa sẽ cập nhật khi batch kết thúc" : ""}`;
+  }
   if ($("toggleLoginPause")) {
     $("toggleLoginPause").textContent = data.loginPaused ? "Tiếp tục tất cả (F8)" : "Tạm dừng tất cả (F8)";
     $("toggleLoginPause").disabled = !data.running || data.currentTool !== "tool login";
