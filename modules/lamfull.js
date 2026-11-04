@@ -1,3 +1,5 @@
+import { checkThreeVDisplayName } from "./early_display_name.js";
+import { installIncidentalPopupGuard, dismissIncidentalPopups, guardManagerPopupActions } from "./incidental_popups.js";
 import { installSellerStateGuard } from "./seller_state_guard.js";
 import { execFile } from "node:child_process";
 import fs from "node:fs";
@@ -652,7 +654,9 @@ export function createLamFull({
     if (typeof manager.detectInitialMarketplaceState !== "function") return () => {};
     const original = manager.detectInitialMarketplaceState;
     manager.detectInitialMarketplaceState = async function patchedDetectInitialMarketplaceState(page) {
+      await dismissIncidentalPopups(page);
       const state = await original.call(this, page);
+      await checkThreeVDisplayName(page,state);
       if (state?.kind === "progress" && [2, 3].includes(Number(state.totalSteps))) {
         capture.value = `${Number(state.totalSteps)}v`;
         await writeSheet(sheetSession, profileId, {
@@ -806,6 +810,8 @@ export function createLamFull({
     const manager = getManager({ fresh: true });
     const locationManager = getLocationManager({ fresh: true });
     patchManager(manager, locationManager);
+    guardManagerPopupActions(manager);
+    guardManagerPopupActions(locationManager);
     // Replace the bundled 1.4-second chooser for standalone Full and Login -> Full.
     manager.chooseConditionNew = (page) => chooseListingCondition(page, options.condition || "New");
     if (options.existingSession?.configureManager) options.existingSession.configureManager(manager);
@@ -898,6 +904,7 @@ export function createLamFull({
         await step(profileId, job, "mo profile full man hinh", async () => {
           browser = await manager.connectBrowser(profileId);
           page = await browser.newPage();
+          await installIncidentalPopupGuard(page);
           await page.bringToFront();
           if (typeof manager.maximizeBrowserWindow === "function") await manager.maximizeBrowserWindow(browser, page).catch(() => {});
           const viewport = await applyStableViewport(page, workerSlot, workerTotal);
@@ -913,6 +920,7 @@ export function createLamFull({
 
       }
 
+      await installIncidentalPopupGuard(page);
       currentName = await step(profileId, job, "quet ten profile Hide", async () =>
         readLatestHideProfileName(manager, profileId, currentName || profileId)
       , { timeoutMs: 30000 });

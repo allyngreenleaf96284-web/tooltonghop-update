@@ -1,3 +1,4 @@
+import { installIncidentalPopupGuard, dismissIncidentalPopups, guardManagerPopupActions } from "./incidental_popups.js";
 import crypto from "node:crypto";
 import { ensureLoginEnglish } from "./login_language.js";
 import { withFacebookLocale, installMarketplaceAccessGuard, isFacebookCaptchaError } from "./facebook_locale.js";
@@ -2373,6 +2374,9 @@ export function createDangNhap({ addRuntimeLog }) {
   }
 
   async function performFacebookLogin(manager, page, row, profileId, updateLiveStatus, options = {}) {
+    guardManagerPopupActions(manager);
+    await installIncidentalPopupGuard(page);
+    await dismissIncidentalPopups(page);
     const forceAccountLogin = Boolean(options?.forceAccountLogin);
     installMarketplaceAccessGuard(manager, page, profileId,
       getRawField(row?.raw, ["ten profile hien tai", "ten chuan"]) || row?.name || profileId,
