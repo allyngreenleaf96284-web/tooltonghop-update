@@ -1768,3 +1768,7 @@ tr.duplicate-row {
 .link-log-sidebar .activity-log { height:auto; min-height:0; max-height:360px; }
 @media(max-width:1200px){.link-monitor-layout{grid-template-columns:minmax(0,1fr)}.link-metric-groups{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:850px){.link-metric-groups{grid-template-columns:minmax(0,1fr)}}
+
+.profile-table-pager { display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:10px 12px; color:#d4e4f7; font-size:13px; }
+.profile-table-pager small { color:#9cb1cd; }
+.profile-table-pager button:disabled { opacity:.4; cursor:default; }

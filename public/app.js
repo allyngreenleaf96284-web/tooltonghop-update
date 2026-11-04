@@ -1,3 +1,6 @@
+const profileNameCollator=new Intl.Collator("vi",{numeric:true,sensitivity:"base"});
+const profileFolderCollator=new Intl.Collator("vi",{sensitivity:"base"});
+const runtimeIdCollator=new Intl.Collator("en",{numeric:true});
 ﻿const state = {
   folders: [],
   profiles: [],
@@ -722,6 +725,8 @@ function primeToolProgress(profileIds, liveStatus, batchKey = "generic") {
 function orderProfileIdsTopDown(profileIds, rowsId) {
   const requested = [...new Set((profileIds || []).map((id) => String(id || "").trim()).filter(Boolean))];
   const wanted = new Set(requested);
+  const paging=profileTablePages.get(rowsId);
+  if(paging){const ordered=paging.profiles.map(profile=>profile.id).filter(id=>wanted.has(id));const seen=new Set(ordered);return [...ordered,...requested.filter(id=>!seen.has(id))];}
   const rows = $(rowsId);
   const visibleOrder = rows
     ? [...rows.querySelectorAll("tr")]
@@ -747,7 +752,7 @@ function compareProfiles(a, b) {
   const dir = state.sortDir === "desc" ? -1 : 1;
   const av = sortValue(a, state.sortKey);
   const bv = sortValue(b, state.sortKey);
-  return av.localeCompare(bv, "vi", { numeric: true, sensitivity: "base" }) * dir;
+  return profileNameCollator.compare(av,bv) * dir;
 }
 
 function sortValue(profile, key) {
@@ -758,6 +763,28 @@ function sortValue(profile, key) {
   return profile.name || "";
 }
 
+const profileTablePages=new Map();
+function pageProfileTable(profiles,body,renderRows){
+  const key=JSON.stringify([state.selectedFolderId,...Object.entries(state).filter(([name])=>/Query$|Filter$|^sort/.test(name))]);
+  let paging=profileTablePages.get(body.id);
+  if(!paging||paging.key!==key){paging={key,page:0};profileTablePages.set(body.id,paging);}
+  paging.profiles=profiles;paging.render=renderRows;paging.body=body;
+  const size=100,totalPages=Math.max(1,Math.ceil(profiles.length/size));
+  paging.page=Math.min(paging.page,totalPages-1);
+  let controls=document.getElementById(body.id+"Pager");
+  if(!controls){controls=document.createElement("div");controls.id=body.id+"Pager";controls.className="profile-table-pager";const wrap=body.closest(".table-wrap")||body.closest("table");wrap.before(controls);}
+  const start=paging.page*size;
+  controls.innerHTML=`<span>Hiển thị ${profiles.length?start+1:0}–${Math.min(start+size,profiles.length)} / ${profiles.length} profile · Trang ${paging.page+1}/${totalPages}</span><button type="button" class="ghost-btn small-btn" data-page="prev" ${paging.page===0?"disabled":""}>Trước</button><button type="button" class="ghost-btn small-btn" data-page="next" ${paging.page>=totalPages-1?"disabled":""}>Sau</button><small>Chọn tất cả áp dụng toàn bộ danh sách đã lọc.</small>`;
+  controls.onclick=event=>{const button=event.target.closest("button[data-page]");if(!button||button.disabled)return;paging.page+=button.dataset.page==="next"?1:-1;paging.render();syncRuntimeProfileRows();};
+  return profiles.slice(start,start+size);
+}
+let lastUiInteraction=0,passiveRenderTimer=null;
+for(const event of ["pointerdown","wheel","keydown"]){document.addEventListener(event,()=>{lastUiInteraction=performance.now();},{capture:true,passive:true});}
+function renderPassiveUpdate(){
+ if(performance.now()-lastUiInteraction<800){clearTimeout(passiveRenderTimer);passiveRenderTimer=setTimeout(renderPassiveUpdate,850);return;}
+ render();
+}
+
 function renderRows() {
   const rows = $("profileRows");
   const profiles = visibleProfiles();
@@ -765,6 +792,7 @@ function renderRows() {
   $("statSelected").textContent = state.selectedIds.size;
   updateSelectionSummary("profileSelectionSummary", "clearSelectionBtn", state.selectedIds.size);
 
+  const pageProfiles=pageProfileTable(profiles,rows,renderRows);
   if (!profiles.length) {
     rows.innerHTML = `<tr><td colspan="10" class="empty">Không có profile phù hợp.</td></tr>`;
     updateSelectAllState();
@@ -773,11 +801,11 @@ function renderRows() {
 
   const existing=new Map([...rows.querySelectorAll("tr[data-profile-id]")].map(row=>[row.dataset.profileId,row]));
   if(!existing.size)rows.replaceChildren();
-  const wanted=new Set(profiles.map(profile=>profile.id));
+  const wanted=new Set(pageProfiles.map(profile=>profile.id));
   for(const [id,row] of existing)if(!wanted.has(id))row.remove();
   let position=0;
   const duplicateIds = new Set(state.duplicates.duplicateProfileIds || []);
-  for (const profile of profiles) {
+  for (const profile of pageProfiles) {
     const tr = existing.get(profile.id)||document.createElement("tr");
     tr.dataset.profileId=profile.id;
     const signature=JSON.stringify([profile,state.selectedIds.has(profile.id),duplicateIds.has(profile.id)]);
@@ -843,8 +871,8 @@ function passwordProfiles() {
       sheetValue(profile, "cookie")
     ])
   );
-  profiles.sort((a, b) => (a.folderName || "").localeCompare(b.folderName || "", "vi", { sensitivity: "base" })
-    || (a.name || "").localeCompare(b.name || "", "vi", { numeric: true, sensitivity: "base" }));
+  profiles.sort((a, b) => profileFolderCollator.compare(a.folderName||"",b.folderName||"")
+    || profileNameCollator.compare(a.name||"",b.name||""));
   return orderProfilesByPastedTerms(profiles, state.passwordSearchQuery, state.passwordBulkSearchQuery);
 }
 
@@ -856,8 +884,8 @@ function proxyProfiles() {
   const profiles = state.selectedFolderId === "all"
     ? [...state.profiles]
     : state.profiles.filter((profile) => profile.folderId === state.selectedFolderId);
-  profiles.sort((a, b) => (a.folderName || "").localeCompare(b.folderName || "", "vi", { sensitivity: "base" })
-    || (a.name || "").localeCompare(b.name || "", "vi", { numeric: true, sensitivity: "base" }));
+  profiles.sort((a, b) => profileFolderCollator.compare(a.folderName||"",b.folderName||"")
+    || profileNameCollator.compare(a.name||"",b.name||""));
   return profiles;
 }
 
@@ -1332,13 +1360,14 @@ function renderPasswordRows() {
     : state.folders.find((folder) => folder.id === state.selectedFolderId)?.name || "Folder hiện tại";
   $("passwordStatusText").textContent = `Đang xem ${folderName}. Tool chỉ điền dòng đang trống mật khẩu.`;
   const rows = $("passwordRows");
+  const pageProfiles=pageProfileTable(profiles,rows,renderPasswordRows);
   if (!profiles.length) {
     rows.innerHTML = `<tr><td colspan="8" class="empty">Không có profile phù hợp.</td></tr>`;
     updatePasswordSelectAllState();
     return;
   }
   rows.innerHTML = "";
-  for (const profile of profiles) {
+  for (const profile of pageProfiles) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td><input class="password-check" type="checkbox" data-id="${escapeAttr(profile.id)}" ${state.selectedPasswordIds.has(profile.id) ? "checked" : ""} /></td>
@@ -1525,7 +1554,8 @@ async function refreshHide({ silent = false, syncOnChange = false } = {}) {
     state.profiles = data.profiles;
     state.duplicates = data.duplicates || { duplicateUids: [], duplicateProfileIds: [], details: [] };
     state.lastSignature = signature;
-    if (!silent || changed) render();
+    if (!silent) render();
+    else if(changed)renderPassiveUpdate();
     renderSpreadsheetList();
     if (!silent || changed) {
       const duplicateText = state.duplicates.duplicateUids.length ? `, ${state.duplicates.duplicateUids.length} UID trùng` : "";
@@ -1687,8 +1717,8 @@ function notificationProfiles() {
     profiles = profiles.filter((profile) => notificationResultKind(profile) === state.notificationResultFilter);
   }
   profiles = profiles.filter((profile) => matchesProfileFilters(profile, state.notificationSearchQuery, state.notificationBulkSearchQuery));
-  profiles.sort((a, b) => (a.folderName || "").localeCompare(b.folderName || "", "vi", { sensitivity: "base" })
-    || (a.name || "").localeCompare(b.name || "", "vi", { numeric: true, sensitivity: "base" }));
+  profiles.sort((a, b) => profileFolderCollator.compare(a.folderName||"",b.folderName||"")
+    || profileNameCollator.compare(a.name||"",b.name||""));
   return orderProfilesByPastedTerms(profiles, state.notificationSearchQuery, state.notificationBulkSearchQuery);
 }
 
@@ -1712,13 +1742,14 @@ function renderNotificationRows() {
   $("ntfVisible").textContent = profiles.length;
   updateSelectionSummary("notificationSelectionSummary", "clearNotificationSelectionBtn", state.selectedNotificationIds.size);
   const rows = $("notificationRows");
+  const pageProfiles=pageProfileTable(profiles,rows,renderNotificationRows);
   if (!profiles.length) {
     rows.innerHTML = `<tr><td colspan="8" class="empty">Không có profile phù hợp.</td></tr>`;
     updateNotificationSelectAllState();
     return;
   }
   rows.innerHTML = "";
-  for (const profile of profiles) {
+  for (const profile of pageProfiles) {
     const tr = document.createElement("tr");
     const status = String(sheetValue(profile, "trạng thái", "trang thai") || "").trim();
     if (status.toLowerCase() === "loi") tr.classList.add("duplicate-row");
@@ -1789,8 +1820,8 @@ function checkOrderProfiles() {
     ? [...state.profiles]
     : state.profiles.filter((profile) => profile.folderId === state.selectedFolderId);
   profiles = profiles.filter((profile) => matchesProfileFilters(profile, state.checkOrderSearchQuery, state.checkOrderBulkSearchQuery));
-  profiles.sort((a, b) => (a.folderName || "").localeCompare(b.folderName || "", "vi", { sensitivity: "base" })
-    || (a.name || "").localeCompare(b.name || "", "vi", { numeric: true, sensitivity: "base" }));
+  profiles.sort((a, b) => profileFolderCollator.compare(a.folderName||"",b.folderName||"")
+    || profileNameCollator.compare(a.name||"",b.name||""));
   return orderProfilesByPastedTerms(profiles, state.checkOrderSearchQuery, state.checkOrderBulkSearchQuery);
 }
 
@@ -1809,13 +1840,14 @@ function renderCheckOrderRows() {
     : state.folders.find((folder) => folder.id === state.selectedFolderId)?.name || "Folder hiện tại";
   if ($("checkOrderStatusText") && !state.checkOrderBatchIds.length) $("checkOrderStatusText").textContent = `Đang xem ${folderName}.`;
   const rows = $("checkOrderRows");
+  const pageProfiles=pageProfileTable(profiles,rows,renderCheckOrderRows);
   if (!profiles.length) {
     rows.innerHTML = `<tr><td colspan="6" class="empty">Không có profile phù hợp.</td></tr>`;
     updateCheckOrderSelectAllState();
     return;
   }
   rows.innerHTML = "";
-  for (const profile of profiles) {
+  for (const profile of pageProfiles) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td><input class="check-order-check" type="checkbox" data-id="${escapeAttr(profile.id)}" ${state.selectedCheckOrderIds.has(profile.id) ? "checked" : ""} /></td>
@@ -1970,8 +2002,8 @@ function fullProfiles() {
     profiles = profiles.filter((profile) => fullResultKind(profile) === state.fullResultFilter);
   }
   profiles = profiles.filter((profile) => matchesProfileFilters(profile, state.fullSearchQuery, state.fullBulkSearchQuery));
-  profiles.sort((a, b) => (a.folderName || "").localeCompare(b.folderName || "", "vi", { sensitivity: "base" })
-    || (a.name || "").localeCompare(b.name || "", "vi", { numeric: true, sensitivity: "base" }));
+  profiles.sort((a, b) => profileFolderCollator.compare(a.folderName||"",b.folderName||"")
+    || profileNameCollator.compare(a.name||"",b.name||""));
   return orderProfilesByPastedTerms(profiles, state.fullSearchQuery, state.fullBulkSearchQuery);
 }
 
@@ -1993,13 +2025,14 @@ function renderFullRows() {
   $("fullVisible").textContent = profiles.length;
   updateSelectionSummary("fullSelectionSummary", "clearFullSelectionBtn", state.selectedFullIds.size);
   const rows = $("fullRows");
+  const pageProfiles=pageProfileTable(profiles,rows,renderFullRows);
   if (!profiles.length) {
     rows.innerHTML = `<tr><td colspan="9" class="empty">Không có profile phù hợp.</td></tr>`;
     updateFullSelectAllState();
     return;
   }
   rows.innerHTML = "";
-  for (const profile of profiles) {
+  for (const profile of pageProfiles) {
     const tr = document.createElement("tr");
     const status = String(sheetValue(profile, "trạng thái", "trang thai")).trim();
     if (status.toLowerCase() === "loi") tr.classList.add("duplicate-row");
@@ -2075,8 +2108,8 @@ function loginProfiles() {
     ? [...state.profiles]
     : state.profiles.filter((profile) => profile.folderId === state.selectedFolderId);
   profiles = profiles.filter((profile) => matchesProfileFilters(profile, state.loginSearchQuery, state.loginBulkSearchQuery));
-  profiles.sort((a, b) => (a.folderName || "").localeCompare(b.folderName || "", "vi", { sensitivity: "base" })
-    || (a.name || "").localeCompare(b.name || "", "vi", { numeric: true, sensitivity: "base" }));
+  profiles.sort((a, b) => profileFolderCollator.compare(a.folderName||"",b.folderName||"")
+    || profileNameCollator.compare(a.name||"",b.name||""));
   return orderProfilesByPastedTerms(profiles, state.loginSearchQuery, state.loginBulkSearchQuery);
 }
 
@@ -2093,13 +2126,14 @@ function renderLoginRows() {
   $("loginVisible").textContent = profiles.length;
   updateSelectionSummary("loginSelectionSummary", "clearLoginSelectionBtn", state.selectedLoginIds.size);
   const rows = $("loginRows");
+  const pageProfiles=pageProfileTable(profiles,rows,renderLoginRows);
   if (!profiles.length) {
     rows.innerHTML = `<tr><td colspan="9" class="empty">Không có profile phù hợp.</td></tr>`;
     updateLoginSelectAllState();
     return;
   }
   rows.innerHTML = "";
-  for (const profile of profiles) {
+  for (const profile of pageProfiles) {
     const status = String(sheetValue(profile, "trạng thái", "trang thai")).trim();
     const tr = document.createElement("tr");
     if (status.toLowerCase() === "loi") tr.classList.add("duplicate-row");
@@ -2192,8 +2226,8 @@ function postProfiles() {
     profiles = profiles.filter((profile) => postResultKind(profile) === state.postResultFilter);
   }
   profiles = profiles.filter((profile) => matchesProfileFilters(profile, state.postSearchQuery, state.postBulkSearchQuery));
-  profiles.sort((a, b) => (a.folderName || "").localeCompare(b.folderName || "", "vi", { sensitivity: "base" })
-    || (a.name || "").localeCompare(b.name || "", "vi", { numeric: true, sensitivity: "base" }));
+  profiles.sort((a, b) => profileFolderCollator.compare(a.folderName||"",b.folderName||"")
+    || profileNameCollator.compare(a.name||"",b.name||""));
   return orderProfilesByPastedTerms(profiles, state.postSearchQuery, state.postBulkSearchQuery);
 }
 
@@ -2214,13 +2248,14 @@ function renderPostRows() {
   $("postVisible").textContent = profiles.length;
   updateSelectionSummary("postSelectionSummary", "clearPostSelectionBtn", state.selectedPostIds.size);
   const rows = $("postRows");
+  const pageProfiles=pageProfileTable(profiles,rows,renderPostRows);
   if (!profiles.length) {
     rows.innerHTML = `<tr><td colspan="9" class="empty">Không có profile phù hợp.</td></tr>`;
     updatePostSelectAllState();
     return;
   }
   rows.innerHTML = "";
-  for (const profile of profiles) {
+  for (const profile of pageProfiles) {
     const tr = document.createElement("tr");
     const status = String(sheetValue(profile, "trạng thái", "trang thai") || "").trim();
     if (status.toLowerCase() === "loi") tr.classList.add("duplicate-row");
@@ -2292,8 +2327,8 @@ function post4VProfiles() {
     ? [...state.profiles]
     : state.profiles.filter((profile) => profile.folderId === state.selectedFolderId);
   profiles = profiles.filter((profile) => matchesProfileFilters(profile, state.post4VSearchQuery, state.post4VBulkSearchQuery));
-  profiles.sort((a, b) => (a.folderName || "").localeCompare(b.folderName || "", "vi", { sensitivity: "base" })
-    || (a.name || "").localeCompare(b.name || "", "vi", { numeric: true, sensitivity: "base" }));
+  profiles.sort((a, b) => profileFolderCollator.compare(a.folderName||"",b.folderName||"")
+    || profileNameCollator.compare(a.name||"",b.name||""));
   return orderProfilesByPastedTerms(profiles, state.post4VSearchQuery, state.post4VBulkSearchQuery);
 }
 
@@ -2323,13 +2358,14 @@ function renderPost4VRows() {
   $("post4vVisible").textContent = profiles.length;
   updateSelectionSummary("post4vSelectionSummary", "clearPost4VSelectionBtn", state.selectedPost4VIds.size);
   const rows = $("post4vRows");
+  const pageProfiles=pageProfileTable(profiles,rows,renderPost4VRows);
   if (!profiles.length) {
     rows.innerHTML = `<tr><td colspan="9" class="empty">Không có profile phù hợp.</td></tr>`;
     updatePost4VSelectAllState();
     return;
   }
   rows.innerHTML = "";
-  for (const profile of profiles) {
+  for (const profile of pageProfiles) {
     const status = String(sheetValue(profile, "trạng thái", "trang thai") || "").trim();
     const tr = document.createElement("tr");
     if (isPost4VError(profile)) tr.classList.add("duplicate-row");
@@ -2425,8 +2461,8 @@ function interactionProfiles() {
     profiles = profiles.filter((profile) => interactionResultKind(profile) === state.interactionResultFilter);
   }
   profiles = profiles.filter((profile) => matchesProfileFilters(profile, state.interactionSearchQuery, state.interactionBulkSearchQuery));
-  profiles.sort((a, b) => (a.folderName || "").localeCompare(b.folderName || "", "vi", { sensitivity: "base" })
-    || (a.name || "").localeCompare(b.name || "", "vi", { numeric: true, sensitivity: "base" }));
+  profiles.sort((a, b) => profileFolderCollator.compare(a.folderName||"",b.folderName||"")
+    || profileNameCollator.compare(a.name||"",b.name||""));
   return orderProfilesByPastedTerms(profiles, state.interactionSearchQuery, state.interactionBulkSearchQuery);
 }
 
@@ -2448,13 +2484,14 @@ function renderInteractionRows() {
   $("interactionVisible").textContent = profiles.length;
   updateSelectionSummary("interactionSelectionSummary", "clearInteractionSelectionBtn", state.selectedInteractionIds.size);
   const rows = $("interactionRows");
+  const pageProfiles=pageProfileTable(profiles,rows,renderInteractionRows);
   if (!profiles.length) {
     rows.innerHTML = `<tr><td colspan="8" class="empty">Không có profile phù hợp.</td></tr>`;
     updateInteractionSelectAllState();
     return;
   }
   rows.innerHTML = "";
-  for (const profile of profiles) {
+  for (const profile of pageProfiles) {
     const tr = document.createElement("tr");
     const status = String(sheetValue(profile, "trạng thái", "trang thai") || "").trim();
     if (status.toLowerCase() === "loi") tr.classList.add("duplicate-row");
@@ -2574,8 +2611,8 @@ function pageProfiles() {
     profiles = profiles.filter((profile) => pageResultKind(profile) === state.pageResultFilter);
   }
   profiles = profiles.filter((profile) => matchesProfileFilters(profile, state.pageSearchQuery, state.pageBulkSearchQuery));
-  profiles.sort((a, b) => (a.folderName || "").localeCompare(b.folderName || "", "vi", { sensitivity: "base" })
-    || (a.name || "").localeCompare(b.name || "", "vi", { numeric: true, sensitivity: "base" }));
+  profiles.sort((a, b) => profileFolderCollator.compare(a.folderName||"",b.folderName||"")
+    || profileNameCollator.compare(a.name||"",b.name||""));
   return orderProfilesByPastedTerms(profiles, state.pageSearchQuery, state.pageBulkSearchQuery);
 }
 
@@ -2597,13 +2634,14 @@ function renderPageRows() {
   $("pageVisible").textContent = profiles.length;
   updateSelectionSummary("pageSelectionSummary", "clearPageSelectionBtn", state.selectedPageIds.size);
   const rows = $("pageRows");
+  const pageProfiles=pageProfileTable(profiles,rows,renderPageRows);
   if (!profiles.length) {
     rows.innerHTML = `<tr><td colspan="9" class="empty">Không có profile phù hợp.</td></tr>`;
     updatePageSelectAllState();
     return;
   }
   rows.innerHTML = "";
-  for (const profile of profiles) {
+  for (const profile of pageProfiles) {
     const tr = document.createElement("tr");
     const status = String(sheetValue(profile, "trạng thái", "trang thai") || "").trim();
     if (status.toLowerCase() === "loi") tr.classList.add("duplicate-row");
@@ -2692,8 +2730,8 @@ function avatarProfiles() {
     profiles = profiles.filter((profile) => avatarResultKind(profile) === state.avatarResultFilter);
   }
   profiles = profiles.filter((profile) => matchesProfileFilters(profile, state.avatarSearchQuery, state.avatarBulkSearchQuery));
-  profiles.sort((a, b) => (a.folderName || "").localeCompare(b.folderName || "", "vi", { sensitivity: "base" })
-    || (a.name || "").localeCompare(b.name || "", "vi", { numeric: true, sensitivity: "base" }));
+  profiles.sort((a, b) => profileFolderCollator.compare(a.folderName||"",b.folderName||"")
+    || profileNameCollator.compare(a.name||"",b.name||""));
   return orderProfilesByPastedTerms(profiles, state.avatarSearchQuery, state.avatarBulkSearchQuery);
 }
 
@@ -2715,13 +2753,14 @@ function renderAvatarRows() {
   $("avatarVisible").textContent = profiles.length;
   updateSelectionSummary("avatarSelectionSummary", "clearAvatarSelectionBtn", state.selectedAvatarIds.size);
   const rows = $("avatarRows");
+  const pageProfiles=pageProfileTable(profiles,rows,renderAvatarRows);
   if (!profiles.length) {
     rows.innerHTML = `<tr><td colspan="8" class="empty">Không có profile phù hợp.</td></tr>`;
     updateAvatarSelectAllState();
     return;
   }
   rows.innerHTML = "";
-  for (const profile of profiles) {
+  for (const profile of pageProfiles) {
     const tr = document.createElement("tr");
     const status = String(sheetValue(profile, "trạng thái", "trang thai") || "").trim();
     if (status.toLowerCase() === "loi") tr.classList.add("duplicate-row");
@@ -2882,7 +2921,7 @@ function renderToolProgress(data) {
     };
     return statusRank(a) - statusRank(b)
       || Number(a.batchOrder ?? 0) - Number(b.batchOrder ?? 0)
-      || String(a.profileId || "").localeCompare(String(b.profileId || ""), "en", { numeric: true });
+      || runtimeIdCollator.compare(String(a.profileId||""),String(b.profileId||""));
   });
   const buildProgress = (batchIds, toolName) => {
     const wanted = new Set((batchIds || []).filter(Boolean));
@@ -3192,7 +3231,7 @@ function syncRuntimeProfileRows() {
       row.classList.toggle("runtime-running-row", presentation.tone === "running");
     }
   }
-  followRunningProfileRow();
+  if(performance.now()-lastUiInteraction>800)followRunningProfileRow();
 }
 
 function markRuntimeTableUserScroll(target) {
@@ -3210,7 +3249,19 @@ function followRunningProfileRow() {
   const row = RUNTIME_PROFILE_TABLE_BODIES
     .map(bodyId=>{const body=$(bodyId);if(!body||body.closest(".module-view.hidden"))return null;return body.querySelector(`tr[data-profile-id="${CSS.escape(profileId)}"]`);})
     .find(Boolean);
-  if (!row || row.closest(".module-view")?.classList.contains("hidden")) return;
+  if(!row){
+    if(performance.now()-lastUiInteraction<10000)return;
+    for(const paging of profileTablePages.values()){
+      if(paging.body.closest(".module-view.hidden"))continue;
+      const wrap=paging.body.closest(".table-wrap");
+      if(wrap&&(state.runtimeScrollPausedUntil.get(wrap)||0)>now)continue;
+      const index=paging.profiles.findIndex(profile=>profile.id===profileId);
+      if(index>=0&&paging.page!==Math.floor(index/100)){paging.page=Math.floor(index/100);paging.render();syncRuntimeProfileRows();}
+      break;
+    }
+    return;
+  }
+  if (row.closest(".module-view")?.classList.contains("hidden")) return;
   const tableWrap = row.closest(".table-wrap");
   if (!tableWrap || (state.runtimeScrollPausedUntil.get(tableWrap) || 0) > now) return;
   if (state.runtimeLastFollow.profileId === profileId && now - state.runtimeLastFollow.at < 1000) return;
