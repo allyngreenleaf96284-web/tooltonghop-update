@@ -1,3 +1,4 @@
+import { waitShippingControl, closeWeightMenu } from "./shipping_dialog.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFile } from "node:fs/promises";
@@ -1436,82 +1437,11 @@ export function createDangBai({
     throw marketplaceError("loisp", "Delivery method chua dung Shipping hoac Delivery sau khi da chinh.");
   }
 
-  async function openShippingLabel(page, method) {
-    const opened = await page.evaluate((choice) => {
-      const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
-      const visible = (node) => {
-        const rect = node?.getBoundingClientRect?.();
-        const style = node ? window.getComputedStyle(node) : null;
-        return Boolean(rect && rect.width > 0 && rect.height > 0 && style?.display !== "none" && style?.visibility !== "hidden");
-      };
-      const keyword = choice.toLowerCase();
-      const direct = Array.from(document.querySelectorAll("button, [role='button']"))
-        .find((node) => {
-          if (!visible(node)) return false;
-          const text = clean(node.innerText || node.textContent || "").toLowerCase();
-          return text === `select ${keyword} label` || text === `change ${keyword} label`;
-        });
-      if (direct) {
-        direct.scrollIntoView({ block: "center", inline: "nearest" });
-        direct.click();
-        return true;
-      }
-      const candidates = Array.from(document.querySelectorAll("div, span, button, [role='button']"))
-        .filter((node) => visible(node))
-        .filter((node) => {
-          const text = clean(node.innerText || node.textContent || "").toLowerCase();
-          return text.includes(`${keyword} label`) && text.length < 180;
-        });
-      const node = candidates[0];
-      if (!node) return false;
-      let target = node;
-      for (let depth = 0; target && depth < 6; depth += 1, target = target.parentElement) {
-        const rect = target.getBoundingClientRect?.();
-        if (target.matches?.("button, [role='button']") || (rect && rect.width > 180 && rect.height > 36 && rect.height < 130)) break;
-      }
-      (target || node).click();
-      return true;
-    }, method).catch(() => false);
-    if (!opened) throw marketplaceError("loisp", `Khong mo duoc ${method} label.`);
-    // The following Package weight reader waits up to 15 seconds for the modal.
+  async function openShippingLabel(page,method){
+    await waitShippingControl(page,"label",method,{shouldStop:()=>runtime.stopRequested});
   }
-
-  async function openPackageWeightMenu(page) {
-    for (let attempt = 1; attempt <= Math.ceil(FOUR_V_UI_WAIT_MS / FOUR_V_UI_POLL_MS); attempt += 1) {
-      const state = await page.evaluate(() => {
-        const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
-        const visible = (node) => {
-          const rect = node?.getBoundingClientRect?.();
-          return Boolean(rect && rect.width > 0 && rect.height > 0 && window.getComputedStyle(node).display !== "none");
-        };
-        const direct = Array.from(document.querySelectorAll("[role='combobox']"))
-          .find((node) => {
-            if (!visible(node)) return false;
-            const labelledBy = node.getAttribute("aria-labelledby");
-            const label = labelledBy ? document.getElementById(labelledBy)?.textContent : "";
-            return /^package weight$/i.test(clean(label || ""));
-          });
-        if (direct) {
-          if (direct.getAttribute("aria-expanded") === "true") return "open";
-          direct.scrollIntoView({ block: "center", inline: "nearest" });
-          direct.click();
-          return "clicked";
-        }
-        const label = Array.from(document.querySelectorAll("div, span, label"))
-          .find((node) => visible(node) && /^package weight$/i.test(clean(node.textContent || "")));
-        if (!label) return "missing";
-        const target = label.closest?.("[role='combobox'], button, [role='button']") || label.parentElement;
-        if (!target) return "missing";
-        target.scrollIntoView({ block: "center", inline: "nearest" });
-        target.click();
-        return "clicked";
-      }).catch(() => "missing");
-      if (state === "open") {
-        return true;
-      }
-      await sleep(FOUR_V_UI_POLL_MS);
-    }
-    return false;
+  async function openPackageWeightMenu(page){
+    return await waitShippingControl(page,"weight","Delivery",{shouldStop:()=>runtime.stopRequested}) !== false;
   }
 
   async function isPackageWeightSelected(page, weight) {
@@ -1568,23 +1498,16 @@ export function createDangBai({
         const visibleTarget = [radio, label, card, card?.parentElement].find(visible);
         if (!visibleTarget) return false;
         visibleTarget.scrollIntoView({ block: "center", inline: "nearest" });
-        const rect = visibleTarget.getBoundingClientRect();
-        const pointTarget = document.elementFromPoint(rect.left + (rect.width / 2), rect.top + (rect.height / 2));
-        for (const target of [visibleTarget, pointTarget, label, radio].filter(Boolean)) {
-          target.click();
-          if (radio.checked || radio.getAttribute("aria-checked") === "true") break;
-        }
+        if(!radio.checked && radio.getAttribute("aria-checked")!=="true")visibleTarget.click();
         return true;
       }
       const node = Array.from(document.querySelectorAll("div, span, [role='option'], [role='radio']"))
-        .find((item) => visible(item) && matches(item.textContent || item.innerText || ""));
+        .filter((item) => visible(item) && matches(item.textContent || item.innerText || "") && clean(item.textContent || item.innerText || "").length < 100)
+        .sort((a,b)=>(a.textContent||"").length-(b.textContent||"").length)[0];
       if (!node) return false;
-      let target = node;
-      for (let depth = 0; target && depth < 6; depth += 1, target = target.parentElement) {
-        const role = target.getAttribute?.("role") || "";
-        if (role === "option" || role === "radio" || role === "button") break;
-      }
-      (target || node).click();
+      const target=node.closest('[role="option"],[role="radio"],label')||node;
+      target.scrollIntoView({block:"nearest"});
+      target.click();
       return true;
     }, weight).catch(() => false);
   }
@@ -1608,29 +1531,24 @@ export function createDangBai({
     if (!closed) await waitForShippingLabelDialogToClose(page).catch(() => {});
   }
 
-  async function choosePackageWeight(page, weight, method) {
-    const retryCount = 3;
-    for (let recovery = 1; recovery <= retryCount; recovery += 1) {
-      const opened = await openPackageWeightMenu(page);
-      if (opened) {
-        const clicked = await clickPackageWeightRadio(page, weight);
-        if (clicked) {
-          for (let waitAttempt = 1; waitAttempt <= Math.ceil(FOUR_V_UI_WAIT_MS / FOUR_V_UI_POLL_MS); waitAttempt += 1) {
-            if (await isPackageWeightSelected(page, weight)) return;
-            await sleep(FOUR_V_UI_POLL_MS);
-          }
+  async function choosePackageWeight(page,weight,method){
+    while(!runtime.stopRequested){
+      await openShippingLabel(page,method);
+      if(!await openPackageWeightMenu(page))continue;
+      let nextClick=0,nextClose=0;
+      while(!runtime.stopRequested){
+        if(await isPackageWeightSelected(page,weight)){
+          const canClose=Date.now()>=nextClose;
+          if(await closeWeightMenu(page,canClose))return;
+          if(canClose)nextClose=Date.now()+15000;
+          await sleep(500);
+          continue;
         }
-      }
-      // Close only the dropdown first. On the next failed pass, close and
-      // reopen Shipping label itself; do not refresh the create-item page.
-      await page.keyboard.press("Escape").catch(() => {});
-      await sleep(FOUR_V_UI_POLL_MS);
-      if (recovery < retryCount) {
-        await closeShippingLabelDialog(page);
-        await openShippingLabel(page, method);
+        if(Date.now()>=nextClick){await clickPackageWeightRadio(page,weight);nextClick=Date.now()+15000;}
+        await sleep(FOUR_V_UI_POLL_MS);
       }
     }
-    throw marketplaceError("loisp", `Khong chon duoc Package weight ${weight} sau ${retryCount} lan mo lai Shipping label.`);
+    throw marketplaceError("stopped","Da dung chon Package weight.");
   }
 
   async function setDeliveryOfferMinimum(page, amount) {
@@ -1883,7 +1801,7 @@ export function createDangBai({
           readListingDescription(await manager.getRandomListingPayload()), { timeoutMs: 30000 });
         const postResult = await step(profileId, job, "dang bai 4v shipping", async () =>
           runFourVListing(manager, page, payload, row, profileId, config, () => { noRollback = true; })
-        , { timeoutMs: 600000 });
+        , { timeoutMs: 0 });
         const configuredPrefix = String(config.fourVPostSuccessPrefix || "");
         const successfulPostName = buildSuccessPrefixProfileName(configuredPrefix, currentName);
         if (typeof appendMarketplacePostResult !== "function") {

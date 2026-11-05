@@ -1774,3 +1774,9 @@ tr.duplicate-row {
 .profile-table-pager button:disabled { opacity:.4; cursor:default; }
 
 .state-fill-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.state-fill-controls input{flex:1;min-width:210px}#stateFillProgressCurrent{padding:0 12px 12px;margin:0;color:#b9cde5}#stateFillProgressStats{font-variant-numeric:tabular-nums;line-height:1.8}
+
+.tool-progress {resize:both;overflow:auto;min-height:180px;max-width:100%;box-sizing:border-box;}
+.tool-progress .tool-progress-list {max-height:none;min-height:60px;}
+.tool-progress .tool-progress-column-head {position:sticky;top:0;background:#0f172a;z-index:1;font-weight:600;}
+
+.tool-progress:has(.tool-progress-list):not(.hidden){display:flex;flex-direction:column;height:360px;min-height:200px}.tool-progress:has(.tool-progress-list)>:not(.tool-progress-list){flex-shrink:0}.tool-progress .tool-progress-list{flex:1 1 auto;overflow:auto}.tool-progress .tool-progress-item{min-width:600px}

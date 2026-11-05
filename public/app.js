@@ -1555,6 +1555,7 @@ async function refreshHide({ silent = false, syncOnChange = false } = {}) {
     }
     state.folders = data.folders;
     state.profiles = data.profiles;
+    state.profileUidById=new Map(state.profiles.map(profile=>[String(profile.id),profile.uid]));
     state.duplicates = data.duplicates || { duplicateUids: [], duplicateProfileIds: [], details: [] };
     state.lastSignature = signature;
     if (!silent) render();
@@ -3338,7 +3339,7 @@ function renderToolProgressPanel({
   const timeColumnHead = showTimeColumn ? `
     <div class="tool-progress-item tool-progress-column-head has-time-column">
       <span>UID</span><span>Trạng thái</span><span>Time</span><span>Tiến độ</span>
-    </div>` : "";
+    </div>` : `<div class="tool-progress-item tool-progress-column-head"><span>UID</span><span>Trạng thái</span><span>Tiến độ</span></div>`;
   list.innerHTML = timeColumnHead + orderedJobs.slice(0, 80).map((job) => {
     const rawStatus = String(job.status || "queued").toLowerCase();
     const displayStatus = job.manualHandled ? "đã xử lý thủ công" : job.loginNeedsAttention ? "chờ bạn xử lý" : job.loginPaused ? "tạm dừng" : job.phaseState === "retry_waiting" || rawStatus === "retry_waiting"
@@ -3357,12 +3358,10 @@ function renderToolProgressPanel({
     const timeCell = showTimeColumn
       ? `<span class="tool-progress-time"${timerEndsAt ? ` data-login-twofa-ends-at="${escapeAttr(String(timerEndsAt))}"` : ""}>${job.loginPaused && job.twofaCountdownEndsAt ? formatLoginTwofaCountdown(Date.now() + Math.max(0, job.twofaCountdownEndsAt - job.loginPausedAt)) : timerEndsAt ? formatLoginTwofaCountdown(timerEndsAt) : ""}</span>`
       : "";
-    const uidValue = String(job.uid || state.profiles.find((profile) => String(profile.id) === String(job.profileId))?.uid || "").trim();
-    const identityCell = showTimeColumn
-      ? (/^\d{5,20}$/.test(uidValue)
-        ? `<button type="button" class="copy-login-uid" data-copy-login-uid="${escapeAttr(uidValue)}" title="Bấm để sao chép UID">${escapeHtml(uidValue)}</button>`
-        : "—")
-      : `${escapeHtml(job.profileId || "")}${job.currentName ? `<br><small>${escapeHtml(job.currentName)}</small>` : ""}`;
+    const uidValue = String(job.uid || (state.profileUidById?.get(String(job.profileId)) || state.profiles.find((profile) => String(profile.id) === String(job.profileId))?.uid) || "").trim();
+    const identityCell = /^\d{5,20}$/.test(uidValue)
+      ? `<button type="button" class="copy-login-uid" data-copy-login-uid="${escapeAttr(uidValue)}" title="Bấm để sao chép UID">${escapeHtml(uidValue)}</button>`
+      : "—";
     return `
     <div class="tool-progress-item${showTimeColumn ? " has-time-column" : ""}"${job.tool === "tool login" ? ` data-login-profile-row="${escapeAttr(job.profileId)}" tabindex="0"` : ""}>
       <span>${identityCell}</span>
