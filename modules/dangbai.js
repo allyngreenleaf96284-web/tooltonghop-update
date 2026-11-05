@@ -1462,6 +1462,7 @@ export function createDangBai({
       const radio = Array.from(document.querySelectorAll("input[type='radio'][name='package_weight_range']"))
         .find((input) => matches([input.value, input.getAttribute("aria-label"), input.parentElement?.innerText, input.closest("[role='radio'], label, div")?.innerText].join(" ")));
       if (radio?.checked || radio?.getAttribute("aria-checked") === "true") return true;
+      if([...document.querySelectorAll('[role="radio"][aria-checked="true"],[role="option"][aria-selected="true"]')].some(n=>n.getBoundingClientRect().height>0&&matches(n.innerText)))return true;
       return Array.from(document.querySelectorAll("[role='combobox']")).some((node) => {
         const labelledBy = node.getAttribute("aria-labelledby");
         const label = labelledBy ? document.getElementById(labelledBy)?.textContent : "";
@@ -1537,6 +1538,8 @@ export function createDangBai({
       if(!await openPackageWeightMenu(page))continue;
       let nextClick=0,nextClose=0;
       while(!runtime.stopRequested){
+        const modalPresent=await page.evaluate(()=>[...document.querySelectorAll('[role="dialog"],[aria-modal="true"],h1,h2,h3,span')].some(n=>n.getBoundingClientRect().height>0&&/change (shipping|delivery) method/i.test(n.innerText||""))).catch(()=>false);
+        if(!modalPresent)break;
         if(await isPackageWeightSelected(page,weight)){
           const canClose=Date.now()>=nextClose;
           if(await closeWeightMenu(page,canClose))return;
@@ -1733,8 +1736,8 @@ export function createDangBai({
         await dangNhap.ensureFacebookLogin(manager, page, row, profileId, (status) => {
           if (job) job.liveStatus = status;
           log(profileId, "dang nhap", status);
-        });
-      }, { timeoutMs: 300000 });
+        }, {shouldStop:()=>runtime.stopRequested});
+      }, { timeoutMs: 0 });
 
       restoreManagerLoginGuards = patchManagerForCentralizedLogin(manager, row);
 

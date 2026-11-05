@@ -39,7 +39,7 @@ function languageControl(kind) {
 }
 
 export async function ensureLoginEnglish(page, { navigate, check = async () => {}, onProgress = () => {}, timeoutMs = 120000, controlWaitMs = 30000 } = {}) {
-  const deadline = Date.now() + timeoutMs;
+  let deadline;
   const find = async (kind) => {
     try { return await page.evaluateHandle(languageControl, kind); }
     catch (error) {
@@ -69,7 +69,8 @@ export async function ensureLoginEnglish(page, { navigate, check = async () => {
     try { await el.evaluate((node) => node.scrollIntoView({ block: "center" })); await el.click(); }
     finally { await el.dispose(); }
   };
-  await navigate();
+  await waitForLanguagePage(page, {navigate, check, onProgress});
+  deadline = Date.now() + timeoutMs;
   for (let attempt = 1; attempt <= 2 && Date.now() < deadline; attempt++) {
     onProgress("dang cho Facebook tai cai dat ngon ngu");
     // Resume a picker/confirmation already opened before an operator pause.
@@ -111,4 +112,27 @@ export async function ensureLoginEnglish(page, { navigate, check = async () => {
   }
   await check();
   return ready();
+}
+
+// A timeout while loading settings is not evidence that changing language failed.
+export async function waitForLanguagePage(page, {navigate, check=async()=>{}, onProgress=()=>{}, loadWaitMs=60000, pollMs=300, reload=()=>page.reload({waitUntil:"domcontentloaded",timeout:15000})}={}) {
+  for(let attempt=0;attempt<=3;attempt++) {
+    await check();
+    onProgress(attempt ? `Trang ngon ngu chua tai; F5 lan ${attempt}/3, dang cho noi dung` : "Dang cho noi dung cai dat ngon ngu");
+    try { await (attempt ? reload() : navigate()); }
+    catch(error) { if(!/timeout|net::|navigation|connection|network/i.test(error.message||""))throw error; }
+    const until=Date.now()+loadWaitMs;
+    while(Date.now()<until) {
+      await check();
+      const loaded=await page.evaluate(()=>{
+        const visible=n=>{const r=n.getBoundingClientRect();return r.width>0&&r.height>0&&getComputedStyle(n).visibility!=="hidden";};
+        const text=(document.body?.innerText||"").trim();
+        const controls=[...document.querySelectorAll('button,[role="button"],[role="dialog"],input,a[href]')].filter(visible);
+        return (text.length>100&&controls.length>=3&&!/^(loading|please wait)[.\s]*$/i.test(text)) || text.length>0&&controls.some(n=>/account language|facebook language|language and region|english|ngôn ngữ|idioma|langue/i.test(n.innerText||n.getAttribute('aria-label')||""));
+      }).catch(()=>false);
+      if(loaded)return;
+      await sleep(pollMs);
+    }
+  }
+  throw Object.assign(new Error("Trang cai dat ngon ngu khong tai duoc sau 3 lan F5; co the proxy/mang qua lag. Chua the kiem tra ngon ngu."),{status:"loi login",code:"LANGUAGE_PAGE_LOAD_FAILED"});
 }

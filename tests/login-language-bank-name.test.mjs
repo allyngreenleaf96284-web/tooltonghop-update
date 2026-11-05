@@ -111,3 +111,14 @@ test('Full stops at non-Latin name, writes cdt once, releases seller allocation,
   assert.equal(manager.setFieldValueByExactLabel,original);
   assert.ok(writes.some(x=>x.tenChuan==='cdt-'+initial));
 });
+import {waitForLanguagePage} from '../modules/login_language.js';
+test('blank settings reload three times and reports loading failure, not language failure', async()=>{
+ const page=await browser.newPage();try {
+ let reloads=0;
+ await assert.rejects(waitForLanguagePage(page,{navigate:()=>page.setContent('<body></body>'),reload:async()=>{reloads++;},loadWaitMs:40,pollMs:10}),e=>e.code==='LANGUAGE_PAGE_LOAD_FAILED');
+ assert.equal(reloads,3);
+ reloads=0;
+ await waitForLanguagePage(page,{navigate:()=>page.setContent('<body></body>'),reload:async()=>{reloads++;if(reloads===2)await page.setContent('<button>Account language: English (US)</button>');},loadWaitMs:40,pollMs:10});
+ assert.equal(reloads,2);
+ }finally{await page.close();}
+});

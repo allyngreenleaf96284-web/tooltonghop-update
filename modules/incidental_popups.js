@@ -10,6 +10,7 @@ function popupSweep(start){
    const text=clean(dialog.innerText||dialog.textContent);
    const meta=/your meta account is here/i.test(text);
    const workflow=/seller information setup|your information|select.*language|language and region|english.*us|condition|category|minimum price|return address|date of birth|shipping carrier|payout|choose.*state|county|name on account|package weight|shipping label|delivery label|shipping options|delivery method|choose a way to confirm|authentication app|enter.*code|two.factor|captcha|not a robot|invalid address|change location|select location|choose location|tax information|bank account|save.*draft|discard.*draft/i.test(text);
+   if(!meta&&window.__toolShippingDialogActive&&location.pathname.includes("/marketplace/create/")&&new URLSearchParams(location.search).get("step")==="delivery")continue;
    if(!meta&&(workflow||dialog.querySelector('input,textarea,select,[contenteditable="true"],[role="combobox"],[role="listbox"]')))continue;
    const buttons=[...dialog.querySelectorAll('button,[role="button"]')].filter(visible);
    const close=buttons.find(button=>/^(close|dismiss|not now|maybe later|skip|đóng|bỏ qua|lúc khác|fermer|cerrar)$/i.test(clean(button.getAttribute('aria-label')||button.getAttribute('title')||button.innerText||button.textContent)));

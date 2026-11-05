@@ -23,3 +23,10 @@ test('every progress panel shows a copyable UID instead of the Hide profile id',
  try{const page=await browser.newPage();await page.setContent('<section id="panel"><div id="status"></div><div id="count"></div><div id="text"></div><div id="bar"></div><div id="list"></div></section>');await page.addScriptTag({content:`const $=id=>document.getElementById(id);const escapeHtml=x=>String(x);const escapeAttr=escapeHtml;const state={profiles:[{id:'hide-profile-private',uid:'61575115240717'}]};`+fn});await page.evaluate(()=>renderToolProgressPanel({panelId:'panel',stateId:'status',countId:'count',textId:'text',barId:'bar',listId:'list',stateLabel:'running',countLabel:'1/1',textLabel:'Progress',percent:50,jobs:[{profileId:'hide-profile-private',status:'running',tool:'lam full',liveStatus:'Checking'}]}));assert.equal(await page.$eval('[data-copy-login-uid]',el=>el.textContent),'61575115240717');assert.equal(await page.$eval('#list',el=>el.textContent.includes('hide-profile-private')),false);
  }finally{await browser.close();}
 });
+test('weight menu without option/radio roles is detected without toggling it again',async()=>{
+ const browser=await require('puppeteer-core').launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
+ try{const page=await browser.newPage();await page.setContent(`<div><h2>Change delivery method</h2><button role="combobox" onclick="window.clicks=(window.clicks||0)+1;document.querySelector('#menu').hidden=!document.querySelector('#menu').hidden">Package weight</button><div id="menu"><div>0.9-2.25 kg (2-5 lbs)</div></div></div>`);
+ await waitShippingControl(page,'weight','Delivery',{pollMs:20});assert.equal(await page.evaluate(()=>window.clicks||0),0);
+ assert.equal(await closeWeightMenu(page),false);assert.equal(await closeWeightMenu(page,false),true);
+ }finally{await browser.close();}
+});

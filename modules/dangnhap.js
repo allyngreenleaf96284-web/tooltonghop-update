@@ -2493,16 +2493,14 @@ export function createDangNhap({ addRuntimeLog }) {
       return buildCurrentFacebookCookieHeader(page).catch(() => "");
     });
     await loginStep(profileId, updateLiveStatus, "login: doi ngon ngu English", "dang kiem tra ngon ngu Facebook", async () => {
-      const ok = options.robustLanguage
-        ? await ensureLoginEnglish(page, {
+      const ok = await ensureLoginEnglish(page, {
           navigate: () => gotoWithFallback(manager, page, "https://www.facebook.com/settings/?tab=language", row, 2),
           check: async () => {
             if (options.shouldStop?.()) throw Object.assign(new Error("Da dung dang nhap Facebook."), { status: "stopped" });
             await throwIfCaptchaChallenge(page, "login: doi ngon ngu English"); await throwIfCheckpointDetected(page);
           },
           onProgress: updateLiveStatus
-        })
-        : await ensureEnglishLanguageFallback(manager, page, row, profileId);
+        });
       if (!ok) {
         const error = new Error("Khong doi duoc Facebook sang English (US).");
         error.status = "loi login";
