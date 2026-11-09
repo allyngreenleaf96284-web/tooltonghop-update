@@ -272,7 +272,7 @@ export function linkCheckProfileIds(config) {
 }
 
 export function createMarketplaceLinkOrderTool({
-  getHideManager,
+  getProfileManager,
   dangNhap,
   buildToolRow,
   getRowsByProfileIds,
@@ -421,10 +421,8 @@ export function createMarketplaceLinkOrderTool({
   }
 
   async function runNick({ profileId, nickLabel, direction, sheetRow, config, plans, writer, progress, tabCount, workerSlot = 0, workerTotal = 2 }) {
-    const manager = getHideManager();
-    if (manager) {
-      manager.__profileConfig = async () => ({ ...config, browserApiProvider: "hide" });
-    }
+    const manager = getProfileManager(config);
+    manager.__profileConfig = async () => config;
     const row = typeof buildToolRow === "function"
       ? buildToolRow(profileId, sheetRow || {})
       : { uid: String(sheetRow?.uid || profileId).trim(), profile_id: profileId, raw: { ...(sheetRow || {}) } };
@@ -565,6 +563,7 @@ export function createMarketplaceLinkOrderTool({
 
   async function start(config) {
     const ids = linkCheckProfileIds(config);
+    const providerLabel = config.browserApiProvider === "gpm" ? "GPM" : "HideMyAcc";
     if (!ids.length) throw new Error("Chua nhap ID profile nick check.");
     const tabCount = clampNumber(config.marketplaceCheckTabsPerNick, 1, 1, 20);
     checkDisplay.reset(config.marketplaceCheckZoomPercent);
@@ -595,7 +594,7 @@ export function createMarketplaceLinkOrderTool({
       : new Map();
     const missingBeforeRefresh = profiles.filter((item) => !sheetRows.has(normalizeProfileIdText(item.profileId)));
     if (missingBeforeRefresh.length && typeof getRowsByProfileIds === "function") {
-      log("", "doc Sheet profile", `khong thay ${missingBeforeRefresh.length} ID Hide trong cache, dang tai lai Sheet quan ly profile...`, "warn");
+      log("", "doc Sheet profile", `khong thay ${missingBeforeRefresh.length} ID ${providerLabel} trong cache, dang tai lai Sheet quan ly profile...`, "warn");
       sheetRows = await getRowsByProfileIds(config, profiles.map((item) => item.profileId), {
         forceRefresh: true,
         source: "link-order-profile-miss"
@@ -605,7 +604,7 @@ export function createMarketplaceLinkOrderTool({
     for (const item of profiles) {
       const sheetRow = sheetRows.get(normalizeProfileIdText(item.profileId));
       if (!sheetRow) {
-        throw new Error(`Khong tim thay ID Hide ${item.profileId} trong Sheet quan ly profile. Hay bam Cap nhat HideMyAcc -- Sheet hoac Tai lai cache Sheet truoc khi chay.`);
+        throw new Error(`Khong tim thay ID ${item.profileId} trong Sheet quan ly ${providerLabel}. Hay kiem tra trinh duyet da chon va cap nhat ${providerLabel} vao Sheet.`);
       }
       item.sheetRow = sheetRow;
     }
@@ -617,7 +616,7 @@ export function createMarketplaceLinkOrderTool({
         profileId: item.profileId,
         tool: "check link order",
         status: "queued",
-        liveStatus: `${item.nickLabel}: dang cho mo ${tabCount} cua so Hide`,
+        liveStatus: `${item.nickLabel}: dang cho mo ${tabCount} cua so ${providerLabel}`,
         logs: [],
         startedAt: new Date().toISOString(),
         finishedAt: "",
@@ -734,7 +733,7 @@ export function createMarketplaceLinkOrderTool({
         runtime.currentTool = "";
       }
     });
-    return { started: profiles.length, profileIds: profiles.map((item) => item.profileId), sheetTitles: plans.map((plan) => plan.title), sheets: plans.length, tabsPerNick: tabCount, windows: profiles.length * tabCount };
+    return { started: profiles.length, providerLabel, profileIds: profiles.map((item) => item.profileId), sheetTitles: plans.map((plan) => plan.title), sheets: plans.length, tabsPerNick: tabCount, windows: profiles.length * tabCount };
   }
 
   return { run };

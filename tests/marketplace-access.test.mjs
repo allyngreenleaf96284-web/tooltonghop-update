@@ -148,7 +148,7 @@ test("check-link queue stops permanently blocked profiles instead of reopening t
   };
   manager.stopHideMyAccProfile = async () => {};
   const tool = createMarketplaceLinkOrderTool({
-    runtime, getHideManager: () => manager,
+    runtime, getProfileManager: (config) => { assert.equal(config.browserApiProvider, "hide"); return manager; },
     dangNhap: { async ensureFacebookLogin(manager, page, row, id) { installMarketplaceAccessGuard(manager, page, id, row.name); } },
     buildToolRow: (id, raw) => ({ uid: raw.uid, raw, name: `2v-${raw.uid}-tool` }),
     getRowsByProfileIds: async () => new Map([["p1", { uid: "61500000000001" }], ["p2", { uid: "61500000000002" }]]),
@@ -161,7 +161,7 @@ test("check-link queue stops permanently blocked profiles instead of reopening t
     }
   });
   try {
-    await tool.run({ marketplaceCheckNick1Id: "p1", marketplaceCheckTabsPerNick: 1, marketplaceCheckSpreadsheetIds: ["fixture-sheet"], credentialsPath: "fixture-only" });
+    await tool.run({ browserApiProvider: "hide", marketplaceCheckNick1Id: "p1", marketplaceCheckTabsPerNick: 1, marketplaceCheckSpreadsheetIds: ["fixture-sheet"], credentialsPath: "fixture-only" });
     const deadline = Date.now() + 10000;
     while (runtime.running && Date.now() < deadline) await pause(50);
     assert.equal(runtime.running, false, "Permanent failures must not enter the 60-second restart loop.");

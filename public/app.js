@@ -230,6 +230,7 @@ function updateEngineUi() {
   if ($("browserApiProvider")) $("browserApiProvider").value = key;
   if ($("engineBadge")) $("engineBadge").textContent = label;
   if ($("engineLiveText")) $("engineLiveText").textContent = label;
+  if ($("linkCheckEngineText")) $("linkCheckEngineText").textContent = label;
   if ($("engineHeroText")) $("engineHeroText").textContent = label;
   if ($("refreshEngineText")) $("refreshEngineText").textContent = `Tải từ ${label}`;
   if ($("syncEngineText")) $("syncEngineText").textContent = `Cập nhật ${label} → Sheet`;
@@ -1940,7 +1941,7 @@ async function startLinkOrder() {
   const marketplaceCheckSheetLinks = currentMarketplaceSheetLinks();
   const extraNicks = extraLinkCheckNickIds();
   if (!nick1 && !nick2 && !extraNicks.length) {
-    $("linkOrderStatusText").textContent = "Bạn cần thêm ít nhất một nick Hide để check.";
+    $("linkOrderStatusText").textContent = "Bạn cần nhập ít nhất một ID profile để check.";
     return;
   }
   if (!marketplaceCheckSheetLinks.length) {
@@ -1968,7 +1969,7 @@ async function startLinkOrder() {
     state.config = config || state.config;
     state.linkOrderBatchIds = data.profileIds || [nick1, nick2, ...extraNicks].filter(Boolean);
     primeToolProgress(state.linkOrderBatchIds, "bắt đầu: check link order", "linkorder");
-    $("linkOrderStatusText").textContent = `Đã bắt đầu ${data.started} nick × ${data.tabsPerNick || body.marketplaceCheckTabsPerNick} trang = ${data.windows || data.started * body.marketplaceCheckTabsPerNick} cửa sổ Hide, tự chia đều màn hình. Cửa sổ rảnh sẽ nhận link tiếp theo; ${data.sheets || 1} Sheet chạy tuần tự.`;
+    $("linkOrderStatusText").textContent = `Đã bắt đầu ${data.started} nick × ${data.tabsPerNick || body.marketplaceCheckTabsPerNick} trang = ${data.windows || data.started * body.marketplaceCheckTabsPerNick} cửa sổ ${data.providerLabel || currentEngineLabel()}, tự chia đều màn hình. Cửa sổ rảnh sẽ nhận link tiếp theo; ${data.sheets || 1} Sheet chạy tuần tự.`;
     await refreshToolStatus();
     startToolStatusPolling();
   } catch (error) {

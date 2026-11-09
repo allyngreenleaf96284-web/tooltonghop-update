@@ -173,7 +173,16 @@ export async function startAutoRetryBatch({
     return module.runQueue(runIds, config, runOptions);
   };
 
-  const firstData = await callQueue(ids, options);
+  let firstData;
+  try {
+    firstData = await callQueue(ids, options);
+  } catch (error) {
+    batch.active = false;
+    batch.lastError = error.message || String(error);
+    batch.finishedAt = new Date().toISOString();
+    if (!runtime.running && runtime.batch === batch) runtime.currentTool = "";
+    throw error;
+  }
   setPhaseForJobs(runtime, ids, batch, "initial", 0);
   updateBatchCounts(runtime, batch);
 

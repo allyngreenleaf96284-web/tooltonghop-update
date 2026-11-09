@@ -30,12 +30,12 @@ for (const n of [0, 2, 5, 13, 103]) {
 import { createRequire } from 'node:module';
 import { createMarketplaceLinkOrderTool } from '../modules/marketplace_link_order.js';
 const require=createRequire(import.meta.url);
-test('five browsers rotate all windows at global 100-link milestones and check 260 rows once and write the existing status column', async()=>{
+test('five GPM profiles rotate all windows at global 100-link milestones and check 260 rows once and write the existing status column', async()=>{
   const puppeteer=require('puppeteer-core');
   const browser=await puppeteer.launch({executablePath:process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
   const directory=await mkdtemp(path.join(os.tmpdir(),'link-hide-run-'));
   const runtime={jobs:new Map(),running:false};
-  const writes=[],visits=[],pages=[],loginOptions=[];
+  const writes=[],visits=[],pages=[],loginOptions=[],stops=[];
   const ids=['p1','p2','p3','p4','p5'];
   const sheetValues=[['uid','LINK SP','tình trạng nick 1'],...Array.from({length:260},(_,i)=>['u',`https://www.facebook.com/marketplace/item/${100+i}`,'']),['old','https://www.facebook.com/marketplace/item/999','send seller a message']];
   const tool=createMarketplaceLinkOrderTool({runtime,createWindowPage:browser=>browser.newPage(),journalPath:path.join(directory,"pending.json"),addRuntimeLog(message,type){if(type === "error" || type === "warn") console.log(message);},
@@ -47,19 +47,21 @@ test('five browsers rotate all windows at global 100-link milestones and check 2
     },
     getRowsByProfileIds:async()=>new Map(ids.map(id=>[id,{uid:id}])),
     dangNhap:{ensureFacebookLogin:async(manager,page,row,id,progress,options)=>{loginOptions.push(options);}},
-    getHideManager:()=>({
-      async connectBrowser(id){return {async newPage(){
+    getProfileManager:(config)=>{assert.equal(config.browserApiProvider,'gpm');return {
+      async connectBrowser(id){assert.equal((await this.__profileConfig()).browserApiProvider,'gpm');return {async newPage(){
         const page=await browser.newPage();pages.push({id,page});await page.setRequestInterception(true);
         page.on('request',request=>{if(request.isNavigationRequest())visits.push({id,url:request.url()});void request.respond({status:200,contentType:'text/html; charset=utf-8',body:request.url().includes('/159')?'<h1>New unsupported layout</h1><p>$20</p>':request.url().includes('/158')?'<h1>Fixture product</h1><footer><span>Send seller a message</span><input><button>Send</button></footer>':'<h1>Sold · Fixture product</h1><p>$20</p>'}).catch(()=>{});});const goto=page.goto.bind(page);page.goto=async(...args)=>{if(id==='p1')await new Promise(resolve=>setTimeout(resolve,700));return goto(...args);};return page;
-      },async disconnect(){}};},async stopHideMyAccProfile(){}
-    })
+      },async disconnect(){}};},async stopHideMyAccProfile(id){stops.push([id,(await this.__profileConfig()).browserApiProvider]);}
+    };}
   });
   try{
-    const result=await tool.run({credentialsPath:'fixture',marketplaceCheckSpreadsheetId:'fixture',marketplaceCheckNick1Id:'p1',marketplaceCheckNick2Id:'p2',marketplaceCheckExtraNickIds:['p3','p4','p5','p1'],marketplaceCheckTabsPerNick:3,marketplaceCheckTimeoutMs:10000});
+    const result=await tool.run({browserApiProvider:'gpm',credentialsPath:'fixture',marketplaceCheckSpreadsheetId:'fixture',marketplaceCheckNick1Id:'p1',marketplaceCheckNick2Id:'p2',marketplaceCheckExtraNickIds:['p3','p4','p5','p1'],marketplaceCheckTabsPerNick:3,marketplaceCheckTimeoutMs:10000});
     assert.equal(result.started,5);
+    assert.equal(result.providerLabel,'GPM');
     const deadline=Date.now()+60000;
     while(runtime.running && Date.now()<deadline)await new Promise(r=>setTimeout(r,50));
     assert.equal(runtime.running,false,JSON.stringify([...runtime.jobs.values()]));
+    assert.deepEqual(stops.sort(),ids.map(id=>[id,'gpm']));
     assert.equal(writes.length,260);
     assert.equal(new Set(writes.map(x=>x.range)).size,260);
     assert.ok(writes.every(x=>/!C\d+$/.test(x.range)));

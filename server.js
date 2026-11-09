@@ -2760,7 +2760,7 @@ async function getRowsByProfileIds(config, profileIds, options = {}) {
   const rows = new Map();
   for (const [sheetTitle, sheet] of data) {
     for (const row of sheet.rows) {
-      const id = normalizeProfileIdText(row["id hide"]);
+      const id = sheetProfileId(row);
       if (!wanted.has(id)) continue;
       rows.set(id, { ...row, _sheetTitle: sheetTitle });
     }
@@ -3283,7 +3283,9 @@ const checkOrderModule = createCheckOrderTool({
   runtime: toolRuntime
 });
 const marketplaceLinkOrderModule = createMarketplaceLinkOrderTool({
-  getHideManager: () => getHmaStudioManager({ fresh: true }),
+  getProfileManager: (config) => isGpmProvider(config)
+    ? getShippingFullManager({ fresh: true })
+    : getHmaStudioManager({ fresh: true }),
   dangNhap: dangNhapModule,
   buildToolRow,
   getRowsByProfileIds,

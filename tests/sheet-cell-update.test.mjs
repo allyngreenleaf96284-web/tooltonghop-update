@@ -34,6 +34,11 @@ test("session reads fresh Sheet and writes only changed cells, preserving extern
     } },
     updateManagedSheetCacheRows() {}, setTimeout, clearTimeout, console
   };
+  const rowsStart = source.indexOf("async function getRowsByProfileIds(");
+  const getRows = vm.runInNewContext(`(${source.slice(rowsStart, helperStart)})`, context);
+  const rows = await getRows({ browserApiProvider: "gpm" }, ["p1"]);
+  assert.equal(rows.get("p1")._sheetTitle, "Profiles");
+
   const create = vm.runInNewContext(`(${source.slice(start, end)})`, context);
   const session = await create({ spreadsheetId: "fixture" }, ["p1"]);
   assert.equal(fresh, true);
