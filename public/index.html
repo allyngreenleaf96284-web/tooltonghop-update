@@ -1116,14 +1116,16 @@
               </label>
             </div>
           </section>
+          <section class="control-deck notification-controls">
+            <label class="search-panel">
+              <span>Tìm kiếm / lọc hàng loạt</span>
+              <textarea id="changeBankSearch" rows="3" placeholder="Dán danh sách UID, mỗi dòng một UID..."></textarea>
+              <small>Tìm profile theo UID.</small>
+            </label>
+            <button id="changeBankClear" class="ghost-btn" type="button">Bỏ chọn</button>
+          </section>
+          <div class="filter-meta-row"><span id="changeBankCount" class="bulk-filter-summary"></span></div>
           <section class="table-panel">
-            <div class="table-title"><span id="changeBankCount"></span></div>
-            <div class="tool-config-grid">
-              <label class="wide-field">Tìm theo UID
-                <textarea id="changeBankSearch" rows="2" placeholder="Nhập UID, có thể dán nhiều UID"></textarea>
-              </label>
-              <button id="changeBankClear" class="ghost-btn" type="button">Bỏ chọn tất cả</button>
-            </div>
             <div class="table-wrap">
               <table>
                 <thead><tr><th><input id="changeBankSelectAll" type="checkbox" aria-label="Chọn tất cả kết quả tìm kiếm" /></th><th>Profile</th><th>UID</th><th>Folder</th><th>Trạng thái</th></tr></thead>

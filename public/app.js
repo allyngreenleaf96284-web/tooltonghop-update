@@ -4299,7 +4299,21 @@ $("changeBankClear")?.addEventListener("click", () => {
   $("changeBankAuthorized").checked = false;
   renderChangeBankRows();
 });
-$("changeBankSheetLink")?.addEventListener("input", () => { $("changeBankAuthorized").checked = false; });
+const changeBankSheetLink = $("changeBankSheetLink");
+if (changeBankSheetLink) {
+  const storageKey = "changeBank.sheetLink";
+  try {
+    changeBankSheetLink.value = localStorage.getItem(storageKey) || "";
+  } catch {}
+  changeBankSheetLink.addEventListener("input", () => {
+    $("changeBankAuthorized").checked = false;
+    try {
+      localStorage.setItem(storageKey, changeBankSheetLink.value.trim());
+    } catch {
+      $("changeBankStatus").textContent = "Không lưu được link Sheet trên thiết bị này.";
+    }
+  });
+}
 $("changeBankRun")?.addEventListener("click", () => runChangeBank(false));
 $("changeBankRetry")?.addEventListener("click", () => runChangeBank(true));
 $("changeBankStop")?.addEventListener("click", stopCurrentTool);

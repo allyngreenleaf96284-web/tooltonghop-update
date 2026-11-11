@@ -203,7 +203,7 @@ async function loadJournal(file) {
   };
 }
 
-export const skipBankProfile = (name) => /pau|order/i.test(String(name || ""));
+export const skipBankProfile = (name) => /pau|order|ddbank/i.test(String(name || ""));
 
 function isConnectionError(error) {
   return error?.code === "BANK_NETWORK" || /ERR_(PROXY|TUNNEL|CONNECTION|INTERNET|TIMED_OUT)|ECONNRESET|ECONNREFUSED|target closed|session closed|connection closed|proxy.{0,20}(expired|het han)/i.test(error?.message || "");
@@ -399,7 +399,7 @@ export function createChangeBankTool({
           if (retryOnly) { job.status = "skipped"; progress("Không có bước còn thiếu để thử lại."); return; }
           const profile = await manager.getProfileById(profileId);
           if (!profile?.name) throw new Error("Không tìm thấy tên profile.");
-          if (skipBankProfile(profile.name)) { job.status = "skipped"; progress("Bỏ qua tên chứa pau hoặc order."); return; }
+          if (skipBankProfile(profile.name)) { job.status = "skipped"; progress("Bỏ qua tên chứa pau, order hoặc ddbank."); return; }
           if (!profileRows.has(profileId) || !/^\d+$/.test(uid) || uid === profileId) {
             throw Object.assign(new Error("Thiếu UID trong Sheet quản lý profile."), { code: "BANK_UID_MISSING" });
           }
@@ -413,7 +413,7 @@ export function createChangeBankTool({
               let attemptRecord;
               for (;;) {
                 try {
-                  if (!page && !await open()) { job.status = stop() ? "stopped" : "skipped"; progress(stop() ? "Đã dừng." : "Bỏ qua tên chứa pau hoặc order."); return; }
+                  if (!page && !await open()) { job.status = stop() ? "stopped" : "skipped"; progress(stop() ? "Đã dừng." : "Bỏ qua tên chứa pau, order hoặc ddbank."); return; }
                   stage = "điền hai ô bank";
                   await bankBrowser.prepare(page, lease.account, stop);
                   stage = "kiểm tra lại dòng Sheet trước khi gửi";

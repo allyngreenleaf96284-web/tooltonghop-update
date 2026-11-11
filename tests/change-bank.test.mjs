@@ -133,17 +133,17 @@ async function fixture(t, { values, profiles = { p1: "profile one" }, behavior =
 test("limits workers to four, processes only selected profiles, and skips initial and newly renamed profiles", async (t) => {
   const f = await fixture(t, {
     values: accounts.map((account) => [account]),
-    profiles: { p1: "one", p2: "two", p3: "three", p4: "four", p5: "five", p6: "paused full", p7: "ORDER test", p8: "late", p9: "not selected" },
+    profiles: { p1: "one", p2: "two", p3: "three", p4: "four", p5: "five", p6: "paused full", p7: "ORDER test", p8: "late", p9: "not selected", p10: "old-DDbank profile" },
     behavior: {
-      proxy(id, names) { if (id === "p8") names.set(id, "PaUsEd late"); },
+      proxy(id, names) { if (id === "p8") names.set(id, "DDBANK-late"); },
       async submit() { await pause(50); return "success"; }
     }
   });
-  const result = await f.run(["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"], { concurrency: 20 });
+  const result = await f.run(["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8", "p10"], { concurrency: 20 });
   assert.equal(result.concurrency, 4);
   assert.equal(f.maxActive, 4);
   assert.deepEqual(f.events.filter(([event]) => event === "open").map(([, id]) => id), ["p1", "p2", "p3", "p4", "p5"]);
-  for (const id of ["p6", "p7", "p8"]) assert.equal(f.runtime.jobs.get(id).status, "skipped");
+  for (const id of ["p6", "p7", "p8", "p10"]) assert.equal(f.runtime.jobs.get(id).status, "skipped");
 });
 
 test("serializes duplicate accounts and marks only empty matching rows at or below a rejected row", async (t) => {
@@ -306,9 +306,13 @@ test("the Đổi Bank UI filters by UID and sends only selected IDs", async () =
       readFile(new URL("../public/app.js", import.meta.url), "utf8")
     ]);
     const page = await browser.newPage();
-    await page.setContent(html.slice(html.indexOf('<section id="changeBankModule"'), html.indexOf('<section id="postModule"')).replace("module-view hidden", "module-view"));
+    const fixtureHtml = html.slice(html.indexOf('<section id="changeBankModule"'), html.indexOf('<section id="postModule"')).replace("module-view hidden", "module-view");
+    await page.setRequestInterception(true);
+    page.on("request", (request) => void request.respond({ status: 200, contentType: "text/html", body: fixtureHtml }).catch(() => {}));
+    await page.goto("https://change-bank.test/");
+    assert.ok(await page.$(".control-deck .search-panel #changeBankSearch"));
     const parser = source.slice(source.indexOf("function parseBulkTerms("), source.indexOf("function profileHaystack("));
-    await page.addScriptTag({ content: `
+    const uiScript = `
       const $ = id => document.getElementById(id);
       const state = { selectedFolderId: "all", profiles: [
         { id: "p1", uid: "10001", name: "one" },
@@ -331,7 +335,8 @@ test("the Đổi Bank UI filters by UID and sends only selected IDs", async () =
       ${parser}
       ${source.slice(source.indexOf("const changeBankSelected = new Set();"))}
       renderChangeBankRows();
-    ` });
+    `;
+    await page.addScriptTag({ content: uiScript });
     await page.type("#changeBankSearch", "10001");
     assert.deepEqual(await page.$$eval("[data-bank-profile]", (nodes) => nodes.map((node) => node.dataset.bankProfile)), ["p1"]);
     await page.click('[data-bank-profile="p1"]');
@@ -343,5 +348,8 @@ test("the Đổi Bank UI filters by UID and sends only selected IDs", async () =
       url: "/api/tools/doi-bank", profileIds: ["p1"], concurrency: 4,
       sheetLink: "https://docs.google.com/spreadsheets/d/test/edit?gid=42", authorized: true, retryOnly: false
     });
+    await page.reload();
+    await page.addScriptTag({ content: uiScript });
+    assert.equal(await page.$eval("#changeBankSheetLink", (input) => input.value), "https://docs.google.com/spreadsheets/d/test/edit?gid=42");
   } finally { await browser.close(); }
 });
