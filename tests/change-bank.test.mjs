@@ -61,7 +61,8 @@ async function fixture(t, { values, profiles = { p1: "profile one" }, behavior =
   const events = [], logs = [];
   let active = 0, maxActive = 0;
   const tool = createChangeBankTool({
-    runtime, journalPath,
+    runtime, journalPath, closeRetryMs: 0,
+    configureWindow(manager, slot, total) { events.push(["slot", slot, total]); },
     async openSheet() {
       return {
         key: "fixture:42",
@@ -90,7 +91,11 @@ async function fixture(t, { values, profiles = { p1: "profile one" }, behavior =
             async close() {} };
           return { newPage: async () => page, disconnect: async () => {} };
         },
-        async stopHideMyAccProfile(id) { active -= 1; events.push(["close", id]); }
+        async stopHideMyAccProfile(id) {
+          if (await behavior.close?.(id) === false) return false;
+          active -= 1;
+          events.push(["close", id]);
+        }
       };
     },
     async getRowsByProfileIds(_, ids) { return new Map(ids.map((id) => [id, { uid: uids.get(id) }])); },
@@ -144,6 +149,7 @@ test("limits workers to four, processes only selected profiles, and skips initia
   const result = await f.run(["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8", "p10"], { concurrency: 20 });
   assert.equal(result.concurrency, 4);
   assert.equal(f.maxActive, 4);
+  assert.deepEqual(f.events.filter(([event]) => event === "slot").slice(0, 4), [0, 1, 2, 3].map((slot) => ["slot", slot, 4]));
   assert.deepEqual(f.events.filter(([event]) => event === "open").map(([, id]) => id), ["p1", "p2", "p3", "p4", "p5"]);
   for (const id of ["p6", "p7", "p8", "p10"]) assert.equal(f.runtime.jobs.get(id).status, "skipped");
 });
@@ -168,6 +174,19 @@ test("serializes duplicate accounts and marks only empty matching rows at or bel
   ]);
   assert.deepEqual(f.rows.map(({ uid }) => uid), ["123", "x", "999", "x", "10001", "10000"]);
   assert.equal(f.names.get("p1"), "ddbank-one");
+});
+
+test("a worker stops advancing when the provider fails to close the old profile", async (t) => {
+  let attempts = 0;
+  const f = await fixture(t, {
+    values: [[accounts[0]], [accounts[1]]], profiles: { p1: "one", p2: "two" },
+    behavior: { close() { attempts++; return false; } }
+  });
+  await f.run(["p1", "p2"], { concurrency: 1 });
+  assert.equal(attempts, 3);
+  assert.deepEqual(f.events.filter(([type]) => type === "open"), [["open", "p1"]]);
+  assert.match(f.runtime.jobs.get("p1").liveStatus, /Chưa đóng được profile/);
+  await assert.rejects(f.run(["p2"], { concurrency: 1 }), /còn profile chưa đóng/);
 });
 
 test("bank exhaustion lets the submitted result finish and prevents opening another profile", async (t) => {

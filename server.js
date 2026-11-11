@@ -930,7 +930,7 @@ function patchProfileManager(manager, toolName = "he thong") {
     return startInfo;
   };
 
-  manager.stopHideMyAccProfile = async function stopProviderProfile(profileId) {
+  manager.stopHideMyAccProfile = async function stopProviderProfile(profileId, { reportFailure = false } = {}) {
     if (!profileId) return;
     const config = await this.__profileConfig();
     const providerName = providerDisplayName(config);
@@ -949,7 +949,9 @@ function patchProfileManager(manager, toolName = "he thong") {
         });
       }
     } catch (error) {
+      if (reportFailure && /\b(?:already (?:closed|stopped)|not running|not started)\b/i.test(error.message)) return true;
       this.sendLog?.(`[${profileId}] stop ${providerName} profile error: ${error.message}`, "warn");
+      if (reportFailure) return false;
     }
   };
 

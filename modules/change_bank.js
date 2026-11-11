@@ -1,3 +1,5 @@
+import { patchStableWindowTiling } from "./tool_login.js";
+import { createLoginDisplay } from "./login_display.js";
 import { createHmac, randomBytes } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -223,8 +225,9 @@ function statusText(record) {
 
 export function createChangeBankTool({
   runtime, openSheet, getManager, getRowsByProfileIds, buildToolRow, dangNhap, stateProxy,
-  addRuntimeLog, journalPath, bankBrowser = createBankBrowser()
+  addRuntimeLog, journalPath, bankBrowser = createBankBrowser(), configureWindow = patchStableWindowTiling, closeRetryMs = 1000
 }) {
+  const unclosedProfiles = new Map();
   const report = (profileId, uid, rowNumber, message, type = "info") => {
     const status = `${uid ? `UID ${uid} · ` : ""}${rowNumber ? `dòng ${rowNumber} · ` : ""}${message}`;
     const job = runtime.jobs.get(profileId);
@@ -242,6 +245,14 @@ export function createChangeBankTool({
     runtime.stopRequested = false;
     runtime.currentTool = TOOL;
     try {
+      for (const [id, close] of unclosedProfiles) {
+        try {
+          await close();
+          unclosedProfiles.delete(id);
+        } catch {
+          throw new Error("Đổi Bank còn profile chưa đóng được. Hãy đóng profile đó trong GPM hoặc HideMyAcc rồi chạy lại.");
+        }
+      }
       const journal = await loadJournal(journalPath);
       const sheet = await openSheet(config, sheetLink);
       let snapshot = await sheet.read();
@@ -255,6 +266,7 @@ export function createChangeBankTool({
       };
       reportRows();
       const profileRows = retryOnly ? new Map() : await getRowsByProfileIds(config, ids, { forceRefresh: true, source: TOOL });
+      const display = createLoginDisplay();
       const leases = new Map();
       const rejected = new Set();
       let sheetTail = Promise.resolve();
@@ -332,11 +344,12 @@ export function createChangeBankTool({
         await journal.set(key, null);
       }
 
-      async function runProfile(profileId) {
+      async function runProfile(profileId, workerSlot) {
         const job = runtime.jobs.get(profileId);
         const key = JSON.stringify([config.browserApiProvider, profileId]);
         const manager = getManager({ fresh: true });
         manager.__profileConfig = async () => config;
+        configureWindow(manager, workerSlot, workers, config.loginZoomPercent, display);
         const row = buildToolRow(profileId, profileRows.get(profileId) || {});
         const prior = journal.records[key];
         const uid = prior?.uid || String(row.uid || "").trim();
@@ -350,7 +363,19 @@ export function createChangeBankTool({
         const close = async () => {
           if (page) { try { await page.close({ runBeforeUnload: false }); } catch {} }
           if (browser) { try { await browser.disconnect(); } catch {} }
-          if (opening) { try { await manager.stopHideMyAccProfile(profileId); } catch {} }
+          if (opening) {
+            for (let attempt = 1; attempt <= 3; attempt++) {
+              try {
+                const result = await manager.stopHideMyAccProfile(profileId, { reportFailure: true });
+                if (result !== false && result?.success !== false) {
+                  opening = false;
+                  break;
+                }
+              } catch {}
+              if (attempt < 3) await delay(closeRetryMs);
+            }
+            if (opening) throw Object.assign(new Error("Chưa đóng được profile."), { code: "BANK_CLOSE_FAILED" });
+          }
           if (proxyLease) {
             previousLease = proxyLease;
             try { stateProxy?.release?.(proxyLease); } catch {}
@@ -370,9 +395,13 @@ export function createChangeBankTool({
           opening = true;
           browser = await manager.connectBrowser(profileId);
           page = await browser.newPage();
+          await manager.maximizeBrowserWindow?.(browser, page).catch(() => progress("Không xếp được cửa sổ.", "warn"));
           stage = "đăng nhập Facebook";
           const login = await dangNhap.ensureFacebookLogin(manager, page, row, profileId, () => {}, { shouldStop: () => stop() && !journal.records[key] });
-          page = login?.page || page;
+          if (login?.page && login.page !== page) {
+            page = login.page;
+            await manager.maximizeBrowserWindow?.(browser, page).catch(() => progress("Không xếp được cửa sổ.", "warn"));
+          }
           const cookies = await page.cookies("https://www.facebook.com");
           if (cookies.find((cookie) => cookie.name === "c_user")?.value !== uid) {
             throw Object.assign(new Error("UID Facebook không khớp với profile đã chọn."), { code: "BANK_UID_MISMATCH" });
@@ -486,7 +515,12 @@ export function createChangeBankTool({
           if (error.code === "BANK_SHEET_MISMATCH") message += " Chọn đúng link tab Sheet của lần thử trước.";
           progress(job.status === "stopped" ? "Đã dừng." : message, "error");
         } finally {
-          await close();
+          try {
+            await close();
+          } catch (error) {
+            if (error.code === "BANK_CLOSE_FAILED") unclosedProfiles.set(key, close);
+            throw error;
+          }
           job.finishedAt = new Date().toISOString();
         }
       }
@@ -495,14 +529,18 @@ export function createChangeBankTool({
       let cursor = 0;
       setImmediate(async () => {
         try {
-          await Promise.allSettled(Array.from({ length: workers }, async () => {
+          await Promise.allSettled(Array.from({ length: workers }, async (_, workerSlot) => {
             while (!runtime.stopRequested && cursor < ids.length) {
               const id = ids[cursor++];
-              try { await runProfile(id); }
-              catch {
+              try { await runProfile(id, workerSlot); }
+              catch (error) {
                 const job = runtime.jobs.get(id);
                 job.status = "error";
                 job.finishedAt = new Date().toISOString();
+                if (error.code === "BANK_CLOSE_FAILED") {
+                  report(id, "", null, "Chưa đóng được profile. Luồng này dừng mở profile mới.", "error");
+                  break;
+                }
                 report(id, "", null, "Không khởi tạo được phiên xử lý.", "error");
               }
             }
@@ -511,7 +549,7 @@ export function createChangeBankTool({
           for (const id of ids.slice(cursor)) {
             const job = runtime.jobs.get(id);
             job.status = "stopped";
-            job.liveStatus = "Đã dừng.";
+            job.liveStatus = runtime.stopRequested ? "Đã dừng." : "Chưa chạy vì các luồng chưa đóng được profile.";
             job.finishedAt = new Date().toISOString();
           }
           runtime.running = false;

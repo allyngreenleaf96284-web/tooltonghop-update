@@ -126,7 +126,7 @@ export async function applyStableViewport(page, workerSlot = 0, workerTotal = 1,
   return { ...viewport, zoom, bounds, actual: await readViewportMetrics(page) };
 }
 
-function patchStableWindowTiling(manager, workerSlot = 0, workerTotal = 1, zoomPercent = 50, display) {
+export function patchStableWindowTiling(manager, workerSlot = 0, workerTotal = 1, zoomPercent = 50, display) {
   const original = manager.maximizeBrowserWindow;
   manager.__toolWorkerSlot = workerSlot;
   manager.__toolWorkerTotal = workerTotal;
