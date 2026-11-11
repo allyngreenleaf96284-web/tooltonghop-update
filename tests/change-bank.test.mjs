@@ -17,6 +17,8 @@ test("uses exact gid, maps columns by header, keeps digits, and writes the UID a
     async metadata() { return { sheets: [{ properties: { sheetId: 0 } }, { properties: { sheetId: 42 } }] }; },
     async request(endpoint, options) {
       assert.match(endpoint, /^:getByDataFilter\?/);
+      const fields = new URLSearchParams(endpoint.split("?")[1]).get("fields");
+      assert.equal(fields, "sheets(properties(sheetId),data(rowData(values(userEnteredValue,effectiveValue,formattedValue))))");
       assert.deepEqual(JSON.parse(options.body).dataFilters, [{ gridRange: { sheetId: 42 } }]);
       return { sheets: [{ properties: { sheetId: 42 }, data: [{ rowData: [
         { values: [text(" UID "), text("note"), text("Bank Account Number")] },

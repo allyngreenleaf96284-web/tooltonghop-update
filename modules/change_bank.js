@@ -20,7 +20,7 @@ export async function openBankSheet(client, spreadsheetId, gid) {
   const sheetId = tab.sheetId;
   const read = async () => {
     const params = new URLSearchParams({
-      fields: "sheets(properties(sheetId),data(rowData(values(userEnteredValue,effectiveValue,formattedValue)))"
+      fields: "sheets(properties(sheetId),data(rowData(values(userEnteredValue,effectiveValue,formattedValue))))"
     });
     const result = await client.request(`:getByDataFilter?${params}`, {
       method: "POST",
