@@ -247,6 +247,8 @@ async function switchEngine(engine) {
     updateEngineUi();
     return;
   }
+  changeBankSelected.clear();
+  if ($("changeBankAuthorized")) $("changeBankAuthorized").checked = false;
   state.config = { ...state.config, browserApiProvider: nextEngine };
   if ($("browserApiProvider")) $("browserApiProvider").value = nextEngine;
   state.currentHideAccount = null;
@@ -844,6 +846,7 @@ function renderActiveModule() {
   if (state.activeModule === "checkorder") renderCheckOrderRows();
   if (state.activeModule === "full") renderFullRows();
   if (state.activeModule === "login") renderLoginRows();
+  if (state.activeModule === "changebank") renderChangeBankRows();
   if (state.activeModule === "post") renderPostRows();
   if (state.activeModule === "post4v") renderPost4VRows();
   if (state.activeModule === "interaction") renderInteractionRows();
@@ -1446,6 +1449,8 @@ function setActiveModule(moduleName) {
   $("linkOrderModule")?.classList.toggle("hidden", moduleName !== "linkorder");
   $("fullModule").classList.toggle("hidden", moduleName !== "full");
   $("loginModule")?.classList.toggle("hidden", moduleName !== "login");
+  $("changeBankModule")?.classList.toggle("hidden", moduleName !== "changebank");
+  $("changeBankModule")?.classList.toggle("active", moduleName === "changebank");
   $("postModule").classList.toggle("hidden", moduleName !== "post");
   $("post4vModule")?.classList.toggle("hidden", moduleName !== "post4v");
   $("interactionModule").classList.toggle("hidden", moduleName !== "interaction");
@@ -3217,6 +3222,13 @@ function renderRetryErrorPanel({ panelId, countId, listId, jobs }) {
 }
 
 function syncRuntimeProfileRows() {
+  if (state.activeModule === "changebank") {
+    for (const cell of document.querySelectorAll("#changeBankRows [data-bank-status]")) {
+      const job = state.runtimeJobsById?.get(cell.dataset.bankStatus);
+      const message = job?.tool === "doi bank" ? job.liveStatus : "—";
+      if (cell.textContent !== message) cell.textContent = message;
+    }
+  }
   const jobs = state.runtimeJobsById || new Map();
   for (const bodyId of RUNTIME_PROFILE_TABLE_BODIES) {
     const body = $(bodyId);
@@ -3505,6 +3517,7 @@ function renderActivityLogs() {
   renderActivityLogBox("notificationActivityLog", logs);
   renderActivityLogBox("checkOrderActivityLog", logs);
   renderActivityLogBox("linkOrderActivityLog", logs);
+  if (state.activeModule === "changebank") renderActivityLogBox("changeBankActivityLog", logs.filter((entry) => entry.tool === "doi bank"));
   renderActivityLogBox("fullActivityLog", logs);
   renderActivityLogBox("loginActivityLog", logs);
   renderActivityLogBox("postActivityLog", logs);
@@ -3653,6 +3666,7 @@ async function stopCurrentTool() {
     const { data } = await api("/api/tools/stop", { method: "POST", body: "{}" });
     const toolName = data?.tool || "tool hien tai";
     setStatus(`Đã gửi lệnh dừng hẳn cho ${toolName}.`);
+    if ($("changeBankStatus") && state.activeModule === "changebank") $("changeBankStatus").textContent = "Đã yêu cầu dừng. Đang chờ các lần gửi đang xử lý.";
     if ($("fullStatusText") && state.activeModule === "full") $("fullStatusText").textContent = "Đã gửi lệnh dừng hẳn.";
     if ($("postStatusText") && state.activeModule === "post") $("postStatusText").textContent = "Đã gửi lệnh dừng hẳn.";
     if ($("post4vStatusText") && state.activeModule === "post4v") $("post4vStatusText").textContent = "Đã gửi lệnh dừng hẳn.";
@@ -4200,3 +4214,92 @@ $("stateFillRunAll")?.addEventListener("click",()=>runStateFill(stateFillProfile
 $("stateFillStop")?.addEventListener("click",stopCurrentTool);
 
 $("stateFillRunMissing")?.addEventListener("click",()=>runStateFill(stateFillProfiles().filter(profile=>!String(sheetValue(profile,"bang")||"").trim()).map(profile=>profile.id),true));
+
+const changeBankSelected = new Set();
+
+function changeBankProfiles() {
+  const query = $("changeBankSearch").value;
+  const terms = parseBulkTerms(query);
+  const profiles = state.profiles.filter((profile) => {
+    const uid = String(profile.uid || sheetValue(profile, "uid") || "");
+    return (state.selectedFolderId === "all" || profile.folderId === state.selectedFolderId)
+      && (!terms.length || terms.some((term) => uid.includes(term)));
+  });
+  return orderProfilesByPastedTerms(profiles.sort(compareProfiles), query, "");
+}
+
+function updateChangeBankSelection(profiles) {
+  const selected = profiles.filter(({ id }) => changeBankSelected.has(id)).length;
+  $("changeBankCount").textContent = `${profiles.length} profile · ${changeBankSelected.size} đã chọn`;
+  $("changeBankSelectAll").checked = selected > 0 && selected === profiles.length;
+  $("changeBankSelectAll").indeterminate = selected > 0 && selected < profiles.length;
+}
+
+function renderChangeBankRows() {
+  const rows = $("changeBankRows");
+  const profiles = changeBankProfiles();
+  const visible = pageProfileTable(profiles, rows, renderChangeBankRows);
+  rows.innerHTML = visible.map((profile) => {
+    const job = state.runtimeJobsById?.get(profile.id);
+    return `<tr>
+      <td><input type="checkbox" data-bank-profile="${escapeAttr(profile.id)}" aria-label="Chọn profile" ${changeBankSelected.has(profile.id) ? "checked" : ""}></td>
+      <td>${escapeHtml(profile.name)}</td><td>${escapeHtml(profile.uid || sheetValue(profile, "uid") || "")}</td>
+      <td>${escapeHtml(profile.folderName || "")}</td>
+      <td data-bank-status="${escapeAttr(profile.id)}">${escapeHtml(job?.tool === "doi bank" ? job.liveStatus : "—")}</td>
+    </tr>`;
+  }).join("");
+  updateChangeBankSelection(profiles);
+}
+
+async function runChangeBank(retryOnly) {
+  const status = $("changeBankStatus");
+  const profileIds = orderProfileIdsTopDown([...changeBankSelected], "changeBankRows");
+  const sheetLink = $("changeBankSheetLink").value.trim();
+  const concurrency = Math.max(1, Math.min(4, Math.floor(Number($("changeBankConcurrency").value) || 1)));
+  const authorized = $("changeBankAuthorized").checked;
+  if (!profileIds.length) { status.textContent = "Chọn ít nhất một profile."; return; }
+  if (!sheetLink) { status.textContent = "Nhập link tab Google Sheet chứa bank."; return; }
+  if (!retryOnly && !authorized) { status.textContent = "Xác nhận quyền liên kết bank cho các profile đã chọn."; return; }
+  $("changeBankRun").disabled = $("changeBankRetry").disabled = true;
+  try {
+    await saveConfig();
+    const { data } = await api("/api/tools/doi-bank", {
+      method: "POST",
+      body: JSON.stringify({ profileIds, concurrency, sheetLink, authorized, retryOnly })
+    });
+    status.textContent = `Đã xếp hàng ${data.started} profile với ${data.concurrency} luồng.`;
+    startToolStatusPolling();
+    await refreshToolStatus();
+  } catch (error) {
+    status.textContent = error.message;
+  } finally {
+    $("changeBankRun").disabled = $("changeBankRetry").disabled = false;
+  }
+}
+
+$("changeBankSearch")?.addEventListener("input", renderChangeBankRows);
+$("changeBankRows")?.addEventListener("change", (event) => {
+  const input = event.target.closest("[data-bank-profile]");
+  if (!input) return;
+  if (input.checked) changeBankSelected.add(input.dataset.bankProfile);
+  else changeBankSelected.delete(input.dataset.bankProfile);
+  $("changeBankAuthorized").checked = false;
+  updateChangeBankSelection(changeBankProfiles());
+});
+$("changeBankSelectAll")?.addEventListener("change", (event) => {
+  for (const { id } of changeBankProfiles()) {
+    if (event.target.checked) changeBankSelected.add(id);
+    else changeBankSelected.delete(id);
+  }
+  $("changeBankAuthorized").checked = false;
+  renderChangeBankRows();
+});
+$("changeBankClear")?.addEventListener("click", () => {
+  changeBankSelected.clear();
+  $("changeBankAuthorized").checked = false;
+  renderChangeBankRows();
+});
+$("changeBankSheetLink")?.addEventListener("input", () => { $("changeBankAuthorized").checked = false; });
+$("changeBankRun")?.addEventListener("click", () => runChangeBank(false));
+$("changeBankRetry")?.addEventListener("click", () => runChangeBank(true));
+$("changeBankStop")?.addEventListener("click", stopCurrentTool);

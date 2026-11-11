@@ -74,6 +74,10 @@
               <small>Đăng nhập, đổi bang Mỹ, check vạch</small>
             </span>
           </button>
+          <button class="module-item" data-module="changebank">
+            <span class="module-icon">▣</span>
+            <span><strong>Đổi Bank</strong><small>Tài khoản nhận tiền Marketplace</small></span>
+          </button>
           <button class="module-item" data-module="post">
             <span class="module-icon">⬢</span>
             <span>
@@ -1087,6 +1091,49 @@
               <div class="activity-title"><span>Nhật ký</span><button id="openLogsFromLoginBtn" class="ghost-btn small-btn" type="button">Chi tiết</button></div>
               <div id="loginActivityLog" class="activity-log"></div>
             </section>
+          </section>
+        </section>
+
+        <section id="changeBankModule" class="module-view hidden">
+          <header class="hero">
+            <div><h2>Đổi Bank</h2><p id="changeBankStatus" aria-live="polite"></p></div>
+            <div class="actions">
+              <button id="changeBankStop" class="ghost-btn danger-btn" type="button">Dừng hẳn</button>
+              <button id="changeBankRetry" class="ghost-btn" type="button">Thử lại bước còn thiếu</button>
+              <button id="changeBankRun" class="primary" type="button">Chạy đã chọn</button>
+            </div>
+          </header>
+          <section class="table-panel">
+            <div class="tool-config-grid">
+              <label class="wide-field">Link Google Sheet chứa bank
+                <input id="changeBankSheetLink" type="url" placeholder="https://docs.google.com/spreadsheets/d/…/edit?gid=…" />
+              </label>
+              <label>Số luồng
+                <input id="changeBankConcurrency" type="number" min="1" max="4" step="1" value="1" />
+              </label>
+              <label class="checkbox-label wide-field">
+                <input id="changeBankAuthorized" type="checkbox" /> Các bank trong tab được phép liên kết với các profile đã chọn
+              </label>
+            </div>
+          </section>
+          <section class="table-panel">
+            <div class="table-title"><span id="changeBankCount"></span></div>
+            <div class="tool-config-grid">
+              <label class="wide-field">Tìm theo UID
+                <textarea id="changeBankSearch" rows="2" placeholder="Nhập UID, có thể dán nhiều UID"></textarea>
+              </label>
+              <button id="changeBankClear" class="ghost-btn" type="button">Bỏ chọn tất cả</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th><input id="changeBankSelectAll" type="checkbox" aria-label="Chọn tất cả kết quả tìm kiếm" /></th><th>Profile</th><th>UID</th><th>Folder</th><th>Trạng thái</th></tr></thead>
+                <tbody id="changeBankRows"></tbody>
+              </table>
+            </div>
+          </section>
+          <section class="table-panel">
+            <div class="table-title"><span>Nhật ký Đổi Bank</span></div>
+            <div id="changeBankActivityLog" class="activity-log"></div>
           </section>
         </section>
 

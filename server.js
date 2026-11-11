@@ -1,3 +1,4 @@
+import { createChangeBankTool, openBankSheet } from "./modules/change_bank.js";
 import { createDienBang } from "./modules/dienbang.js";
 ﻿import { createServer } from "node:http";
 import { copyFile, mkdir, readFile, writeFile, stat } from "node:fs/promises";
@@ -1923,9 +1924,8 @@ class SheetsClient {
     return next;
   }
 
-  async request(endpoint, options = {}) {
-    const writeRequest = this.isWriteRequest(options);
-    const maxAttempts = 6;
+  async request(endpoint, { maxAttempts = 6, ...options } = {}) {
+    const writeRequest = !endpoint.startsWith(":getByDataFilter?") && this.isWriteRequest(options);
     let refreshedAuth = false;
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       if (writeRequest) await this.waitGlobalWriteSlot(endpoint);
@@ -1967,11 +1967,12 @@ class SheetsClient {
     return this.request("?fields=sheets.properties");
   }
 
-  async batchUpdate(requests) {
+  async batchUpdate(requests, options = {}) {
     if (!requests.length) return {};
     return this.request(":batchUpdate", {
       method: "POST",
-      body: JSON.stringify({ requests })
+      body: JSON.stringify({ requests }),
+      ...options
     });
   }
 
@@ -3209,6 +3210,36 @@ const dienMatKhauModule = createDienMatKhau({
   runtime: toolRuntime
 });
 
+const changeBankModule = createChangeBankTool({
+  runtime: toolRuntime,
+  getManager: getShippingFullManager,
+  getRowsByProfileIds,
+  buildToolRow,
+  dangNhap: dangNhapModule,
+  stateProxy: stateProxyTool,
+  addRuntimeLog,
+  journalPath: path.join(__dirname, "data", "change-bank-journal.json"),
+  async openSheet(config, link) {
+    let url;
+    try { url = new URL(String(link || "").trim()); } catch {}
+    if (url?.origin !== "https://docs.google.com" || !url.pathname.startsWith("/spreadsheets/d/")) {
+      throw new Error("Nhập link Google Sheet có gid của tab Đổi Bank.");
+    }
+    const queryGid = url.searchParams.get("gid");
+    const hashGid = new URLSearchParams(url.hash.slice(1)).get("gid");
+    if (queryGid !== null && hashGid !== null && queryGid !== hashGid) {
+      throw new Error("Link Sheet chứa hai gid khác nhau. Sao chép lại link của đúng tab.");
+    }
+    const { spreadsheetId, gid } = parseSpreadsheetLink(link);
+    if (!/^[a-zA-Z0-9_-]+$/.test(spreadsheetId) || !/^\d+$/.test(gid)) {
+      throw new Error("Nhập link Google Sheet có gid của tab Đổi Bank.");
+    }
+    if (!config.credentialsPath) throw new Error("Chưa cấu hình Service Account JSON.");
+    const token = await getGoogleAccessToken(config.credentialsPath);
+    return openBankSheet(new SheetsClient({ ...config, spreadsheetId }, token), spreadsheetId, gid);
+  }
+});
+
 const dangBaiModule = createDangBai({
   runFullProfile: lamFullModule.runProfile,
   getManager: getShippingFullManager,
@@ -3717,6 +3748,19 @@ async function handleApi(req, res) {
         config: passwordConfig,
         options: { sourceSpreadsheetId: body.sourceSpreadsheetId },
         addRuntimeLog
+      });
+      return jsonResponse(res, 200, { ok: true, data });
+    }
+    if (req.method === "POST" && url.pathname === "/api/tools/doi-bank") {
+      const body = await parseBody(req);
+      const retryOnly = body.retryOnly === true;
+      const saved = await readConfig();
+      const config = retryOnly ? saved : await resolveAccountSheetConfig(saved);
+      const data = await changeBankModule.run(Array.isArray(body.profileIds) ? body.profileIds : [], config, {
+        concurrency: stateProxyUsesProxyPanel(config) ? 1 : body.concurrency,
+        sheetLink: body.sheetLink,
+        authorized: body.authorized,
+        retryOnly
       });
       return jsonResponse(res, 200, { ok: true, data });
     }
