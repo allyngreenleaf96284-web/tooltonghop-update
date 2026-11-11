@@ -82,7 +82,10 @@ async function fixture(t, { values, profiles = { p1: "profile one" }, behavior =
           names.set(id, name);
           events.push(["rename", id, name]);
         },
+        async startHideMyAccProfile(id) { events.push(["start", id]); },
         async connectBrowser(id) {
+          await behavior.beforeStart?.(id, names);
+          await this.startHideMyAccProfile(id);
           events.push(["open", id]);
           active += 1;
           maxActive = Math.max(active, maxActive);
@@ -371,6 +374,19 @@ test("the Đổi Bank UI filters by UID and sends only selected IDs", async () =
     });
     await page.reload();
     await page.addScriptTag({ content: uiScript });
+    assert.equal(await page.$eval("#changeBankConcurrency", input => input.value), "4");
+    assert.ok(await page.$("#changeBankProgressList"));
     assert.equal(await page.$eval("#changeBankSheetLink", (input) => input.value), "https://docs.google.com/spreadsheets/d/test/edit?gid=42");
   } finally { await browser.close(); }
 });
+
+ test("rechecks exclusions at the provider start boundary", async (t) => {
+   const f = await fixture(t, { values: accounts.map(account => [account]),
+     profiles: { p1: "one", p2: "two", p3: "three" },
+     behavior: { beforeStart(id, names) { if(id === "p1") names.set(id, "ddbank-one"); if(id === "p2") names.set(id, "paused two"); } }
+   });
+   await f.run();
+   assert.deepEqual(f.events.filter(([event]) => event === "start").map(([,id]) => id), ["p3"]);
+   assert.equal(f.runtime.jobs.get("p1").status, "skipped");
+   assert.equal(f.runtime.jobs.get("p2").status, "skipped");
+ });

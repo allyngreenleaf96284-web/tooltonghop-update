@@ -2933,6 +2933,19 @@ function renderToolProgress(data) {
   state.runtimeJobsById = new Map((data.jobs || []).map((job) => [String(job.profileId || ""), job]));
   renderLogs();
   const allJobs = data.jobs || [];
+  const bankJobs = allJobs.filter(job => job.tool === "doi bank");
+  const bankDone = bankJobs.filter(job => ["success", "error", "skipped", "stopped"].includes(job.status)).length;
+  const bankCount = status => bankJobs.filter(job => job.status === status).length;
+  renderToolProgressPanel({
+    panelId: "changeBankProgressPanel", stateId: "changeBankProgressState",
+    countId: "changeBankProgressCount", textId: "changeBankProgressText",
+    barId: "changeBankProgressBar", listId: "changeBankProgressList",
+    stateLabel: data.running && data.currentTool === "doi bank" ? "đang chạy" : "đã dừng",
+    countLabel: `${bankDone} / ${bankJobs.length} profile`,
+    textLabel: `Đang xử lý ${bankCount("running")} · Chờ ${bankCount("queued")} · Thành công ${bankCount("success")} · Bỏ qua ${bankCount("skipped")} · Lỗi ${bankCount("error")} · Đã dừng ${bankCount("stopped")}`,
+    percent: bankJobs.length ? bankDone / bankJobs.length * 100 : 0,
+    jobs: bankJobs.map(job => ({...job, liveStatus: `${job.workerSlot ? `Luồng ${job.workerSlot}: ` : ""}${job.liveStatus || ""}`}))
+  });
   const doneStatuses = new Set(["done", "success", "completed", "error", "stopped", "cancelled", "skipped"]);
   const sortProgressJobs = (jobs) => [...jobs].sort((a, b) => {
     const statusRank = (job) => {
@@ -3352,6 +3365,8 @@ function renderToolProgressPanel({
       if (status === "retry_waiting" || job.phaseState === "retry_waiting") return 3;
       return 2;
     };
+    const bankRank = job => job.status === "running" ? 0 : job.status === "queued" ? 1 : 2;
+    if (panelId === "changeBankProgressPanel") return bankRank(a) - bankRank(b) || Number(a.batchOrder ?? 0) - Number(b.batchOrder ?? 0);
     return rank(a) - rank(b) || Number(a.batchOrder ?? 0) - Number(b.batchOrder ?? 0);
   });
   const timeColumnHead = showTimeColumn ? `
@@ -4256,6 +4271,7 @@ async function runChangeBank(retryOnly) {
   const profileIds = orderProfileIdsTopDown([...changeBankSelected], "changeBankRows");
   const sheetLink = $("changeBankSheetLink").value.trim();
   const concurrency = Math.max(1, Math.min(4, Math.floor(Number($("changeBankConcurrency").value) || 1)));
+  try { localStorage.setItem("changeBank.concurrency", String(concurrency)); } catch {}
   const authorized = $("changeBankAuthorized").checked;
   if (!profileIds.length) { status.textContent = "Chọn ít nhất một profile."; return; }
   if (!sheetLink) { status.textContent = "Nhập link tab Google Sheet chứa bank."; return; }
@@ -4317,3 +4333,13 @@ if (changeBankSheetLink) {
 $("changeBankRun")?.addEventListener("click", () => runChangeBank(false));
 $("changeBankRetry")?.addEventListener("click", () => runChangeBank(true));
 $("changeBankStop")?.addEventListener("click", stopCurrentTool);
+
+const bankConcurrencyInput = $("changeBankConcurrency");
+if (bankConcurrencyInput) {
+  const clampBankConcurrency = value => Math.max(1, Math.min(4, Math.floor(Number(value) || 1)));
+  try { bankConcurrencyInput.value = clampBankConcurrency(localStorage.getItem("changeBank.concurrency") || bankConcurrencyInput.value); } catch {}
+  bankConcurrencyInput.addEventListener("change", () => {
+    bankConcurrencyInput.value = clampBankConcurrency(bankConcurrencyInput.value);
+    try { localStorage.setItem("changeBank.concurrency", bankConcurrencyInput.value); } catch {}
+  });
+}

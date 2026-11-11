@@ -355,6 +355,8 @@ export function createChangeBankTool({
         const uid = prior?.uid || String(row.uid || "").trim();
         job.status = "running";
         job.startedAt = new Date().toISOString();
+        job.uid = uid;
+        job.workerSlot = workerSlot + 1;
         let lease, proxyLease, previousLease, browser, page, opening = false;
         let proxyRetries = 0;
         let lastRowNumber = prior?.rowNumber;
@@ -384,7 +386,22 @@ export function createChangeBankTool({
           opening = false;
         };
         const stop = () => runtime.stopRequested;
+        const originalStart = manager.startHideMyAccProfile;
+        if (originalStart) manager.startHideMyAccProfile = async function(id) {
+          if (String(id) !== String(profileId)) throw new Error("Sai profile của luồng Đổi Bank.");
+          const latest = await manager.getProfileById(id);
+          if (!latest?.name) throw new Error("Không đọc được tên trước khi mở phiên.");
+          if (skipBankProfile(latest.name)) {
+            opening = false;
+            throw Object.assign(new Error("Bỏ qua tên chứa pau, order hoặc ddbank."), { code: "BANK_SKIP_NAME" });
+          }
+          return originalStart.call(this, id);
+        };
         const open = async () => {
+          const beforeProxy = await manager.getProfileById(profileId);
+          if (!beforeProxy?.name) throw new Error("Không tìm thấy tên profile.");
+          if (skipBankProfile(beforeProxy.name)) return false;
+          progress(`Luồng ${workerSlot + 1}/${workers}: đang cấp proxy.`);
           stage = "cấp proxy";
           proxyLease = await stateProxy?.ensureForProfile?.({ config, profileId, row, previousLease });
           stage = "mở profile";
@@ -393,10 +410,12 @@ export function createChangeBankTool({
           if (skipBankProfile(profile.name)) return false;
           if (stop() && !journal.records[key]) return false;
           opening = true;
+          progress(`Luồng ${workerSlot + 1}/${workers}: đang mở profile.`);
           browser = await manager.connectBrowser(profileId);
           page = await browser.newPage();
           await manager.maximizeBrowserWindow?.(browser, page).catch(() => progress("Không xếp được cửa sổ.", "warn"));
           stage = "đăng nhập Facebook";
+          progress("Đang đăng nhập Facebook.");
           const login = await dangNhap.ensureFacebookLogin(manager, page, row, profileId, () => {}, { shouldStop: () => stop() && !journal.records[key] });
           if (login?.page && login.page !== page) {
             page = login.page;
@@ -407,6 +426,7 @@ export function createChangeBankTool({
             throw Object.assign(new Error("UID Facebook không khớp với profile đã chọn."), { code: "BANK_UID_MISMATCH" });
           }
           stage = "tải trang liên kết bank";
+          progress("Đang tải trang liên kết bank.");
           await page.goto(PAYMENTS_URL, { waitUntil: "domcontentloaded", timeout: 45000 });
           return true;
         };
@@ -502,6 +522,11 @@ export function createChangeBankTool({
           job.status = "stopped";
           progress("Đã dừng.");
         } catch (error) {
+          if (error.code === "BANK_SKIP_NAME") {
+            job.status = "skipped";
+            progress(error.message);
+            return;
+          }
           const record = journal.records[key];
           job.status = !record && stop() ? "stopped" : "error";
           let message = `Lỗi bước ${stage}.`;
@@ -515,8 +540,16 @@ export function createChangeBankTool({
           if (error.code === "BANK_SHEET_MISMATCH") message += " Chọn đúng link tab Sheet của lần thử trước.";
           progress(job.status === "stopped" ? "Đã dừng." : message, "error");
         } finally {
+          const finalStatus = job.status;
+          const finalMessage = job.liveStatus;
           try {
+            if (opening) {
+              job.status = "running";
+              progress("Đang đóng phiên trước khi nhận nick tiếp theo.");
+            }
             await close();
+            job.status = finalStatus;
+            job.liveStatus = finalMessage;
           } catch (error) {
             if (error.code === "BANK_CLOSE_FAILED") unclosedProfiles.set(key, close);
             throw error;
@@ -525,7 +558,7 @@ export function createChangeBankTool({
         }
       }
 
-      for (const profileId of ids) runtime.jobs.set(profileId, { profileId, tool: TOOL, status: "queued", liveStatus: "Chờ xử lý.", logs: [] });
+      for (const [batchOrder, profileId] of ids.entries()) runtime.jobs.set(profileId, { profileId, uid: String(profileRows.get(profileId)?.uid || ""), batchOrder, tool: TOOL, status: "queued", liveStatus: "Chờ xử lý.", logs: [] });
       let cursor = 0;
       setImmediate(async () => {
         try {
