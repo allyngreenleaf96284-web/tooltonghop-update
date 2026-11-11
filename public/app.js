@@ -281,6 +281,7 @@ async function loadConfig() {
   if ($("postSuccessPrefix")) $("postSuccessPrefix").value = config.postSuccessPrefix || "";
   if ($("postCondition")) $("postCondition").value = config.postCondition || "Used - Like New";
   if ($("fourVPostCondition")) $("fourVPostCondition").value = config.fourVPostCondition || "Used - Like New";
+  if ($("postCheckBarsOnly")) $("postCheckBarsOnly").checked = config.postCheckBarsOnly === true;
   if ($("postThreeVFull")) $("postThreeVFull").checked = config.postThreeVFull === true;
   if ($("fourVPostDataRoot")) $("fourVPostDataRoot").value = config.fourVPostDataRoot || config.fullDataRoot || "E:\\dangbai";
   if ($("fourVPostSpreadsheetId")) $("fourVPostSpreadsheetId").value = config.fourVPostSpreadsheetId || "";
@@ -411,6 +412,7 @@ async function saveConfig() {
       postCondition: $("postCondition")?.value || "Used - Like New",
       fourVPostCondition: $("fourVPostCondition")?.value || "Used - Like New",
       postThreeVFull: $("postThreeVFull")?.checked === true,
+      postCheckBarsOnly: $("postCheckBarsOnly")?.checked === true,
       checkConcurrency: Number($("checkConcurrency")?.value || 4),
       checkOrderSpreadsheetId: $("checkOrderSpreadsheetId")?.value || "",
       checkOrderSheetName: $("checkOrderSheetName")?.value || "check order",
@@ -2305,6 +2307,7 @@ async function startDangBai(profileIds) {
   try {
     $("runPostSelectedBtn").disabled = true;
     $("runPostTodoBtn").disabled = true;
+    const postCheckBarsOnly = $("postCheckBarsOnly")?.checked === true;
     await savePostConfig();
     const concurrency = Math.max(1, Math.min(4, Number($("postConcurrency")?.value || 4)));
     const { data } = await api("/api/tools/dang-bai", {
@@ -2312,11 +2315,13 @@ async function startDangBai(profileIds) {
       body: JSON.stringify({
         profileIds,
         concurrency,
+        postCheckBarsOnly,
         postUnknownRetryCount: Math.max(0, Math.min(3, Number($("postUnknownRetryCount")?.value || 0)))
       })
     });
-    primeToolProgress(profileIds, "bắt đầu: mở profile đăng bài", "post");
-    $("postStatusText").textContent = `Đã bắt đầu đăng bài ${data.started} profile với ${data.concurrency || 1} luồng.`;
+    const action = postCheckBarsOnly ? "check vạch" : "đăng bài";
+    primeToolProgress(profileIds, `bắt đầu: ${action}`, "post");
+    $("postStatusText").textContent = `Đã bắt đầu ${action} ${data.started} profile với ${data.concurrency || 1} luồng.`;
     await refreshToolStatus();
     startToolStatusPolling();
   } catch (error) {

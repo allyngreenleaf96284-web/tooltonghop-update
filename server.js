@@ -133,6 +133,7 @@ const DEFAULT_CONFIG = {
   postCondition: "Used - Like New",
   fourVPostCondition: "Used - Like New",
   postThreeVFull: false,
+  postCheckBarsOnly: false,
   loginConcurrency: 4,
   loginZoomPercent: 50,
   loginUnknownRetryCount: 1,
@@ -1066,6 +1067,7 @@ async function readConfig() {
     loaded.postCondition = normalizeListingCondition(loaded.postCondition);
     loaded.fourVPostCondition = normalizeListingCondition(loaded.fourVPostCondition);
     loaded.postThreeVFull = loaded.postThreeVFull === true;
+    loaded.postCheckBarsOnly = loaded.postCheckBarsOnly === true;
     loaded.loginConcurrency = clampConcurrency(loaded.loginConcurrency, DEFAULT_CONFIG.loginConcurrency, 6);
     loaded.loginZoomPercent = normalizeLoginZoomPercent(loaded.loginZoomPercent);
     loaded.loginUnknownRetryCount = Math.max(0, Math.min(3, Math.floor(Number(loaded.loginUnknownRetryCount ?? DEFAULT_CONFIG.loginUnknownRetryCount) || 0)));
@@ -1141,6 +1143,7 @@ async function saveConfig(input) {
     postCondition: normalizeListingCondition(input.postCondition ?? current.postCondition),
     fourVPostCondition: normalizeListingCondition(input.fourVPostCondition ?? current.fourVPostCondition),
     postThreeVFull: (input.postThreeVFull ?? current.postThreeVFull) === true,
+    postCheckBarsOnly: (input.postCheckBarsOnly ?? current.postCheckBarsOnly) === true,
     loginConcurrency: clampConcurrency(input.loginConcurrency, current.loginConcurrency || DEFAULT_CONFIG.loginConcurrency, 6),
     loginZoomPercent: normalizeLoginZoomPercent(input.loginZoomPercent !== undefined ? input.loginZoomPercent : current.loginZoomPercent),
     loginUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.loginUnknownRetryCount ?? current.loginUnknownRetryCount ?? DEFAULT_CONFIG.loginUnknownRetryCount) || 0))),
@@ -1305,6 +1308,7 @@ async function saveConfigV2(input) {
     postCondition: normalizeListingCondition(input.postCondition ?? current.postCondition),
     fourVPostCondition: normalizeListingCondition(input.fourVPostCondition ?? current.fourVPostCondition),
     postThreeVFull: (input.postThreeVFull ?? current.postThreeVFull) === true,
+    postCheckBarsOnly: (input.postCheckBarsOnly ?? current.postCheckBarsOnly) === true,
     loginConcurrency: clampConcurrency(input.loginConcurrency, current.loginConcurrency || DEFAULT_CONFIG.loginConcurrency, 6),
     loginZoomPercent: normalizeLoginZoomPercent(input.loginZoomPercent !== undefined ? input.loginZoomPercent : current.loginZoomPercent),
     loginUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.loginUnknownRetryCount ?? current.loginUnknownRetryCount ?? DEFAULT_CONFIG.loginUnknownRetryCount) || 0))),
@@ -3720,6 +3724,7 @@ async function handleApi(req, res) {
       const body = await parseBody(req);
       const config = forceSingleThreadForProxyPanel(await resolveAccountSheetConfig(await readConfig()));
       if (body.concurrency !== undefined) config.postConcurrency = clampConcurrency(body.concurrency, config.postConcurrency || DEFAULT_CONFIG.postConcurrency, 4);
+      if (body.postCheckBarsOnly !== undefined) config.postCheckBarsOnly = body.postCheckBarsOnly === true;
       if (body.postUnknownRetryCount !== undefined) config.postUnknownRetryCount = Math.max(0, Math.min(3, Math.floor(Number(body.postUnknownRetryCount) || 0)));
       if (stateProxyUsesProxyPanel(config)) config.postConcurrency = 1;
       const data = await startAutoRetryBatch({

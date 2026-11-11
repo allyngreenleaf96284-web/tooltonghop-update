@@ -1676,10 +1676,11 @@ export function createDangBai({
   }
 
   async function runOne(profileId, sheetRow, config, sheetSession, workerSlot = 0, workerTotal = 1) {
+    const checkBarsOnly = !isFourVPost && config.postCheckBarsOnly === true;
     const manager = getManager({ fresh: true });
     patchManager(manager, normalizeListingCondition(isFourVPost ? config.fourVPostCondition : config.postCondition));
     patchStableWindowTiling(manager, workerSlot, workerTotal);
-    manager.saveConfig({
+    if (!checkBarsOnly) manager.saveConfig({
       dataRoot: isFourVPost ? config.fourVPostDataRoot : config.fullDataRoot,
       priceMin: isFourVPost ? config.fourVPostPriceMin : config.fullPriceMin,
       priceMax: isFourVPost ? config.fourVPostPriceMax : config.fullPriceMax,
@@ -1712,7 +1713,7 @@ export function createDangBai({
       const profileInfo = await step(profileId, job, "kiem tra profile HideMyAcc", async () => manager.getProfileById(profileId), { timeoutMs: 30000 });
       currentName = String(profileInfo?.name || currentName || profileId).trim();
       originalName = currentName;
-      await writeSheet(sheetWriter, profileId, { trangThai: "", chiTiet: "đang chạy đăng bài" });
+      if (!checkBarsOnly) await writeSheet(sheetWriter, profileId, { trangThai: "", chiTiet: "đang chạy đăng bài" });
 
       proxyLease = await step(profileId, job, "gan proxy bang", async () =>
         stateProxy?.ensureForProfile?.({
@@ -1739,15 +1740,29 @@ export function createDangBai({
         }, {shouldStop:()=>runtime.stopRequested});
       }, { timeoutMs: 0 });
 
-      restoreManagerLoginGuards = patchManagerForCentralizedLogin(manager, row);
+      if (!checkBarsOnly) restoreManagerLoginGuards = patchManagerForCentralizedLogin(manager, row);
 
       await step(profileId, job, "vao create item", async () => {
-        await ensureCreateItemReady(manager, page, row, profileId, job);
+        if (checkBarsOnly) {
+          await manager.gotoWithRetry(page, withFacebookLocale(CREATE_ITEM_URL), row, 3);
+        } else {
+          await ensureCreateItemReady(manager, page, row, profileId, job);
+        }
       }, { timeoutMs: 180000 });
 
       const initialState = await step(profileId, job, "check vach create item", async () => {
         let state = await manager.detectInitialMarketplaceState(page);
-        if (state.kind === "unknown") {
+        if (checkBarsOnly) {
+          const deadline = Date.now() + FOUR_V_UI_WAIT_MS;
+          while (state.kind === "unknown" && !runtime.stopRequested && Date.now() < deadline) {
+            if (/limit reached|daily limit|you are not able to create new listings right now/i.test(state.diagnostics?.bodyTextSample || "")) {
+              throw Object.assign(new Error("Limit reached: khong the tao bai dang moi luc nay."), { status: "limitdb" });
+            }
+            await sleep(250);
+            state = await manager.detectInitialMarketplaceState(page);
+          }
+          if (runtime.stopRequested) throw marketplaceError("stopped", "Da dung check vach.");
+        } else if (state.kind === "unknown") {
           await sleep(2000);
           state = await manager.detectInitialMarketplaceState(page);
         }
@@ -1766,6 +1781,28 @@ export function createDangBai({
           : Number(initialState.totalSteps) === 2
             ? "2v"
             : String(initialState.totalSteps || "").trim().replace(/v$/i, "");
+      if (checkBarsOnly) {
+        const count = initialState.kind === "publish_only" ? 2 : Number(initialState.totalSteps);
+        if (!Number.isSafeInteger(count) || count < 1) throw new Error("Khong doc duoc so vach.");
+        const soVach = `${count}v`;
+        const fullIndex = currentName.search(/\bfull\b/i);
+        const prefix = fullIndex >= 0 ? currentName.slice(0, fullIndex) : "";
+        const base = currentName.slice(prefix.length);
+        const marker = /\b\d+\s*v\b/i;
+        let tenChuan = `${soVach}-${currentName}`;
+        if (marker.test(base)) tenChuan = prefix + base.replace(marker, soVach);
+        else if (marker.test(currentName)) tenChuan = currentName.replace(marker, soVach);
+        await step(profileId, job, "doi ten theo so vach", async () => {
+          if (tenChuan !== currentName) await manager.updateProfileName(profileId, tenChuan);
+        });
+        currentName = tenChuan;
+        const update = { soVach, tenChuan, "tên profile hiện tại": tenChuan, chiTiet: `Đã check ${soVach}` };
+        await sheetWriter.commit(update);
+        job.status = "success";
+        job.liveStatus = update.chiTiet;
+        job.result = update;
+        return update;
+      }
       if (isFourVPost) {
         if (detectedBar !== "4") {
           const rawBar = String(detectedBar || "khong ro");
@@ -1877,14 +1914,14 @@ export function createDangBai({
       const mapped = mapPostError(page?.__marketplaceAccess?.error || error);
       if (mapped.status === "stopped" && !noRollback) {
         sheetWriter.discard();
-        await rename(manager, profileId, originalName).catch(() => {});
+        if (!checkBarsOnly) await rename(manager, profileId, originalName).catch(() => {});
         job.status = "stopped";
         job.liveStatus = "da dung han, giu nguyen Sheet";
         job.result = null;
         return { stopped: true };
       }
       let tenChuan = nameAfterPublishedPost || currentName;
-      if (!nameAfterPublishedPost || ["die cho", "capcha"].includes(mapped.status)) {
+      if (!checkBarsOnly && (!nameAfterPublishedPost || ["die cho", "capcha"].includes(mapped.status))) {
         // Keep the existing profile-name structure. Errors only replace the
         // leading runtime label, exactly like the 4v posting workflow.
         const errorName = page?.__marketplaceAccess?.profileName || error?.captchaProfileName || (isFourVPost
@@ -1899,8 +1936,7 @@ export function createDangBai({
         chiTiet: mapped.detail,
         tenChuan
       };
-      await writeSheet(sheetWriter, profileId, update);
-      await sheetWriter.commit();
+      await sheetWriter.commit(checkBarsOnly ? { chiTiet: mapped.detail } : update);
       job.status = "error";
       job.liveStatus = mapped.detail;
       job.result = update;
@@ -1925,13 +1961,14 @@ export function createDangBai({
     const priceMin = isFourVPost ? config.fourVPostPriceMin : config.fullPriceMin;
     const priceMax = isFourVPost ? config.fourVPostPriceMax : config.fullPriceMax;
     const dataRoot = isFourVPost ? config.fourVPostDataRoot : config.fullDataRoot;
-    if (!dataRoot || !priceMin || !priceMax) {
+    const checkBarsOnly = !isFourVPost && config.postCheckBarsOnly === true;
+    if (!checkBarsOnly && (!dataRoot || !priceMin || !priceMax)) {
       throw new Error("Ban can nhap thu muc dang bai va gia min/max truoc khi chay.");
     }
     if (isFourVPost && !String(config.fourVPostSpreadsheetId || "").trim()) {
       throw new Error("Ban can nhap Sheet ghi UID va LINK SP cho dang bai 4v.");
     }
-    if (!isFourVPost && config.postThreeVFull === true && !String(config.sellerSpreadsheetId || "").trim()) {
+    if (!checkBarsOnly && !isFourVPost && config.postThreeVFull === true && !String(config.sellerSpreadsheetId || "").trim()) {
       throw new Error("Ban can nhap Seller Info Spreadsheet ID de lam Full khi gap 3v.");
     }
     const sheetSession = await createSheetRowSession(config, ids);
@@ -1973,7 +2010,8 @@ export function createDangBai({
           const row = sheetSession.rows.get(id);
           const job = runtime.jobs.get(id);
           if (!row) {
-            const update = { Tool: "đã đăng bài", trangThai: "loi", chiTiet: "Khong tim thay dong du lieu trong Sheet theo id hide." };
+            const update = { trangThai: "loi", chiTiet: "Khong tim thay dong du lieu trong Sheet theo id hide." };
+            if (!checkBarsOnly) update.Tool = "đã đăng bài";
             if (job) {
               job.status = "error";
               job.liveStatus = update.chiTiet;

@@ -30,7 +30,7 @@ test("Condition selects every exact option, including New when Used - Like New i
   } finally { await browser.close(); }
 });
 
-test("3v posts normally by default, or hands off to Full only after closing its posting session", async (t) => {
+test("3v posts, hands off to Full, or checks the count and closes according to settings", async (t) => {
   const schedule = globalThis.setTimeout;
   t.mock.method(globalThis, "setTimeout", (callback, milliseconds, ...args) => {
     const timer = schedule(callback, milliseconds, ...args);
@@ -43,23 +43,26 @@ test("3v posts normally by default, or hands off to Full only after closing its 
   await fs.writeFile(titleFile, "Canonical title\r\n");
   const browser = await puppeteer.launch({ executablePath: process.env.CHROME_PATH || "C:/Program Files/Google/Chrome/Application/chrome.exe", headless: true });
   try {
-    for (const enabled of [false, true]) {
+    for (const mode of ["post", "full", "check"]) {
+      const enabled = mode === "full";
+      const checkOnly = mode === "check";
       const runtime = { jobs: new Map(), running: false };
       const events = [], writes = [];
       let page, published = 0, fullCalls = 0;
+      const navigations = [];
       const manager = {
         saveConfig() {},
-        async getProfileById() { return { name: "3v-61500000000000-Nuevo, California-tool" }; },
-        async updateProfileName() {},
+        async getProfileById() { return { name: "vip-2v-61500000000000-Nuevo, California-tool" }; },
+        async updateProfileName(id, name) { if (checkOnly) events.push(name); },
         async connectBrowser() {
           page = await browser.newPage();
           await page.setRequestInterception(true);
           page.on("request", (request) => void request.respond({ status: 200, contentType: "text/html", body: `<h1>Item for sale</h1><p>Preview</p>${conditionHtml}<button>Publish</button>` }).catch(() => {}));
           return { newPage: async () => page, disconnect: async () => {} };
         },
-        async gotoWithRetry(target, url) { await target.goto(url); },
+        async gotoWithRetry(target, url) { navigations.push(new URL(url).pathname); await target.goto(url); },
         async detectInitialMarketplaceState() { return { kind: "progress", totalSteps: 3 }; },
-        async getRandomListingPayload() { return { folderPath: folder, titleFile, title: "Canonical title", photos: [], price: 25 }; },
+        async getRandomListingPayload() { assert.equal(checkOnly, false); return { folderPath: folder, titleFile, title: "Canonical title", photos: [], price: 25 }; },
         async chooseConditionNew() { throw new Error("Original condition must be replaced"); },
         async fillStepOne(target) {
           await this.chooseConditionNew(target);
@@ -94,12 +97,18 @@ test("3v posts normally by default, or hands off to Full only after closing its 
           runtime.jobs.get(id).result = { Tool: "đã làm full", trangThai: "thành công", soVach: "3v" };
         }
       });
-      await posting.runQueue(["p1"], { fullDataRoot: folder, fullPriceMin: 20, fullPriceMax: 25, sellerSpreadsheetId: "fixture", postCondition: "New", postThreeVFull: enabled, postConcurrency: 1 });
+      await posting.runQueue(["p1"], checkOnly ? { postCheckBarsOnly: true, postThreeVFull: true, postConcurrency: 1 } : { fullDataRoot: folder, fullPriceMin: 20, fullPriceMax: 25, sellerSpreadsheetId: "fixture", postCondition: "New", postThreeVFull: enabled, postConcurrency: 1 });
       for (let i = 0; i < 3000 && runtime.running; i += 1) await pause(10);
       assert.equal(runtime.running, false);
       assert.equal(runtime.jobs.get("p1").status, "success", JSON.stringify(runtime.jobs.get("p1").result));
       assert.equal(fullCalls, enabled ? 1 : 0);
-      assert.equal(published, enabled ? 0 : 1);
+      assert.equal(published, enabled || checkOnly ? 0 : 1);
+      if (checkOnly) {
+        assert.deepEqual(navigations, ["/marketplace/create/item"]);
+        assert.deepEqual(events, ["vip-3v-61500000000000-Nuevo, California-tool", "closed"]);
+        assert.equal(writes.at(-1).Tool, undefined);
+        assert.equal(page.isClosed(), true);
+      }
       assert.equal(await fs.readFile(titleFile, "utf8"), "Canonical title\r\n");
       if (!enabled) assert.equal(writes.at(-1).soVach, "3v");
     }
