@@ -1028,8 +1028,51 @@
                 <input id="loginUnknownRetryCount" type="number" min="0" max="3" step="1" />
               </label>
               <label class="checkbox-label">
-                <input id="loginThreeVFull" type="checkbox" /> Gặp 3v thì làm Full
+                <input id="loginThreeVFull" type="checkbox" /> Gặp 3v thì làm Full + Đăng bài 4v</label>
+              <div id="loginComboConfig" class="hidden">
+                <label>Seller Info Spreadsheet ID <input id="loginCombo_sellerSpreadsheetId"></label>
+                <label class="wide-field">
+                Thư mục đăng bài 4v
+                <input id="loginCombo_fourVPostDataRoot" type="text" placeholder="E:\\dangbai" />
               </label>
+<label class="wide-field">
+                Tên thêm khi thành công
+                <input id="loginCombo_fourVPostSuccessPrefix" type="text" placeholder="ok-" />
+              </label>
+<label class="wide-field">
+                Sheet kết quả (cột A UID, cột B LINK SP)
+                <input id="loginCombo_fourVPostSpreadsheetId" type="text" placeholder="https://docs.google.com/spreadsheets/d/.../edit?gid=0" />
+              </label>
+<label>
+                Giá nhỏ nhất ($)
+                <input id="loginCombo_fourVPostPriceMin" type="number" min="1" step="1" value="20" />
+              </label>
+<label>
+                Giá lớn nhất ($)
+                <input id="loginCombo_fourVPostPriceMax" type="number" min="1" step="1" value="25" />
+              </label>
+<label>
+                Package weight
+                <select id="loginCombo_fourVPostPackageWeight">
+                  <option value="Under 0.5 lbs">Under 0.5 lbs</option>
+                  <option value="0.5-1 lbs">0.5-1 lbs</option>
+                  <option value="1-2 lbs">1-2 lbs</option>
+                  <option value="2-5 lbs" selected>2-5 lbs</option>
+                  <option value="5-10 lbs">5-10 lbs</option>
+                  <option value="10-70 lbs">10-70 lbs</option>
+                </select>
+              </label>
+<label>
+                Condition
+                <select id="loginCombo_fourVPostCondition">
+                  <option value="New">New</option>
+                  <option value="Used - Like New" selected>Used - Like New</option>
+                  <option value="Used - Good">Used - Good</option>
+                  <option value="Used - Fair">Used - Fair</option>
+                </select>
+              </label>
+                <label><input type="checkbox" id="loginComboAuthorized"> Các bank trong tab được phép liên kết với các profile đã chọn</label>
+              </div>
               <label class="checkbox-label">
                 <input id="loginWaitForManualCaptcha" type="checkbox" /> Chờ người dùng giải CAPTCHA
               </label>

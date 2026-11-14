@@ -1646,7 +1646,7 @@ export function createDangBai({
   }
 
 
-  async function runFourVListing(manager, page, payload, row, profileId, config, markNoRollback = () => {}) {
+  async function runFourVListing(manager, page, payload, row, profileId, config, markNoRollback = () => {}, onFull = async () => {}) {
     await manager.fillStepOne(page, payload);
     if (!await waitForStepOneUpload(page)) {
       throw marketplaceError("loisp", "Anh van dang tai sau 15 giay, chua the bam Next an toan.");
@@ -1667,6 +1667,7 @@ export function createDangBai({
       await manager.throwIfSellerInfoInvalidDialog(page, { timeoutMs: 1200, dismiss: true });
       await manager.fillTaxInformation(page, row);
       await manager.fillBankInformation(page, await page.browser(), row);
+      await onFull();
       await updateSellerInfoUid(config, seller, row.uid);
       await page.waitForFunction(() => /delivery method/i.test(document.body?.innerText || ""), { timeout: FOUR_V_UI_WAIT_MS });
     }
@@ -1700,7 +1701,8 @@ export function createDangBai({
     return { method, weight, price, minimumPrice, link };
   }
 
-  async function runOne(profileId, sheetRow, config, sheetSession, workerSlot = 0, workerTotal = 1) {
+  async function runOne(profileId, sheetRow, config, sheetSession, workerSlot = 0, workerTotal = 1, options = {}) {
+    const session = options.existingSession;
     const checkBarsOnly = !isFourVPost && config.postCheckBarsOnly === true;
     const manager = getManager({ fresh: true });
     patchManager(manager, normalizeListingCondition(isFourVPost ? config.fourVPostCondition : config.postCondition));
@@ -1716,12 +1718,13 @@ export function createDangBai({
     const uid = profileUid(row, profileId);
     const job = runtime.jobs.get(profileId);
     const sheetWriter = createDeferredSheetWriter(sheetSession, profileId);
-    let browser = null;
-    let page = null;
+    let browser = session?.browser || null;
+    let page = session?.page || null;
     let proxyLease = null;
     let currentName = String(sheetValue(sheetRow, "tên profile hiện tại", "ten profile hien tai") || profileId).trim();
     let originalName = currentName;
     let nameAfterPublishedPost = "";
+    let fullCompleted = false;
     let noRollback = false;
     let restoreManagerLoginGuards = () => {};
     let allocatedSeller = null;
@@ -1740,6 +1743,7 @@ export function createDangBai({
       originalName = currentName;
       if (!checkBarsOnly) await writeSheet(sheetWriter, profileId, { trangThai: "", chiTiet: "đang chạy đăng bài" });
 
+      if (!session) {
       proxyLease = await step(profileId, job, "gan proxy bang", async () =>
         stateProxy?.ensureForProfile?.({
           config,
@@ -1775,7 +1779,8 @@ export function createDangBai({
         }
       }, { timeoutMs: 180000 });
 
-      const initialState = await step(profileId, job, "check vach create item", async () => {
+      }
+      const initialState = session ? { kind: "progress", totalSteps: 3 } : await step(profileId, job, "check vach create item", async () => {
         let state = await manager.detectInitialMarketplaceState(page);
         if (checkBarsOnly) {
           const deadline = Date.now() + FOUR_V_UI_WAIT_MS;
@@ -1866,10 +1871,20 @@ export function createDangBai({
         const payload = await step(profileId, job, "lay payload dang bai 4v", async () =>
           readListingDescription(await manager.getRandomListingPayload()), { timeoutMs: 30000 });
         const postResult = await step(profileId, job, "dang bai 4v shipping", async () =>
-          runFourVListing(manager, page, payload, row, profileId, config, () => { noRollback = true; })
+          runFourVListing(manager, page, payload, row, profileId, config, () => { noRollback = true; }, async () => {
+            if (!session) return;
+            const uidIndex = currentName.indexOf(uid);
+            const location = session.location?.current || session.location?.initial;
+            const fullName = "FULL-" + (uidIndex >= 0 ? currentName.slice(uidIndex) : [uid, location].filter(Boolean).join("-"));
+            await rename(manager, profileId, fullName);
+            currentName = fullName;
+            originalName = fullName;
+            fullCompleted = true;
+            await sheetWriter.commit({ Tool: "đã làm full", tenChuan: fullName, "tên profile hiện tại": fullName });
+          })
         , { timeoutMs: 0 });
         const configuredPrefix = String(config.fourVPostSuccessPrefix || "");
-        const successfulPostName = buildSuccessPrefixProfileName(configuredPrefix, currentName);
+        const successfulPostName = session ? [configuredPrefix.trim().replace(/-+$/, ""), currentName].filter(Boolean).join("-") : buildSuccessPrefixProfileName(configuredPrefix, currentName);
         if (typeof appendMarketplacePostResult !== "function") {
           throw marketplaceError("loi link sp", "Chua cau hinh duoc ghi link san pham vao Sheet.");
         }
@@ -1947,7 +1962,7 @@ export function createDangBai({
         return { stopped: true };
       }
       let tenChuan = nameAfterPublishedPost || currentName;
-      if (!checkBarsOnly && (!nameAfterPublishedPost || ["die cho", "capcha"].includes(mapped.status))) {
+      if (!checkBarsOnly && !fullCompleted && (!nameAfterPublishedPost || ["die cho", "capcha"].includes(mapped.status))) {
         // Keep the existing profile-name structure. Errors only replace the
         // leading runtime label, exactly like the 4v posting workflow.
         const errorName = page?.__marketplaceAccess?.profileName || error?.captchaProfileName || (isFourVPost
@@ -1972,10 +1987,12 @@ export function createDangBai({
       if (runtime.activeManagers instanceof Map) runtime.activeManagers.delete(profileId);
       if (manager.activeJobs) manager.activeJobs.delete(uid);
       if (manager.currentActiveUid === uid) manager.currentActiveUid = "";
+      if (!session) {
       try { if (page && !page.isClosed()) await page.close({ runBeforeUnload: false }); } catch {}
       try { if (browser) await browser.disconnect(); } catch {}
       try { stateProxy?.release?.(proxyLease); } catch {}
       await manager.stopHideMyAccProfile(profileId).catch(() => {});
+      }
       if (job) job.finishedAt = new Date().toISOString();
     }
   }
@@ -2091,5 +2108,5 @@ export function createDangBai({
     return { started: ids.length, concurrency };
   }
 
-  return { runQueue };
+  return { runQueue, runProfile: runOne };
 }

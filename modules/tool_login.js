@@ -489,8 +489,8 @@ export function createToolLogin({
     if (!ids.length) throw new Error("Chua chon profile de chay.");
     if (config.loginThreeVFull === true) {
       if (typeof runFullProfile !== "function") throw new Error("Chua cau hinh luong Full cho Tool Login.");
-      if (!config.fullDataRoot || !config.fullPriceMin || !config.fullPriceMax || !config.sellerSpreadsheetId) {
-        throw new Error("Can dien thu muc dang bai, gia min/max va Seller Info Spreadsheet ID trong tool Full truoc khi bat lam Full cho 3v.");
+      if (!config.fourVPostDataRoot || !config.fourVPostPriceMin || !config.fourVPostPriceMax || !config.sellerSpreadsheetId || !config.fourVPostSpreadsheetId) {
+        throw new Error("Cần nhập thư mục đăng bài, giá, Sheet ghi link và Seller Info Sheet.");
       }
     }
     const sheetSession = await createSheetRowSession(config, ids);

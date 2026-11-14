@@ -3193,7 +3193,7 @@ const lamFullModule = createLamFull({
 });
 
 const toolLoginModule = createToolLogin({
-  runFullProfile: lamFullModule.runProfile,
+  runFullProfile: (...args) => dangBai4VModule.runProfile(...args),
   getManager: getShippingFullManager,
   dangNhap: dangNhapModule,
   addRuntimeLog,
@@ -3714,6 +3714,19 @@ async function handleApi(req, res) {
       if (body.loginUnknownRetryCount !== undefined) config.loginUnknownRetryCount = Math.max(0, Math.min(3, Math.floor(Number(body.loginUnknownRetryCount) || 0)));
       if (body.loginThreeVFull !== undefined) config.loginThreeVFull = body.loginThreeVFull === true;
       if (body.loginWaitForManualCaptcha !== undefined) config.loginWaitForManualCaptcha = body.loginWaitForManualCaptcha === true;
+      if (config.loginThreeVFull) {
+        if (body.authorized !== true) return jsonResponse(res, 400, { ok: false, error: "Cần xác nhận quyền liên kết bank." });
+        config.fullPlus4v = true;
+        for (const key of ["sellerSpreadsheetId", "fourVPostDataRoot", "fourVPostSpreadsheetId", "fourVPostSuccessPrefix", "fourVPostCondition", "fourVPostPackageWeight"]) {
+          if (typeof body[key] === "string") config[key] = body[key].trim();
+        }
+        for (const key of ["fourVPostPriceMin", "fourVPostPriceMax"]) {
+          if (body[key] !== undefined) config[key] = Number(body[key]);
+        }
+        if (!(config.fourVPostPriceMin > 0 && config.fourVPostPriceMax >= config.fourVPostPriceMin)) {
+          return jsonResponse(res, 400, { ok: false, error: "Khoảng giá không hợp lệ." });
+        }
+      }
       if (stateProxyUsesProxyPanel(config)) config.loginConcurrency = 1;
       const data = await startAutoRetryBatch({
         runtime: toolRuntime,
@@ -3723,7 +3736,7 @@ async function handleApi(req, res) {
         config,
         options: {},
         addRuntimeLog,
-        maxRetries: config.loginUnknownRetryCount
+        maxRetries: config.loginThreeVFull ? 0 : config.loginUnknownRetryCount
       });
       return jsonResponse(res, 200, { ok: true, data });
     }

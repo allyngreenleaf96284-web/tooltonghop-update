@@ -312,7 +312,14 @@ async function loadConfig() {
   if ($("loginConcurrency")) $("loginConcurrency").value = config.loginConcurrency || 4;
   if ($("loginZoomPercent")) $("loginZoomPercent").value = config.loginZoomPercent ?? 50;
   if ($("loginUnknownRetryCount")) $("loginUnknownRetryCount").value = Math.max(0, Math.min(3, Number(config.loginUnknownRetryCount ?? 1)));
-  if ($("loginThreeVFull")) $("loginThreeVFull").checked = config.loginThreeVFull === true;
+  if ($("loginThreeVFull")) {
+    $("loginThreeVFull").checked = config.loginThreeVFull === true;
+    $("loginComboConfig").classList.toggle("hidden", !$("loginThreeVFull").checked);
+    for (const field of $("loginComboConfig").querySelectorAll("[id^=loginCombo_]")) {
+      if (!field.dataset.initialized) field.value = config[field.id.slice(11)] ?? field.value;
+      field.dataset.initialized = "true";
+    }
+  }
   if ($("loginWaitForManualCaptcha")) $("loginWaitForManualCaptcha").checked = config.loginWaitForManualCaptcha === true;
   if ($("fullUnknownRetryCount")) $("fullUnknownRetryCount").value = Math.max(0, Math.min(3, Number(config.fullUnknownRetryCount ?? 1)));
   if ($("postConcurrency")) $("postConcurrency").value = config.postConcurrency || 4;
@@ -2181,6 +2188,16 @@ async function startToolLogin(profileIds) {
     return;
   }
   try {
+    const combo = $("loginThreeVFull").checked;
+    const comboOptions = {};
+    if (combo) {
+      if (!$("loginComboAuthorized").checked) throw new Error("Cần xác nhận quyền liên kết bank.");
+      for (const field of $("loginComboConfig").querySelectorAll("[id^=loginCombo_]")) {
+        comboOptions[field.id.slice(11)] = field.value.trim();
+      }
+      comboOptions.authorized = true;
+      $("loginComboAuthorized").checked = false;
+    }
     $("runLoginSelectedBtn").disabled = true;
     $("runLoginAllBtn").disabled = true;
     await saveConfig();
@@ -2192,7 +2209,8 @@ async function startToolLogin(profileIds) {
         concurrency,
         loginZoomPercent: Math.max(25, Math.min(200, Number($("loginZoomPercent")?.value || 50))),
         loginUnknownRetryCount: Math.max(0, Math.min(3, Number($("loginUnknownRetryCount")?.value || 0))),
-        loginThreeVFull: $("loginThreeVFull")?.checked === true,
+        loginThreeVFull: combo,
+        ...comboOptions,
         loginWaitForManualCaptcha: $("loginWaitForManualCaptcha")?.checked === true
       })
     });
@@ -4359,3 +4377,11 @@ $("fullPlus4vMode")?.addEventListener("change", (event) => {
   $("fullPlus4vAuthorized").checked = false;
 });
 $("fullPlus4vSellerSheet")?.addEventListener("input", () => { $("fullPlus4vAuthorized").checked = false; });
+
+$("loginThreeVFull")?.addEventListener("change", event => {
+  $("loginComboConfig").classList.toggle("hidden", !event.target.checked);
+  $("loginComboAuthorized").checked = false;
+});
+$("loginComboConfig")?.addEventListener("input", event => {
+  if (event.target.id !== "loginComboAuthorized") $("loginComboAuthorized").checked = false;
+});
