@@ -2428,6 +2428,14 @@ async function startDangBai4V(profileIds) {
     $("post4vStatusText").textContent = "Bạn cần chọn ít nhất một profile để kiểm tra 4v.";
     return;
   }
+  const fullPlus4v = $("fullPlus4vMode")?.checked === true;
+  const authorized = $("fullPlus4vAuthorized")?.checked === true;
+  const sellerSpreadsheetId = $("fullPlus4vSellerSheet")?.value.trim();
+  if (fullPlus4v && (!authorized || !sellerSpreadsheetId)) {
+    $("post4vStatusText").textContent = "Nhập Seller Info Spreadsheet ID và xác nhận quyền liên kết bank.";
+    return;
+  }
+  if (fullPlus4v) $("fullPlus4vAuthorized").checked = false;
   try {
     $("runPost4VSelectedBtn").disabled = true;
     $("runPost4VAllBtn").disabled = true;
@@ -2435,7 +2443,8 @@ async function startDangBai4V(profileIds) {
     const concurrency = Math.max(1, Math.min(4, Number($("postConcurrency")?.value || 4)));
     const { data } = await api("/api/tools/dang-bai-4v", {
       method: "POST",
-      body: JSON.stringify({ profileIds, concurrency,
+      body: JSON.stringify({ profileIds, concurrency, fullPlus4v, authorized,
+        ...(fullPlus4v ? { sellerSpreadsheetId } : {}),
         fourVPostUnknownRetryCount: Math.max(0, Math.min(3, Number($("fourVPostUnknownRetryCount")?.value || 0)))
       })
     });
@@ -4343,3 +4352,10 @@ if (bankConcurrencyInput) {
     try { localStorage.setItem("changeBank.concurrency", bankConcurrencyInput.value); } catch {}
   });
 }
+
+$("fullPlus4vMode")?.addEventListener("change", (event) => {
+  $("fullPlus4vConfig").classList.toggle("hidden", !event.target.checked);
+  $("fullPlus4vSellerSheet").value ||= $("sellerSpreadsheetId").value;
+  $("fullPlus4vAuthorized").checked = false;
+});
+$("fullPlus4vSellerSheet")?.addEventListener("input", () => { $("fullPlus4vAuthorized").checked = false; });

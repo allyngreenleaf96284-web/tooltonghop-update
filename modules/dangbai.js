@@ -1653,6 +1653,23 @@ export function createDangBai({
     }
     await clickReadyAction(manager, page, "Next", "tai anh va dien buoc dau");
     await page.waitForFunction(() => /delivery method/i.test(String(document.body?.innerText || "")), { timeout: FOUR_V_UI_WAIT_MS });
+    if (config.fullPlus4v && row.initialBar === "3v") {
+      const shipping = await manager.detectOfferShippingState(page);
+      if (!shipping.hasOfferShipping) throw new Error(shipping.detail || "Không có Offer shipping.");
+      const seller = await allocateSellerInfoRow(config, row.uid);
+      Object.assign(row.raw ||= {}, seller.raw);
+      markNoRollback();
+      await manager.openShippingSetup(page);
+      await manager.fillSellerInformation(page, row);
+      await manager.clickSellerInfoNext(page);
+      await manager.throwIfSellerInfoInvalidDialog(page, { timeoutMs: 2500, dismiss: true });
+      await manager.handleConfirmAddress(page);
+      await manager.throwIfSellerInfoInvalidDialog(page, { timeoutMs: 1200, dismiss: true });
+      await manager.fillTaxInformation(page, row);
+      await manager.fillBankInformation(page, await page.browser(), row);
+      await updateSellerInfoUid(config, seller, row.uid);
+      await page.waitForFunction(() => /delivery method/i.test(document.body?.innerText || ""), { timeout: FOUR_V_UI_WAIT_MS });
+    }
     const method = await ensureFourVDeliveryMethod(page, profileId);
     await openShippingLabel(page, method);
     const weight = normalizePackageWeight(config.fourVPostPackageWeight);
@@ -1660,12 +1677,20 @@ export function createDangBai({
     await clickReadyAction(manager, page, "Update", "chon Package weight");
     await waitForShippingLabelDialogToClose(page);
     await clickReadyAction(manager, page, "Next", "cap nhat shipping");
-    await page.waitForFunction(() => /minimum price you'll consider|allow offers/i.test(String(document.body?.innerText || "")), { timeout: FOUR_V_UI_WAIT_MS });
+    if (!config.fullPlus4v) await page.waitForFunction(() => /minimum price you'll consider|allow offers/i.test(String(document.body?.innerText || "")), { timeout: FOUR_V_UI_WAIT_MS });
     const price = numericListingPrice(payload?.price, config.fourVPostPriceMin, config.fourVPostPriceMax);
     const discount = 3 + Math.floor(Math.random() * 3);
     const minimumPrice = Math.max(1, price - discount);
-    await setOfferMinimum(manager, page, minimumPrice, method);
-    await clickReadyAction(manager, page, "Next", "dien minimum price");
+    const nextStage = config.fullPlus4v ? await page.waitForFunction(() => {
+      const text = document.body?.innerText || "";
+      if (/minimum price you'll consider|allow offers/i.test(text)) return "offers";
+      const has = (label) => [...document.querySelectorAll("button,[role=button]")].some(el =>
+        el.getClientRects().length && !el.disabled && el.getAttribute("aria-disabled") !== "true"
+        && el.innerText?.trim().toLowerCase() === label);
+      return has("publish") ? "publish" : has("next") && !/delivery method/i.test(text) ? "next" : false;
+    }, { timeout: FOUR_V_UI_WAIT_MS }).then(result => result.jsonValue()) : "offers";
+    if (nextStage === "offers") await setOfferMinimum(manager, page, minimumPrice, method);
+    if (nextStage !== "publish") await clickReadyAction(manager, page, "Next", "tiep tuc den Publish");
     markNoRollback();
     await clickReadyAction(manager, page, "Publish", "hoan tat buoc audience");
     await waitForPublishSuccess(page);
@@ -1804,7 +1829,7 @@ export function createDangBai({
         return update;
       }
       if (isFourVPost) {
-        if (detectedBar !== "4") {
+        if (detectedBar !== "4" && !(config.fullPlus4v && detectedBar === "3v")) {
           const rawBar = String(detectedBar || "khong ro");
           const droppedBar = /v$/i.test(rawBar) ? rawBar : `${rawBar}v`;
           const droppedStatus = `tụt ${droppedBar}`;
@@ -1837,6 +1862,7 @@ export function createDangBai({
           job.result = update;
           return update;
         }
+        row.initialBar = detectedBar;
         const payload = await step(profileId, job, "lay payload dang bai 4v", async () =>
           readListingDescription(await manager.getRandomListingPayload()), { timeoutMs: 30000 });
         const postResult = await step(profileId, job, "dang bai 4v shipping", async () =>

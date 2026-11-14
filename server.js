@@ -3787,8 +3787,15 @@ async function handleApi(req, res) {
     }
     if (req.method === "POST" && url.pathname === "/api/tools/dang-bai-4v") {
       const body = await parseBody(req);
+      if (body.fullPlus4v === true && body.authorized !== true) {
+        return jsonResponse(res, 400, { ok: false, error: "Cần xác nhận quyền liên kết bank cho các profile đã chọn." });
+      }
       const saved = await saveConfigV2({ ...(await readConfig()), ...body });
       const config = forceSingleThreadForProxyPanel(await resolveAccountSheetConfig(saved));
+      config.fullPlus4v = body.fullPlus4v === true;
+      if (config.fullPlus4v && !config.sellerSpreadsheetId) {
+        return jsonResponse(res, 400, { ok: false, error: "Cần nhập Seller Info Spreadsheet ID." });
+      }
       if (body.concurrency !== undefined) config.postConcurrency = clampConcurrency(body.concurrency, config.postConcurrency || DEFAULT_CONFIG.postConcurrency, 4);
       if (stateProxyUsesProxyPanel(config)) config.postConcurrency = 1;
       const data = await startAutoRetryBatch({
@@ -3799,7 +3806,7 @@ async function handleApi(req, res) {
         config,
         options: {},
         addRuntimeLog,
-        maxRetries: config.fourVPostUnknownRetryCount
+        maxRetries: config.fullPlus4v ? 0 : config.fourVPostUnknownRetryCount
       });
       return jsonResponse(res, 200, { ok: true, config, data });
     }
