@@ -1027,31 +1027,39 @@
                 Chạy lại lỗi chưa xác định
                 <input id="loginUnknownRetryCount" type="number" min="0" max="3" step="1" />
               </label>
-              <label class="checkbox-label">
-                <input id="loginThreeVFull" type="checkbox" /> Gặp 3v thì làm Full + Đăng bài 4v</label>
-              <div id="loginComboConfig" class="hidden">
-                <label>Seller Info Spreadsheet ID <input id="loginCombo_sellerSpreadsheetId"></label>
-                <label class="wide-field">
-                Thư mục đăng bài 4v
-                <input id="loginCombo_fourVPostDataRoot" type="text" placeholder="E:\\dangbai" />
-              </label>
-<label class="wide-field">
-                Tên thêm khi thành công
-                <input id="loginCombo_fourVPostSuccessPrefix" type="text" placeholder="ok-" />
-              </label>
-<label class="wide-field">
+              <div class="login-captcha-settings">
+                <label class="checkbox-label">
+                  <input id="loginWaitForManualCaptcha" type="checkbox" /> Chờ người dùng giải CAPTCHA
+                </label>
+                <small class="muted">Khi bật, tool giữ cửa sổ để bạn giải CAPTCHA. Các luồng khác tiếp tục chạy.</small>
+              </div>
+              <div class="login-combo-panel">
+                <label class="checkbox-label">
+                  <input id="loginThreeVFull" type="checkbox" /> Gặp 3v thì làm Full + Đăng bài 4v
+                </label>
+                <div id="loginComboConfig" class="login-combo-fields hidden">
+                <label class="login-field-wide">Seller Info Spreadsheet ID <input id="loginCombo_sellerSpreadsheetId"></label>
+                <label class="login-field-wide">
                 Sheet kết quả (cột A UID, cột B LINK SP)
                 <input id="loginCombo_fourVPostSpreadsheetId" type="text" placeholder="https://docs.google.com/spreadsheets/d/.../edit?gid=0" />
               </label>
-<label>
+                <label class="login-field-wide">
+                Thư mục đăng bài 4v
+                <input id="loginCombo_fourVPostDataRoot" type="text" placeholder="E:\\dangbai" />
+              </label>
+                <label class="login-field-wide">
+                Tên thêm khi thành công
+                <input id="loginCombo_fourVPostSuccessPrefix" type="text" placeholder="ok-" />
+              </label>
+                <label>
                 Giá nhỏ nhất ($)
                 <input id="loginCombo_fourVPostPriceMin" type="number" min="1" step="1" value="20" />
               </label>
-<label>
+                <label>
                 Giá lớn nhất ($)
                 <input id="loginCombo_fourVPostPriceMax" type="number" min="1" step="1" value="25" />
               </label>
-<label>
+                <label>
                 Package weight
                 <select id="loginCombo_fourVPostPackageWeight">
                   <option value="Under 0.5 lbs">Under 0.5 lbs</option>
@@ -1062,7 +1070,7 @@
                   <option value="10-70 lbs">10-70 lbs</option>
                 </select>
               </label>
-<label>
+                <label>
                 Condition
                 <select id="loginCombo_fourVPostCondition">
                   <option value="New">New</option>
@@ -1071,12 +1079,12 @@
                   <option value="Used - Fair">Used - Fair</option>
                 </select>
               </label>
-                <label><input type="checkbox" id="loginComboAuthorized"> Các bank trong tab được phép liên kết với các profile đã chọn</label>
+                  <label class="checkbox-label login-bank-confirmation">
+                    <input type="checkbox" id="loginComboAuthorized" />
+                    <span>Các bank trong tab được phép liên kết với các profile đã chọn</span>
+                  </label>
+                </div>
               </div>
-              <label class="checkbox-label">
-                <input id="loginWaitForManualCaptcha" type="checkbox" /> Chờ người dùng giải CAPTCHA
-              </label>
-              <p class="muted">Bật: giữ cửa sổ gặp CAPTCHA, giải xong tự tiếp tục; các luồng khác vẫn chạy. Tắt: dừng tại lỗi để bạn kiểm tra, bấm Tiếp tục nick hoặc F9 để xử lý. Dừng hẳn sẽ kết thúc chờ.</p>
               <details class="retry-policy">
                 <summary>Lỗi không chạy lại</summary>
                 <span>CP282, CP956, checkpoint, captcha, bị out, hết proxy, lỗi profile browser, login, thiếu cấu hình hoặc dừng thủ công.</span>

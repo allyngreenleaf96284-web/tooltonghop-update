@@ -1780,3 +1780,60 @@ tr.duplicate-row {
 .tool-progress .tool-progress-column-head {position:sticky;top:0;background:#0f172a;z-index:1;font-weight:600;}
 
 .tool-progress:has(.tool-progress-list):not(.hidden){display:flex;flex-direction:column;height:360px;min-height:200px}.tool-progress:has(.tool-progress-list)>:not(.tool-progress-list){flex-shrink:0}.tool-progress .tool-progress-list{flex:1 1 auto;overflow:auto}.tool-progress .tool-progress-item{min-width:600px}
+
+
+/* Keep Login controls and the optional posting form on aligned grids. */
+.tool-config-grid.login-config-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  max-width: 100%;
+  align-items: start;
+}
+
+.login-captcha-settings,
+.login-combo-panel,
+.login-config-grid .retry-policy {
+  grid-column: 1 / -1;
+}
+
+.login-captcha-settings small {
+  display: block;
+  margin-top: 6px;
+}
+
+.login-combo-fields:not(.hidden) {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px 16px;
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px solid rgba(140, 165, 210, 0.22);
+  border-radius: 12px;
+}
+
+.login-combo-fields .login-field-wide {
+  grid-column: span 2;
+}
+
+.login-combo-fields .login-bank-confirmation {
+  grid-column: 1 / -1;
+}
+
+.login-combo-fields label {
+  min-width: 0;
+}
+
+@media (max-width: 840px) {
+  .login-combo-fields:not(.hidden) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .tool-config-grid.login-config-grid,
+  .login-combo-fields:not(.hidden) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .login-combo-fields .login-field-wide {
+    grid-column: auto;
+  }
+}
