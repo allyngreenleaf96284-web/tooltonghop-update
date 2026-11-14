@@ -40,7 +40,7 @@ const configStore = createConfigStore(configPath, { defaults: () => DEFAULT_CONF
 const electronPopupWatchdogPath = path.join(__dirname, "scripts", "close-electron-error-popups.ps1");
 const updateVersionPath = path.join(__dirname, "data", "update-version.json");
 const updateBackupRoot = path.join(__dirname, "data", "update-backups");
-const DEFAULT_UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/allyngreenleaf96284-web/tooltonghop-update/main/manifest-full.json";
+const DEFAULT_UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/allyngreenleaf96284-web/tooltonghop-update/refs/heads/main/manifest-full.json";
 const UPDATE_DOWNLOAD_TIMEOUT_MS = 60000;
 const UPDATE_ALLOWED_ROOTS = ["modules/", "public/", "scripts/", "data/"];
 const UPDATE_ALLOWED_FILES = new Set(["server.js", "package.json", "README.md", "build-portable.ps1"]);
