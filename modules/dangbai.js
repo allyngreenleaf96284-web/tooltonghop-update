@@ -1875,7 +1875,10 @@ export function createDangBai({
             if (!session) return;
             const uidIndex = currentName.indexOf(uid);
             const location = session.location?.current || session.location?.initial;
-            const fullName = "FULL-" + (uidIndex >= 0 ? currentName.slice(uidIndex) : [uid, location].filter(Boolean).join("-"));
+            const fullDate = new Intl.DateTimeFormat("en-GB", {
+              timeZone: "Asia/Ho_Chi_Minh", day: "2-digit", month: "2-digit"
+            }).format(new Date());
+            const fullName = `FULL ${fullDate}-` + (uidIndex >= 0 ? currentName.slice(uidIndex) : [uid, location].filter(Boolean).join("-"));
             await rename(manager, profileId, fullName);
             currentName = fullName;
             originalName = fullName;
