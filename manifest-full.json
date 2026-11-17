@@ -1,8 +1,8 @@
 {
   "name": "Tool Tong Hop Full",
   "channel": "full",
-  "version": "2026.11.16.1",
-  "rawBase": "https://raw.githubusercontent.com/allyngreenleaf96284-web/tooltonghop-update/40478f48e766e5654d4722d3709581773827506d",
+  "version": "2026.11.17.1",
+  "rawBase": "https://raw.githubusercontent.com/allyngreenleaf96284-web/tooltonghop-update/33a4814ae4e376aed21e8c215d9b3258476e8f73",
   "createdAt": "2026-09-17T00:00:00.000Z",
   "files": [
     {
@@ -47,8 +47,8 @@
     },
     {
       "path": "modules/dangbai.js",
-      "sha256": "f3fede8b59f5e057c9864dd94473e46c074c10ad47d7ebd0dbf27c01e2f9d22a",
-      "size": 109018
+      "sha256": "034a0160ddf5ba4aeaf2343dfcaf802ec24dab9f16d301937c725d36518da930",
+      "size": 109502
     },
     {
       "path": "modules/dangnhap.js",
@@ -67,8 +67,8 @@
     },
     {
       "path": "modules/lamfull.js",
-      "sha256": "00576461844fb4761a3f07f3614cc6beaf4fa8dcdae9ada37d446b76eb1865ba",
-      "size": 53130
+      "sha256": "fb466a574f2b5872124346c1f7e8b581c2539c781253e669dc59e4bd8b832c29",
+      "size": 53594
     },
     {
       "path": "modules/listing_link.js",
@@ -82,8 +82,8 @@
     },
     {
       "path": "modules/tool_login.js",
-      "sha256": "05f1a5d35a63a20fb10c9c91faa328f2a2101305e7f69223cccc68afd45713c3",
-      "size": 26457
+      "sha256": "dc0dd2819148695dde2059c5c9441d72fc04fcfaa14835943fec08c2aa272ca5",
+      "size": 26885
     },
     {
       "path": "modules/marketplace_link_order.js",
@@ -107,8 +107,8 @@
     },
     {
       "path": "modules/proxypanel.js",
-      "sha256": "c03b1f2586e5ff41fe9b2734738d5592bafe06d8bac378570b80c4155df76b00",
-      "size": 51622
+      "sha256": "33d96711fa0022c524a23844ea5b6d9857f8aff45d13a683424cdda6337aa748",
+      "size": 52596
     },
     {
       "path": "modules/renewdoclap.js",
@@ -132,13 +132,13 @@
     },
     {
       "path": "public/app.js",
-      "sha256": "5e18030a5a328c7c76fcc2f9ab3f8743fe4f719b152b86291001be490066c98a",
-      "size": 218826
+      "sha256": "aec69a28bfad1d5608026304600de29ae84a7aa3e6cb7c8acdc3996801fd84c6",
+      "size": 218642
     },
     {
       "path": "public/index.html",
-      "sha256": "c7adf979916c3281494e55e4aaad5d3d7a99c87f9f363734bf64991cc14312e9",
-      "size": 114222
+      "sha256": "ff6c7d35fc9543ade634172135c5412fd8a502a719b91db8b44e3918be965750",
+      "size": 114018
     },
     {
       "path": "public/styles.css",
@@ -157,8 +157,8 @@
     },
     {
       "path": "server.js",
-      "sha256": "78a92017a04c6304189420828dff18f0c18cc91cb8062c2509421609889a9673",
-      "size": 189215
+      "sha256": "0fa7af123bdb7d1e7be54f6a13372e7168cc65b8aef5831eceab6adeeb2ff319",
+      "size": 189360
     },
     {
       "path": "modules/login_pause.js",
