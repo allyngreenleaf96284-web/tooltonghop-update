@@ -3600,6 +3600,7 @@ async function handleApi(req, res) {
       return jsonResponse(res, 200, { ok: true, config, data });
     }
     if (req.method === "POST" && url.pathname === "/api/state-proxy/apply") {
+      if (toolRuntime.running) return jsonResponse(res, 409, { ok: false, error: "Dừng lượt chạy trước khi đổi IP thủ công." });
       const body = await parseBody(req).catch(() => ({}));
       const current = await readConfig();
       const requestedState = String(body.state || body.proxyPanelStateOverride || "").trim();

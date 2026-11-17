@@ -1,3 +1,4 @@
+import { isProxyPanelStateProxy, proxyPanelWaves } from "./proxypanel.js";
 import { checkThreeVDisplayName } from "./early_display_name.js";
 import { installIncidentalPopupGuard, dismissIncidentalPopups, guardManagerPopupActions } from "./incidental_popups.js";
 import { installSellerStateGuard } from "./seller_state_guard.js";
@@ -1098,7 +1099,7 @@ export function createLamFull({
     }
     const sheetSession = await createSheetRowSession(config, ids);
 
-    const concurrency = Math.min(clampToolConcurrency(config.fullConcurrency), ids.length);
+    const concurrency = Math.min(isProxyPanelStateProxy(config) ? 4 : clampToolConcurrency(config.fullConcurrency), ids.length);
 
     for (const id of ids) {
       runtime.jobs.set(id, {
@@ -1120,47 +1121,51 @@ export function createLamFull({
     runtime.currentTool = "lam full";
     setImmediate(async () => {
       try {
-        let cursor = 0;
-        let activeCount = 0;
-        const nextId = () => {
-          if (runtime.stopRequested) return "";
-          if (cursor >= ids.length) return "";
-          const id = ids[cursor];
-          cursor += 1;
-          return id;
-        };
-        const workers = Array.from({ length: concurrency }, async (_, workerSlot) => {
-          for (;;) {
-            const id = nextId();
-            if (!id) break;
-          const row = sheetSession.rows.get(id);
-          const job = runtime.jobs.get(id);
-          if (!row) {
-            const update = { Tool: "đã làm full", trangThai: "loi", chiTiet: "Khong tim thay dong du lieu trong Sheet theo id hide." };
-            if (job) {
-              job.status = "error";
-              job.liveStatus = update.chiTiet;
-              job.finishedAt = new Date().toISOString();
-              job.result = update;
+        for (const wave of proxyPanelWaves(ids, config, sheetSession.rows)) {
+          if (runtime.stopRequested) break;
+          const waveConfig = isProxyPanelStateProxy(config) ? { ...config, proxyPanelBatch: {} } : config;
+          let cursor = 0;
+          let activeCount = 0;
+          const nextId = () => {
+            if (runtime.stopRequested) return "";
+            if (cursor >= wave.length) return "";
+            const id = wave[cursor];
+            cursor += 1;
+            return id;
+          };
+          const workers = Array.from({ length: Math.min(concurrency, wave.length) }, async (_, workerSlot) => {
+            for (;;) {
+              const id = nextId();
+              if (!id) break;
+            const row = sheetSession.rows.get(id);
+            const job = runtime.jobs.get(id);
+            if (!row) {
+              const update = { Tool: "đã làm full", trangThai: "loi", chiTiet: "Khong tim thay dong du lieu trong Sheet theo id hide." };
+              if (job) {
+                job.status = "error";
+                job.liveStatus = update.chiTiet;
+                job.finishedAt = new Date().toISOString();
+                job.result = update;
+              }
+              log(id, "doc Sheet", update.chiTiet, "error");
+              continue;
             }
-            log(id, "doc Sheet", update.chiTiet, "error");
-            continue;
+            if (job) {
+              job.startedAt = new Date().toISOString();
+              job.liveStatus = `dang bat dau o luong ${workerSlot + 1}/${concurrency}`;
+            }
+            activeCount += 1;
+            log(id, "worker", `worker ${workerSlot + 1}/${concurrency} start, active=${activeCount}, queue_con_lai=${Math.max(0, wave.length - cursor)}`);
+            try {
+              await runOne(id, row, waveConfig, sheetSession, workerSlot, concurrency);
+            } finally {
+              activeCount = Math.max(0, activeCount - 1);
+              log(id, "worker", `worker ${workerSlot + 1}/${concurrency} end, active=${activeCount}, queue_con_lai=${Math.max(0, wave.length - cursor)}`);
+            }
           }
-          if (job) {
-            job.startedAt = new Date().toISOString();
-            job.liveStatus = `dang bat dau o luong ${workerSlot + 1}/${concurrency}`;
-          }
-          activeCount += 1;
-          log(id, "worker", `worker ${workerSlot + 1}/${concurrency} start, active=${activeCount}, queue_con_lai=${Math.max(0, ids.length - cursor)}`);
-          try {
-            await runOne(id, row, config, sheetSession, workerSlot, concurrency);
-          } finally {
-            activeCount = Math.max(0, activeCount - 1);
-            log(id, "worker", `worker ${workerSlot + 1}/${concurrency} end, active=${activeCount}, queue_con_lai=${Math.max(0, ids.length - cursor)}`);
-          }
+          });
+          await Promise.all(workers);
         }
-        });
-        await Promise.all(workers);
         await sheetSession.flushAll();
         if (runtime.stopRequested) {
           for (const id of ids) {

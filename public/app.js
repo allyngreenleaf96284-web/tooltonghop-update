@@ -997,12 +997,9 @@ function renderStateProxyConfig(config = state.config || {}) {
     if (label) label.style.display = provider === "clipproxy" ? "" : "none";
   });
   if ($("stateProxySummary")) {
-    const overrideState = String(config.proxyPanelStateOverride || "").trim();
     $("stateProxySummary").textContent = enabled
       ? provider === "proxypanel"
-        ? overrideState
-          ? `Bật ProxyPanel - ép tất cả profile chạy bang ${overrideState}, mỗi profile fresh IP`
-          : "Bật ProxyPanel - lấy bang theo Sheet, đúng bang/nhà mạng rồi mới mở profile"
+        ? "ProxyPanel lấy bang từ Sheet. Login, Làm Full và Đăng bài chạy theo nhóm tối đa 4 profile chung một IP."
         : "Bật ClipProxy - mỗi profile lấy proxy theo cột bang trước khi mở browser"
       : "Tắt - tool chạy theo proxy hiện có của profile";
     if (provider === "nineproxy") {

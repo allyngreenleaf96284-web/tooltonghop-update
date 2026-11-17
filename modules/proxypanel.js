@@ -1097,9 +1097,8 @@ export function createProxyPanelTool({ hideRequest, addRuntimeLog }) {
     if (!proxyConfig.stateProxyEnabled || proxyConfig.stateProxyProvider !== "proxypanel") return null;
     ensureConfigState(proxyConfig);
     const bang = normalizeStateName(
-      proxyConfig.proxyPanelStateOverride ||
-      rowValue(row.raw || {}, "bang", "proxy") ||
-      rowValue(row, "bang", "proxy")
+      rowValue(row.raw || {}, "bang", "bang/state") ||
+      rowValue(row, "bang", "bang/state")
     );
     const uid = String(row.uid || row.raw?.uid || profileId || "").trim();
     if (!bang) {
@@ -1108,6 +1107,11 @@ export function createProxyPanelTool({ hideRequest, addRuntimeLog }) {
       throw error;
     }
     return withLock(async () => {
+      const batch = config.proxyPanelBatch;
+      if (batch?.proxy && batch.state === bang.toLowerCase()) {
+        await assignToProfile({ ...config, ...proxyConfig }, profileId, batch.proxy);
+        return { provider: "proxypanel", state: bang, raw: batch.proxy.raw };
+      }
       const proxyId = await resolveProxyId(proxyConfig);
       state.proxyId = proxyId;
       const sameState = normalizeStateName(state.currentState).toLowerCase() === bang.toLowerCase();
@@ -1124,6 +1128,7 @@ export function createProxyPanelTool({ hideRequest, addRuntimeLog }) {
       state.lastAssignedAt = Date.now();
       state.lastError = "";
       await assignToProfile({ ...config, ...proxyConfig }, profileId, proxy);
+      if (batch) Object.assign(batch, { proxy, state: bang.toLowerCase() });
       saveState();
       const action = sameState ? "fresh IP" : "doi location";
       const profileProvider = String(config.browserApiProvider || "").toLowerCase() === "hide" ? "HideMyAcc" : "GPM";
@@ -1241,4 +1246,18 @@ export function createProxyPanelTool({ hideRequest, addRuntimeLog }) {
     checkAll,
     applyNow
   };
+}
+
+export function proxyPanelWaves(ids, config, rows) {
+  if (!isProxyPanelStateProxy(config)) return [ids];
+  const groups = new Map();
+  for (const id of ids) {
+    const row = rows.get(id) || {};
+    const name = normalizeStateName(rowValue(row.raw || {}, "bang", "bang/state") || rowValue(row, "bang", "bang/state")).toLowerCase();
+    if (!groups.has(name)) groups.set(name, []);
+    groups.get(name).push(id);
+  }
+  return [...groups.entries()]
+    .sort(([a, x], [b, y]) => Number(!a) - Number(!b) || y.length - x.length)
+    .flatMap(([, group]) => Array.from({ length: Math.ceil(group.length / 4) }, (_, i) => group.slice(i * 4, i * 4 + 4)));
 }
