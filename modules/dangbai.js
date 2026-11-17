@@ -1875,11 +1875,14 @@ export function createDangBai({
           runFourVListing(manager, page, payload, row, profileId, config, () => { noRollback = true; }, async () => {
             if (!session) return;
             const uidIndex = currentName.indexOf(uid);
-            const location = session.location?.current || session.location?.initial;
+            const previousLocation = uidIndex >= 0
+              ? currentName.slice(uidIndex + uid.length).replace(/^-+|-tool$/gi, "").trim()
+              : "";
+            const location = session.location?.current || session.location?.initial || previousLocation;
             const fullDate = new Intl.DateTimeFormat("en-GB", {
               timeZone: "Asia/Ho_Chi_Minh", day: "2-digit", month: "2-digit"
             }).format(new Date());
-            const fullName = `FULL ${fullDate}-` + (uidIndex >= 0 ? currentName.slice(uidIndex) : [uid, location].filter(Boolean).join("-"));
+            const fullName = [`FULL ${fullDate}`, uid, String(location || "").replace(/-tool$/i, "").trim(), "tool"].filter(Boolean).join("-");
             await rename(manager, profileId, fullName);
             currentName = fullName;
             originalName = fullName;

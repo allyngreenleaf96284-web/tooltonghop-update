@@ -316,7 +316,7 @@ async function loadConfig() {
     $("loginThreeVFull").checked = config.loginThreeVFull === true;
     $("loginComboConfig").classList.toggle("hidden", !$("loginThreeVFull").checked);
     for (const field of $("loginComboConfig").querySelectorAll("[id^=loginCombo_]")) {
-      if (!field.dataset.initialized) field.value = config[field.id.slice(11)] ?? field.value;
+      if (!field.dataset.initialized) field.value = config.loginComboSettings?.[field.id.slice(11)] ?? config[field.id.slice(11)] ?? field.value;
       field.dataset.initialized = "true";
     }
   }
@@ -439,6 +439,10 @@ async function saveConfig() {
       loginZoomPercent: Math.max(25, Math.min(200, Number($("loginZoomPercent")?.value || 50))),
       loginUnknownRetryCount: Math.max(0, Math.min(3, Number($("loginUnknownRetryCount")?.value || 0))),
       loginThreeVFull: $("loginThreeVFull")?.checked === true,
+      loginComboSettings: Object.fromEntries(Array.from(
+        $("loginComboConfig")?.querySelectorAll("[id^=loginCombo_]") || [],
+        field => [field.id.slice(11), field.value.trim()]
+      )),
       loginWaitForManualCaptcha: $("loginWaitForManualCaptcha")?.checked === true,
       fullConcurrency: Number($("fullConcurrency")?.value || 4),
       fullUnknownRetryCount: Math.max(0, Math.min(3, Number($("fullUnknownRetryCount")?.value || 0))),

@@ -1151,6 +1151,7 @@ async function saveConfig(input) {
     loginZoomPercent: normalizeLoginZoomPercent(input.loginZoomPercent !== undefined ? input.loginZoomPercent : current.loginZoomPercent),
     loginUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.loginUnknownRetryCount ?? current.loginUnknownRetryCount ?? DEFAULT_CONFIG.loginUnknownRetryCount) || 0))),
     loginThreeVFull: (input.loginThreeVFull ?? current.loginThreeVFull) === true,
+    loginComboSettings: input.loginComboSettings ?? current.loginComboSettings ?? {},
     loginWaitForManualCaptcha: (input.loginWaitForManualCaptcha ?? current.loginWaitForManualCaptcha) === true,
     fullConcurrency: clampConcurrency(input.fullConcurrency, current.fullConcurrency || DEFAULT_CONFIG.fullConcurrency, 4),
     fullUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.fullUnknownRetryCount ?? current.fullUnknownRetryCount ?? DEFAULT_CONFIG.fullUnknownRetryCount) || 0))),
@@ -1313,6 +1314,7 @@ async function saveConfigV2(input) {
     loginZoomPercent: normalizeLoginZoomPercent(input.loginZoomPercent !== undefined ? input.loginZoomPercent : current.loginZoomPercent),
     loginUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.loginUnknownRetryCount ?? current.loginUnknownRetryCount ?? DEFAULT_CONFIG.loginUnknownRetryCount) || 0))),
     loginThreeVFull: (input.loginThreeVFull ?? current.loginThreeVFull) === true,
+    loginComboSettings: input.loginComboSettings ?? current.loginComboSettings ?? {},
     loginWaitForManualCaptcha: (input.loginWaitForManualCaptcha ?? current.loginWaitForManualCaptcha) === true,
     fullConcurrency: clampConcurrency(input.fullConcurrency, current.fullConcurrency || DEFAULT_CONFIG.fullConcurrency, 4),
     fullUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.fullUnknownRetryCount ?? current.fullUnknownRetryCount ?? DEFAULT_CONFIG.fullUnknownRetryCount) || 0))),
@@ -3715,10 +3717,12 @@ async function handleApi(req, res) {
         if (body.authorized !== true) return jsonResponse(res, 400, { ok: false, error: "Cần xác nhận quyền liên kết bank." });
         config.fullPlus4v = true;
         for (const key of ["sellerSpreadsheetId", "fourVPostDataRoot", "fourVPostSpreadsheetId", "fourVPostSuccessPrefix", "fourVPostCondition", "fourVPostPackageWeight"]) {
-          if (typeof body[key] === "string") config[key] = body[key].trim();
+          const value = body[key] ?? config.loginComboSettings?.[key];
+          if (typeof value === "string") config[key] = value.trim();
         }
         for (const key of ["fourVPostPriceMin", "fourVPostPriceMax"]) {
-          if (body[key] !== undefined) config[key] = Number(body[key]);
+          const value = body[key] ?? config.loginComboSettings?.[key];
+          if (value !== undefined) config[key] = Number(value);
         }
         if (!(config.fourVPostPriceMin > 0 && config.fourVPostPriceMax >= config.fourVPostPriceMin)) {
           return jsonResponse(res, 400, { ok: false, error: "Khoảng giá không hợp lệ." });
