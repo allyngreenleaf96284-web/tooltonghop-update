@@ -1,8 +1,8 @@
 {
   "name": "Tool Tong Hop Full",
   "channel": "full",
-  "version": "2026.11.17.3",
-  "rawBase": "https://raw.githubusercontent.com/allyngreenleaf96284-web/tooltonghop-update/cac39a990cb49c3596e87cbc28d700d27e895a47",
+  "version": "2026.11.17.4",
+  "rawBase": "https://raw.githubusercontent.com/allyngreenleaf96284-web/tooltonghop-update/77d3010b19a2dd12e55c8fd4bbc375e76f94808d",
   "createdAt": "2026-09-17T00:00:00.000Z",
   "files": [
     {
@@ -47,8 +47,8 @@
     },
     {
       "path": "modules/dangbai.js",
-      "sha256": "bf52003a8c8e3273528f2cc9b15c9c56751cfcafbdc0794b15c9ca61eae0ea79",
-      "size": 110114
+      "sha256": "6675829bcb1ebfb0ee2aa44fd5bde6b7f8c7b25d225211d36ae481538bd77505",
+      "size": 110471
     },
     {
       "path": "modules/dangnhap.js",
@@ -67,8 +67,8 @@
     },
     {
       "path": "modules/lamfull.js",
-      "sha256": "7668f42e51e4c98fbb7d7742c58496f3f24afdba7af316291515a4f99f8b2743",
-      "size": 54005
+      "sha256": "be95e91a06a1e345973f56155a16f37768f6e39c781fa7710e6416e83746ae38",
+      "size": 55496
     },
     {
       "path": "modules/listing_link.js",
@@ -132,13 +132,13 @@
     },
     {
       "path": "public/app.js",
-      "sha256": "d5b73a399a5b147cbf2c4cf98470bbcc0c8c8d381e6f39f2ace23cb7fa8a8281",
-      "size": 218894
+      "sha256": "2ab09181cdc6aa7fcbea4edd14c6febbab44a0de92066aed560175455053321c",
+      "size": 219909
     },
     {
       "path": "public/index.html",
-      "sha256": "ff6c7d35fc9543ade634172135c5412fd8a502a719b91db8b44e3918be965750",
-      "size": 114018
+      "sha256": "d913ff14832813111ace5d40aca58e45cb9ccba508feb45c4d9d4756e0e23f5c",
+      "size": 115958
     },
     {
       "path": "public/styles.css",
@@ -157,8 +157,8 @@
     },
     {
       "path": "server.js",
-      "sha256": "e0f67a1bf286984f7cd3b3b6c89c11537cb03f0c0e35ca84e181224c9066e075",
-      "size": 189296
+      "sha256": "3b921aae1f0644e783bdf2d54356737e5fc042752ad3e324efc5562726dc2558",
+      "size": 190380
     },
     {
       "path": "modules/login_pause.js",
