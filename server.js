@@ -1258,9 +1258,6 @@ function forceSingleThreadForProxyPanel(config = {}) {
   if (!stateProxyUsesProxyPanel(config)) return config;
   return {
     ...config,
-    loginConcurrency: 1,
-    fullConcurrency: 1,
-    postConcurrency: 1,
     checkConcurrency: 1,
     checkOrderConcurrency: 1,
     interactionConcurrency: 1,
@@ -3682,7 +3679,6 @@ async function handleApi(req, res) {
       const config = forceSingleThreadForProxyPanel(await resolveAccountSheetConfig(await readConfig()));
       if (body.concurrency !== undefined) config.fullConcurrency = clampConcurrency(body.concurrency, config.fullConcurrency || DEFAULT_CONFIG.fullConcurrency, 4);
       if (body.fullUnknownRetryCount !== undefined) config.fullUnknownRetryCount = Math.max(0, Math.min(3, Math.floor(Number(body.fullUnknownRetryCount) || 0)));
-      if (stateProxyUsesProxyPanel(config)) config.fullConcurrency = 1;
       const data = await startAutoRetryBatch({
         runtime: toolRuntime,
         module: lamFullModule,
@@ -3728,7 +3724,6 @@ async function handleApi(req, res) {
           return jsonResponse(res, 400, { ok: false, error: "Khoảng giá không hợp lệ." });
         }
       }
-      if (stateProxyUsesProxyPanel(config)) config.loginConcurrency = 1;
       const data = await startAutoRetryBatch({
         runtime: toolRuntime,
         module: toolLoginModule,
@@ -3786,7 +3781,6 @@ async function handleApi(req, res) {
       if (body.concurrency !== undefined) config.postConcurrency = clampConcurrency(body.concurrency, config.postConcurrency || DEFAULT_CONFIG.postConcurrency, 4);
       if (body.postCheckBarsOnly !== undefined) config.postCheckBarsOnly = body.postCheckBarsOnly === true;
       if (body.postUnknownRetryCount !== undefined) config.postUnknownRetryCount = Math.max(0, Math.min(3, Math.floor(Number(body.postUnknownRetryCount) || 0)));
-      if (stateProxyUsesProxyPanel(config)) config.postConcurrency = 1;
       const data = await startAutoRetryBatch({
         runtime: toolRuntime,
         module: dangBaiModule,
@@ -3811,7 +3805,6 @@ async function handleApi(req, res) {
         return jsonResponse(res, 400, { ok: false, error: "Cần nhập Seller Info Spreadsheet ID." });
       }
       if (body.concurrency !== undefined) config.postConcurrency = clampConcurrency(body.concurrency, config.postConcurrency || DEFAULT_CONFIG.postConcurrency, 4);
-      if (stateProxyUsesProxyPanel(config)) config.postConcurrency = 1;
       const data = await startAutoRetryBatch({
         runtime: toolRuntime,
         module: dangBai4VModule,

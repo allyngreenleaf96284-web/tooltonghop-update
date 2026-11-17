@@ -498,7 +498,7 @@ export function createToolLogin({
     pauseControl.reset();
     restartLeases.clear();
     display.reset();
-    const concurrency = Math.min(isProxyPanelStateProxy(config) ? 4 : clampConcurrency(config.loginConcurrency, 4), ids.length);
+    const concurrency = Math.min(isProxyPanelStateProxy(config) ? Math.min(4, clampConcurrency(config.loginConcurrency, 4)) : clampConcurrency(config.loginConcurrency, 4), ids.length);
     for (const id of ids) {
       runtime.jobs.set(id, { profileId: id, uid: displayUid(sheetSession.rows.get(id)), tool: "tool login", status: "queued", liveStatus: `dang cho ${concurrency} luong`, logs: [], startedAt: "", finishedAt: "", result: null, sheetWriteError: "" });
     }
@@ -510,31 +510,35 @@ export function createToolLogin({
         for (const wave of proxyPanelWaves(ids, config, sheetSession.rows)) {
           if (runtime.stopRequested) break;
           const waveConfig = isProxyPanelStateProxy(config) ? { ...config, proxyPanelBatch: {} } : config;
-          let cursor = 0;
-          const nextId = () => !runtime.stopRequested && cursor < wave.length ? wave[cursor++] : "";
-          const workers = Array.from({ length: Math.min(concurrency, wave.length) }, async (_, workerSlot) => {
-            for (;;) {
-              while (runtime.loginPaused && !runtime.stopRequested) await sleep(100);
-              const id = nextId();
-              if (!id) break;
-              const job = runtime.jobs.get(id);
-              const row = sheetSession.rows.get(id) || {};
-              if (job) job.startedAt = new Date().toISOString();
-              let outcome;
-              do {
-                if (outcome?.retryCurrent) {
-                  pauseControl.resetProfile(id);
-                  job.loginRetryRequested = false;
-                  job.loginNeedsAttention = false;
-                  clearTwofaCountdown(job);
-                }
-                job.finishedAt = "";
-                outcome = await runOne(id, sheetSession.rows.get(id) || row, waveConfig, sheetSession, workerSlot, concurrency);
-              } while (outcome?.retryCurrent && !runtime.stopRequested);
+          const roundSize = isProxyPanelStateProxy(config) ? concurrency : wave.length;
+          for (let offset = 0; offset < wave.length && !runtime.stopRequested; offset += roundSize) {
+            const round = wave.slice(offset, offset + roundSize);
+            let cursor = 0;
+            const nextId = () => !runtime.stopRequested && cursor < round.length ? round[cursor++] : "";
+            const workers = Array.from({ length: Math.min(concurrency, round.length) }, async (_, workerSlot) => {
+              for (;;) {
+                while (runtime.loginPaused && !runtime.stopRequested) await sleep(100);
+                const id = nextId();
+                if (!id) break;
+                const job = runtime.jobs.get(id);
+                const row = sheetSession.rows.get(id) || {};
+                if (job) job.startedAt = new Date().toISOString();
+                let outcome;
+                do {
+                  if (outcome?.retryCurrent) {
+                    pauseControl.resetProfile(id);
+                    job.loginRetryRequested = false;
+                    job.loginNeedsAttention = false;
+                    clearTwofaCountdown(job);
+                  }
+                  job.finishedAt = "";
+                  outcome = await runOne(id, sheetSession.rows.get(id) || row, waveConfig, sheetSession, workerSlot, concurrency);
+                } while (outcome?.retryCurrent && !runtime.stopRequested);
 
-            }
-          });
-          await Promise.all(workers);
+              }
+            });
+            await Promise.all(workers);
+          }
         }
         await sheetSession.flushAll();
         if (runtime.stopRequested) {

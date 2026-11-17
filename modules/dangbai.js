@@ -2019,7 +2019,7 @@ export function createDangBai({
       throw new Error("Ban can nhap Seller Info Spreadsheet ID de lam Full khi gap 3v.");
     }
     const sheetSession = await createSheetRowSession(config, ids);
-    const concurrency = Math.min(isProxyPanelStateProxy(config) ? 4 : clampToolConcurrency(config.postConcurrency), ids.length);
+    const concurrency = Math.min(isProxyPanelStateProxy(config) ? Math.min(4, clampToolConcurrency(config.postConcurrency)) : clampToolConcurrency(config.postConcurrency), ids.length);
 
     for (const id of ids) {
       runtime.jobs.set(id, {
@@ -2044,55 +2044,59 @@ export function createDangBai({
         for (const wave of proxyPanelWaves(ids, config, sheetSession.rows)) {
           if (runtime.stopRequested) break;
           const waveConfig = isProxyPanelStateProxy(config) ? { ...config, proxyPanelBatch: {} } : config;
-          let cursor = 0;
-          let activeCount = 0;
-          const nextId = () => {
-            if (runtime.stopRequested) return "";
-            if (cursor >= wave.length) return "";
-            const id = wave[cursor];
-            cursor += 1;
-            return id;
-          };
-          const workers = Array.from({ length: Math.min(concurrency, wave.length) }, async (_, workerSlot) => {
-            for (;;) {
-            const id = nextId();
-            if (!id) break;
-            const row = sheetSession.rows.get(id);
-            const job = runtime.jobs.get(id);
-            if (!row) {
-              const update = { trangThai: "loi", chiTiet: "Khong tim thay dong du lieu trong Sheet theo id hide." };
-              if (!checkBarsOnly) update.Tool = "đã đăng bài";
+          const roundSize = isProxyPanelStateProxy(config) ? concurrency : wave.length;
+          for (let offset = 0; offset < wave.length && !runtime.stopRequested; offset += roundSize) {
+            const round = wave.slice(offset, offset + roundSize);
+            let cursor = 0;
+            let activeCount = 0;
+            const nextId = () => {
+              if (runtime.stopRequested) return "";
+              if (cursor >= round.length) return "";
+              const id = round[cursor];
+              cursor += 1;
+              return id;
+            };
+            const workers = Array.from({ length: Math.min(concurrency, round.length) }, async (_, workerSlot) => {
+              for (;;) {
+              const id = nextId();
+              if (!id) break;
+              const row = sheetSession.rows.get(id);
+              const job = runtime.jobs.get(id);
+              if (!row) {
+                const update = { trangThai: "loi", chiTiet: "Khong tim thay dong du lieu trong Sheet theo id hide." };
+                if (!checkBarsOnly) update.Tool = "đã đăng bài";
+                if (job) {
+                  job.status = "error";
+                  job.liveStatus = update.chiTiet;
+                  job.finishedAt = new Date().toISOString();
+                  job.result = update;
+                }
+                log(id, "doc Sheet", update.chiTiet, "error");
+                continue;
+              }
               if (job) {
-                job.status = "error";
-                job.liveStatus = update.chiTiet;
-                job.finishedAt = new Date().toISOString();
-                job.result = update;
+                job.startedAt = new Date().toISOString();
+                job.liveStatus = `dang bat dau o luong ${workerSlot + 1}/${concurrency}`;
               }
-              log(id, "doc Sheet", update.chiTiet, "error");
-              continue;
-            }
-            if (job) {
-              job.startedAt = new Date().toISOString();
-              job.liveStatus = `dang bat dau o luong ${workerSlot + 1}/${concurrency}`;
-            }
-            activeCount += 1;
-            log(id, "worker", `worker ${workerSlot + 1}/${concurrency} start, active=${activeCount}, queue_con_lai=${Math.max(0, wave.length - cursor)}`);
-            try {
-              const outcome = await runOne(id, row, waveConfig, sheetSession, workerSlot, concurrency);
-              if (outcome?.continueWithFull && !runtime.stopRequested) {
-                job.finishedAt = "";
-                job.liveStatus = "3v - dang chuyen sang lam Full";
-                await runFullProfile(id, row, waveConfig, sheetSession, workerSlot, concurrency, {
-                  condition: normalizeListingCondition(config.postCondition)
-                });
+              activeCount += 1;
+              log(id, "worker", `worker ${workerSlot + 1}/${concurrency} start, active=${activeCount}, queue_con_lai=${Math.max(0, round.length - cursor)}`);
+              try {
+                const outcome = await runOne(id, row, waveConfig, sheetSession, workerSlot, concurrency);
+                if (outcome?.continueWithFull && !runtime.stopRequested) {
+                  job.finishedAt = "";
+                  job.liveStatus = "3v - dang chuyen sang lam Full";
+                  await runFullProfile(id, row, waveConfig, sheetSession, workerSlot, concurrency, {
+                    condition: normalizeListingCondition(config.postCondition)
+                  });
+                }
+              } finally {
+                activeCount = Math.max(0, activeCount - 1);
+                log(id, "worker", `worker ${workerSlot + 1}/${concurrency} end, active=${activeCount}, queue_con_lai=${Math.max(0, round.length - cursor)}`);
               }
-            } finally {
-              activeCount = Math.max(0, activeCount - 1);
-              log(id, "worker", `worker ${workerSlot + 1}/${concurrency} end, active=${activeCount}, queue_con_lai=${Math.max(0, wave.length - cursor)}`);
             }
+            });
+            await Promise.all(workers);
           }
-          });
-          await Promise.all(workers);
         }
         await sheetSession.flushAll();
         if (runtime.stopRequested) {
