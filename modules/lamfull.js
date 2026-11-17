@@ -1,3 +1,4 @@
+import { readListingDescription } from "./dangbai.js";
 import { isProxyPanelStateProxy, proxyPanelWaves } from "./proxypanel.js";
 import { checkThreeVDisplayName } from "./early_display_name.js";
 import { installIncidentalPopupGuard, dismissIncidentalPopups, guardManagerPopupActions } from "./incidental_popups.js";
@@ -415,6 +416,7 @@ export function createLamFull({
   createSheetRowSession,
   allocateSellerInfoRow,
   updateSellerInfoUid,
+  publishFullListing,
   stateProxy,
   runtime
 }) {
@@ -813,8 +815,6 @@ export function createLamFull({
     patchManager(manager, locationManager);
     guardManagerPopupActions(manager);
     guardManagerPopupActions(locationManager);
-    // Replace the bundled 1.4-second chooser for standalone Full and Login -> Full.
-    manager.chooseConditionNew = (page) => chooseListingCondition(page, options.condition || "New");
     if (options.existingSession?.configureManager) options.existingSession.configureManager(manager);
     else patchStableWindowTiling(manager, workerSlot, workerTotal);
     manager.saveConfig({
@@ -823,6 +823,17 @@ export function createLamFull({
       priceMax: config.fullPriceMax,
       maxConcurrency: 1
     });
+
+    let listingPayload;
+    manager.chooseConditionNew = page => chooseListingCondition(page, options.condition || config.fullPostSettings?.fourVPostCondition || "Used - Like New");
+    if (typeof manager.fillStepOne === "function") {
+      const fillProduct = manager.fillStepOne.bind(manager);
+      manager.fillStepOne = async (page, payload) => {
+        listingPayload = await readListingDescription(payload);
+        await fillProduct(page, listingPayload);
+        await manager.setFieldValueByExactLabel(page, "Description", listingPayload.description);
+      };
+    }
 
     const row = buildToolRow(profileId, sheetRow);
     const uid = profileUid(row, profileId);
@@ -1018,6 +1029,25 @@ export function createLamFull({
         if (locationCapture.initial) update.diaChiBanDau = locationCapture.initial;
         await writeSheet(sheetWriter, profileId, update);
         await sheetWriter.commit();
+        if (config.fullPostEnabled) {
+          try {
+            const post = await publishFullListing(manager, page, listingPayload, profileId, uid, config);
+            const prefix = String(config.fullPostSettings?.fourVPostSuccessPrefix || "").trim().replace(/-+$/, "");
+            if (prefix) { await rename(manager, profileId, prefix + "-" + tenChuan); update.tenChuan = prefix + "-" + tenChuan; }
+            update.chiTiet = "Đã làm Full và đăng 4v: " + post.link;
+            await writeSheet(sheetWriter, profileId, update);
+            await sheetWriter.commit();
+          } catch (error) {
+            update.trangThai = "lỗi đăng 4v";
+            update.chiTiet = "Đã làm Full. Lỗi đăng 4v hoặc ghi link: " + error.message;
+            await writeSheet(sheetWriter, profileId, update);
+            await sheetWriter.commit();
+            job.status = "error";
+            job.liveStatus = update.chiTiet;
+            job.result = update;
+            return update;
+          }
+        }
         job.status = "success";
         job.result = update;
         return update;

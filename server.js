@@ -1152,6 +1152,8 @@ async function saveConfig(input) {
     loginUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.loginUnknownRetryCount ?? current.loginUnknownRetryCount ?? DEFAULT_CONFIG.loginUnknownRetryCount) || 0))),
     loginThreeVFull: (input.loginThreeVFull ?? current.loginThreeVFull) === true,
     loginComboSettings: input.loginComboSettings ?? current.loginComboSettings ?? {},
+    fullPostSettings: input.fullPostSettings ?? current.fullPostSettings ?? {},
+    fullPostEnabled: (input.fullPostEnabled ?? current.fullPostEnabled) === true,
     loginWaitForManualCaptcha: (input.loginWaitForManualCaptcha ?? current.loginWaitForManualCaptcha) === true,
     fullConcurrency: clampConcurrency(input.fullConcurrency, current.fullConcurrency || DEFAULT_CONFIG.fullConcurrency, 4),
     fullUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.fullUnknownRetryCount ?? current.fullUnknownRetryCount ?? DEFAULT_CONFIG.fullUnknownRetryCount) || 0))),
@@ -1315,6 +1317,8 @@ async function saveConfigV2(input) {
     loginUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.loginUnknownRetryCount ?? current.loginUnknownRetryCount ?? DEFAULT_CONFIG.loginUnknownRetryCount) || 0))),
     loginThreeVFull: (input.loginThreeVFull ?? current.loginThreeVFull) === true,
     loginComboSettings: input.loginComboSettings ?? current.loginComboSettings ?? {},
+    fullPostSettings: input.fullPostSettings ?? current.fullPostSettings ?? {},
+    fullPostEnabled: (input.fullPostEnabled ?? current.fullPostEnabled) === true,
     loginWaitForManualCaptcha: (input.loginWaitForManualCaptcha ?? current.loginWaitForManualCaptcha) === true,
     fullConcurrency: clampConcurrency(input.fullConcurrency, current.fullConcurrency || DEFAULT_CONFIG.fullConcurrency, 4),
     fullUnknownRetryCount: Math.max(0, Math.min(3, Math.floor(Number(input.fullUnknownRetryCount ?? current.fullUnknownRetryCount ?? DEFAULT_CONFIG.fullUnknownRetryCount) || 0))),
@@ -3187,6 +3191,12 @@ const lamFullModule = createLamFull({
   createSheetRowSession,
   allocateSellerInfoRow,
   updateSellerInfoUid,
+  async publishFullListing(manager, page, payload, profileId, uid, config) {
+    const postConfig = { ...config, ...config.fullPostSettings, fullPlus4v: true };
+    const post = await dangBai4VModule.finishFourVListing(manager, page, payload, profileId, postConfig);
+    await appendMarketplacePostResult(postConfig, { uid, link: post.link, title: payload.title });
+    return post;
+  },
   stateProxy: stateProxyTool,
   runtime: toolRuntime
 });
@@ -3681,6 +3691,10 @@ async function handleApi(req, res) {
       const config = forceSingleThreadForProxyPanel(await resolveAccountSheetConfig(await readConfig()));
       if (body.concurrency !== undefined) config.fullConcurrency = clampConcurrency(body.concurrency, config.fullConcurrency || DEFAULT_CONFIG.fullConcurrency, 4);
       if (body.fullUnknownRetryCount !== undefined) config.fullUnknownRetryCount = Math.max(0, Math.min(3, Math.floor(Number(body.fullUnknownRetryCount) || 0)));
+      config.fullPostEnabled = body.fullPostEnabled === true;
+      if (config.fullPostEnabled && (body.authorized !== true || !String(config.fullPostSettings?.fourVPostSpreadsheetId || "").trim())) {
+        return jsonResponse(res, 400, { ok: false, error: "Cần nhập Sheet ghi link và xác nhận quyền liên kết bank." });
+      }
       const data = await startAutoRetryBatch({
         runtime: toolRuntime,
         module: lamFullModule,
@@ -3689,7 +3703,7 @@ async function handleApi(req, res) {
         config,
         options: {},
         addRuntimeLog,
-        maxRetries: config.fullUnknownRetryCount
+        maxRetries: config.fullPostEnabled ? 0 : config.fullUnknownRetryCount
       });
       return jsonResponse(res, 200, { ok: true, data });
     }

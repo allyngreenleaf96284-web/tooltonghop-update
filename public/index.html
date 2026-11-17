@@ -846,6 +846,40 @@
                 Seller Info Spreadsheet ID
                 <input id="sellerSpreadsheetId" placeholder="Sheet riêng chứa seller info" />
               </label>
+              <div class="login-combo-panel">
+                <label>
+                Condition
+                <select id="fullPost_fourVPostCondition">
+                  <option value="New">New</option>
+                  <option value="Used - Like New" selected>Used - Like New</option>
+                  <option value="Used - Good">Used - Good</option>
+                  <option value="Used - Fair">Used - Fair</option>
+                </select>
+              </label>
+                <label class="checkbox-label"><input id="fullPostEnabled" type="checkbox"> Đăng bài 4v sau khi làm Full</label>
+                <div id="fullPostFields" class="login-combo-fields hidden">
+                  <label class="login-field-wide">
+                Tên thêm khi thành công
+                <input id="fullPost_fourVPostSuccessPrefix" type="text" placeholder="ok-" />
+              </label>
+<label class="login-field-wide">
+                Sheet kết quả (cột A UID, cột B LINK SP)
+                <input id="fullPost_fourVPostSpreadsheetId" type="text" placeholder="https://docs.google.com/spreadsheets/d/.../edit?gid=0" />
+              </label>
+<label>
+                Package weight
+                <select id="fullPost_fourVPostPackageWeight">
+                  <option value="Under 0.5 lbs">Under 0.5 lbs</option>
+                  <option value="0.5-1 lbs">0.5-1 lbs</option>
+                  <option value="1-2 lbs">1-2 lbs</option>
+                  <option value="2-5 lbs" selected>2-5 lbs</option>
+                  <option value="5-10 lbs">5-10 lbs</option>
+                  <option value="10-70 lbs">10-70 lbs</option>
+                </select>
+              </label>
+                  <label class="checkbox-label login-bank-confirmation"><input id="fullPostAuthorized" type="checkbox"> Các bank trong tab được phép liên kết với các profile đã chọn</label>
+                </div>
+              </div>
               <label>
                 Thư mục đăng bài
                 <input id="fullDataRoot" placeholder="E:\dangbai" />

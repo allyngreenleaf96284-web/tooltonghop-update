@@ -176,7 +176,7 @@ async function readLatestHideProfileName(manager, profileId, fallbackName = "") 
   return String(latestProfile?.name || fallbackName || profileId).trim();
 }
 
-async function readListingDescription(payload = {}) {
+export async function readListingDescription(payload = {}) {
   const folderPath = String(payload?.folderPath || "").trim();
   if (!folderPath) throw new Error("Khong xac dinh duoc folder du lieu dang bai.");
   const descriptionPath = path.join(folderPath, "description.txt");
@@ -1672,6 +1672,11 @@ export function createDangBai({
       await updateSellerInfoUid(config, seller, row.uid);
       await page.waitForFunction(() => /delivery method/i.test(document.body?.innerText || ""), { timeout: FOUR_V_UI_WAIT_MS });
     }
+    return finishFourVListing(manager, page, payload, profileId, config, markNoRollback);
+  }
+
+  async function finishFourVListing(manager, page, payload, profileId, config, markNoRollback = () => {}) {
+    await page.waitForFunction(() => /delivery method/i.test(document.body?.innerText || ""), { timeout: FOUR_V_UI_WAIT_MS });
     const method = await ensureFourVDeliveryMethod(page, profileId);
     await openShippingLabel(page, method);
     const weight = normalizePackageWeight(config.fourVPostPackageWeight);
@@ -2123,5 +2128,5 @@ export function createDangBai({
     return { started: ids.length, concurrency };
   }
 
-  return { runQueue, runProfile: runOne };
+  return { runQueue, runProfile: runOne, finishFourVListing };
 }

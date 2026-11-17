@@ -92,8 +92,8 @@ test("an ignored selection reports failure instead of accepting New from the pre
   } finally { await page.close(); }
 });
 
-test("Full always replaces the bundled chooser, including its default New", async () => {
-  for (const condition of [undefined, "Used - Like New"]) {
+test("Full always replaces the bundled chooser, and defaults to Used - Like New", async () => {
+  for (const condition of [undefined, "New"]) {
     const page = await fixture({ zoom: 50 });
     let name = "3v-61500000000001-Nuevo, California";
     const runtime = { jobs: new Map([["p1", { status: "running" }]]) };
@@ -107,7 +107,7 @@ test("Full always replaces the bundled chooser, including its default New", asyn
       await full.runProfile("p1", {}, {}, { updateOne: async () => {}, flushAll: async () => {} }, 0, 1,
         { condition, existingSession: { browser: {}, page, location: { initial: "Nuevo, California", current: "Nuevo, California" }, configureManager() {} } });
       assert.equal(runtime.jobs.get("p1").status, "success", JSON.stringify(runtime.jobs.get("p1").result));
-      assert.equal(await page.$eval("#field", (node) => node.textContent), condition || "New");
+      assert.equal(await page.$eval("#field", (node) => node.textContent), condition || "Used - Like New");
     } finally { await page.close(); }
   }
 });

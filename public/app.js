@@ -273,6 +273,11 @@ async function loadConfig() {
   $("credentialsPath").value = config.credentialsPath || "";
   if ($("credentialSourceSpreadsheetId")) $("credentialSourceSpreadsheetId").value = config.credentialSourceSpreadsheetId || "";
   $("sellerSpreadsheetId").value = config.sellerSpreadsheetId || "";
+  $("fullPostEnabled").checked = config.fullPostEnabled === true;
+  $("fullPostFields").classList.toggle("hidden", !$("fullPostEnabled").checked);
+  for (const field of document.querySelectorAll("[id^=fullPost_]")) {
+    field.value = config.fullPostSettings?.[field.id.slice(9)] ?? field.value;
+  }
   $("fullDataRoot").value = config.fullDataRoot || "E:\\dangbai";
   $("fullPriceMin").value = config.fullPriceMin || "";
   $("fullPriceMax").value = config.fullPriceMax || "";
@@ -409,6 +414,9 @@ async function saveConfig() {
       credentialSourceSpreadsheetId: $("credentialSourceSpreadsheetId")?.value || "",
       sellerSpreadsheetId: $("sellerSpreadsheetId").value,
       fullDataRoot: $("fullDataRoot").value,
+      fullPostEnabled: $("fullPostEnabled").checked,
+      fullPostSettings: Object.fromEntries(Array.from(document.querySelectorAll("[id^=fullPost_]"),
+        field => [field.id.slice(9), field.value.trim()])),
       fullPriceMin: $("fullPriceMin").value,
       fullPriceMax: $("fullPriceMax").value,
       fourVPostDataRoot: $("fourVPostDataRoot")?.value || "",
@@ -2097,6 +2105,10 @@ async function startLamFull(profileIds) {
   try {
     $("runFullSelectedBtn").disabled = true;
     $("runFullTodoBtn").disabled = true;
+    const fullPostEnabled = $("fullPostEnabled").checked;
+    const authorized = $("fullPostAuthorized").checked;
+    if (fullPostEnabled && !authorized) throw new Error("Cần xác nhận quyền liên kết bank.");
+    if (fullPostEnabled) $("fullPostAuthorized").checked = false;
     await saveConfig();
     const concurrency = Math.max(1, Math.min(4, Number($("fullConcurrency")?.value || 4)));
     const { data } = await api("/api/tools/lam-full", {
@@ -2104,6 +2116,7 @@ async function startLamFull(profileIds) {
       body: JSON.stringify({
         profileIds,
         concurrency,
+        fullPostEnabled, authorized,
         fullUnknownRetryCount: Math.max(0, Math.min(3, Number($("fullUnknownRetryCount")?.value || 0)))
       })
     });
@@ -4385,4 +4398,9 @@ $("loginThreeVFull")?.addEventListener("change", event => {
 });
 $("loginComboConfig")?.addEventListener("input", event => {
   if (event.target.id !== "loginComboAuthorized") $("loginComboAuthorized").checked = false;
+});
+
+$("fullPostEnabled")?.addEventListener("change", event => {
+  $("fullPostFields").classList.toggle("hidden", !event.target.checked);
+  $("fullPostAuthorized").checked = false;
 });
